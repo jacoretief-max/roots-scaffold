@@ -52,14 +52,16 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
     }
     setLoading(true);
     try {
-      const { data } = await api.post<{ tokens: AuthTokens; user: User }>('/auth/login', {
+      const response = await api.post('/auth/login', {
         email,
         password,
       });
-      await setTokens(data.tokens);
-      setUser(data.user);
+      const { user, tokens } = response.data.data;
+      await setTokens(tokens);
+      setUser(user);
       router.replace('/(tabs)');
-    } catch {
+    } catch (err) {
+      console.log('Login error:', err);
       Alert.alert('Login failed', 'Please check your email and password.');
     } finally {
       setLoading(false);
@@ -113,14 +115,15 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
     }
     setLoading(true);
     try {
-      const { data } = await api.post<{ tokens: AuthTokens; user: User }>('/auth/register', {
+      const response = await api.post('/auth/register', {
         displayName: name,
         email,
         password,
         dateOfBirth: dayjs(dob).format('YYYY-MM-DD'),
       });
-      await setTokens(data.tokens);
-      setUser(data.user);
+      const { user, tokens } = response.data.data;
+      await setTokens(tokens);
+      setUser(user);
       router.replace('/onboarding');
     } catch {
       Alert.alert('Registration failed', 'Please try again or use a different email.');
