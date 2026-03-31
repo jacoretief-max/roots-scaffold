@@ -499,20 +499,12 @@ export default function NewMemoryScreen() {
       </View>
 
       {/* Footer */}
-      {step > 0 && (
+      {step > 0 && step !== 2 && (
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={0}
         >
           <View style={styles.footer}>
-            {step === 2 && (
-              <TouchableOpacity
-                style={styles.dismissKeyboard}
-                onPress={() => Keyboard.dismiss()}
-              >
-                <Text style={styles.dismissKeyboardText}>Done typing</Text>
-              </TouchableOpacity>
-            )}
             <TouchableOpacity
               style={[styles.nextBtn, (!canProceed() || isPending) && styles.nextBtnDisabled]}
               onPress={handleNext}
