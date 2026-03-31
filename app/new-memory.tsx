@@ -415,7 +415,18 @@ export default function NewMemoryScreen() {
           </Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{stepLabels[step]}</Text>
-        <Text style={styles.headerStep}>{step + 1} of {TOTAL_STEPS}</Text>
+        <TouchableOpacity
+          style={[styles.headerNextBtn, !canProceed() && styles.headerNextBtnDisabled]}
+          onPress={handleNext}
+          disabled={!canProceed() || isPending}
+        >
+          {isPending
+            ? <ActivityIndicator color={Colors.white} size="small" />
+            : <Text style={styles.headerNextBtnText}>
+                {step === TOTAL_STEPS - 1 ? 'Save' : 'Next →'}
+              </Text>
+          }
+        </TouchableOpacity>
       </View>
 
       {/* Step indicator */}
@@ -510,12 +521,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textDark,
   },
-  headerStep: {
-    fontSize: 13,
-    color: Colors.textLight,
+  headerNextBtn: {
+    backgroundColor: Colors.terracotta,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
     minWidth: 60,
-    textAlign: 'right',
+    alignItems: 'center',
+  },
+  headerNextBtnDisabled: {
+    opacity: 0.4,
+  },
+  headerNextBtnText: {
+    fontSize: 13,
+    color: Colors.white,
     fontFamily: Typography.fontFamily,
+    fontWeight: '700',
   },
 
   // Step indicator
