@@ -375,6 +375,11 @@ export default function NewMemoryScreen() {
   };
 
   const handleSubmit = () => {
+    const participantIds = [
+      user?.id,
+      ...participants.filter(p => p.isRootsUser && p.id).map(p => p.id!),
+    ].filter(Boolean) as string[];
+
     console.log('SUBMIT PAYLOAD:', {
       title: title.trim(),
       date: dayjs(date).format('YYYY-MM-DD'),
@@ -383,11 +388,6 @@ export default function NewMemoryScreen() {
       participantIds,
       memoryText: memoryText.trim() || undefined,
     });
-
-    const participantIds = [
-      user?.id,
-      ...participants.filter(p => p.isRootsUser && p.id).map(p => p.id!),
-    ].filter(Boolean) as string[];
 
     createMemory(
       {
@@ -404,7 +404,7 @@ export default function NewMemoryScreen() {
           router.replace(`/memory/${event.id}`);
         },
         onError: (err) => {
-          console.log('ERROR:', err);
+          console.log('ERROR:', JSON.stringify(err));
         },
       }
     );
