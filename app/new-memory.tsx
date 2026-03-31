@@ -788,10 +788,15 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     fontFamily: Typography.fontFamily,
   },
-  dismissKeyboard: { alignItems: 'center', paddingVertical: Spacing.sm },
+  dismissKeyboard: {
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
   dismissKeyboardText: {
     fontSize: 13,
-    color: Colors.accent,
+    color: Colors.terracotta,
     fontFamily: Typography.fontFamily,
+    fontWeight: '700',
   },
 });
