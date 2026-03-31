@@ -74,60 +74,99 @@ const Step1 = ({
   location: string; setLocation: (v: string) => void;
 }) => {
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const locationRef = useRef<TextInput>(null);
+
+  const handleDatePress = () => {
+    Keyboard.dismiss();
+    setTimeout(() => setShowDatePicker(true), 100);
+  };
 
   return (
-    <ScrollView style={styles.stepContent} keyboardShouldPersistTaps="handled">
-      <Text style={styles.stepTitle}>What happened?</Text>
-      <Text style={styles.stepSub}>Give this memory a name, date and place.</Text>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={120}
+    >
+      <ScrollView
+        style={styles.stepContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.stepTitle}>What happened?</Text>
+        <Text style={styles.stepSub}>Give this memory a name, date and place.</Text>
 
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Memory title</Text>
-        <TextInput
-          style={styles.input}
-          value={title}
-          onChangeText={setTitle}
-          placeholder="e.g. Mark's 40th birthday"
-          placeholderTextColor={Colors.textLight}
-          maxLength={100}
-        />
-      </View>
-
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Date</Text>
-        <TouchableOpacity
-          style={styles.input}
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Text style={{ color: Colors.textDark, fontFamily: Typography.fontFamily }}>
-            {dayjs(date).format('D MMMM YYYY')}
-          </Text>
-        </TouchableOpacity>
-        {showDatePicker && (
-          <DateTimePicker
-            value={date}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-            maximumDate={new Date()}
-            onChange={(_, d) => {
-              setShowDatePicker(Platform.OS === 'ios');
-              if (d) setDate(d);
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Memory title</Text>
+          <TextInput
+            style={styles.input}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="e.g. Mark's 40th birthday"
+            placeholderTextColor={Colors.textLight}
+            maxLength={100}
+            returnKeyType="next"
+            onSubmitEditing={() => {
+              Keyboard.dismiss();
+              setTimeout(() => setShowDatePicker(true), 100);
             }}
           />
-        )}
-      </View>
+        </View>
 
-      <View style={styles.field}>
-        <Text style={styles.fieldLabel}>Location</Text>
-        <TextInput
-          style={styles.input}
-          value={location}
-          onChangeText={setLocation}
-          placeholder="e.g. Cape Town"
-          placeholderTextColor={Colors.textLight}
-          maxLength={100}
-        />
-      </View>
-    </ScrollView>
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Date</Text>
+          <TouchableOpacity
+            style={[styles.input, styles.dateInput]}
+            onPress={handleDatePress}
+            activeOpacity={0.7}
+          >
+            <Text style={{ color: Colors.textDark, fontFamily: Typography.fontFamily, fontSize: Typography.body }}>
+              {dayjs(date).format('D MMMM YYYY')}
+            </Text>
+          </TouchableOpacity>
+
+          {showDatePicker && (
+            <View style={styles.datePickerWrap}>
+              <DateTimePicker
+                value={date}
+                mode="date"
+                display="spinner"
+                maximumDate={new Date()}
+                onChange={(_, d) => {
+                  if (d) setDate(d);
+                }}
+                style={{ height: 180 }}
+              />
+              <TouchableOpacity
+                style={styles.datePickerDone}
+                onPress={() => {
+                  setShowDatePicker(false);
+                  setTimeout(() => locationRef.current?.focus(), 100);
+                }}
+              >
+                <Text style={styles.datePickerDoneText}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>Location</Text>
+          <TextInput
+            ref={locationRef}
+            style={styles.input}
+            value={location}
+            onChangeText={setLocation}
+            placeholder="e.g. Cape Town"
+            placeholderTextColor={Colors.textLight}
+            maxLength={100}
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
+          />
+        </View>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
@@ -597,6 +636,28 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
     color: Colors.textDark,
     justifyContent: 'center',
+  },
+
+  dateInput: {
+    justifyContent: 'center',
+  },
+  datePickerWrap: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.sm,
+    marginTop: Spacing.xs,
+    overflow: 'hidden',
+  },
+  datePickerDone: {
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 0.5,
+    borderTopColor: Colors.tan,
+  },
+  datePickerDoneText: {
+    fontSize: Typography.body,
+    color: Colors.terracotta,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
   },
 
   // People step
