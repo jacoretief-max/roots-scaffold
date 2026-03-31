@@ -37,9 +37,16 @@ export const useMemory = (id: string) =>
 export const useCreateMemory = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: Partial<MemoryEvent>): Promise<MemoryEvent> => {
-      const { data } = await api.post<ApiResponse<MemoryEvent>>('/memories', payload);
-      return data.data;
+    mutationFn: async (payload: Partial<MemoryEvent> & { memoryText?: string }): Promise<MemoryEvent> => {
+      const { memoryText, ...eventPayload } = payload;
+      // Step 1: create the event
+      const { data } = await api.post<ApiResponse<MemoryEvent>>('/memories', eventPayload);
+      const event = data.data;
+      // Step 2: post the first perspective if text was provided
+      if (memoryText?.trim()) {
+        await api.post(`/memories/${event.id}/entries`, { text: memoryText });
+      }
+      return event;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.memories }),
   });
@@ -78,6 +85,20 @@ export const useConnection = (id: string) =>
       const { data } = await api.get<ApiResponse<Connection>>(`/connections/${id}`);
       return data.data;
     },
+  });
+
+export const useConnectionSearch = (query: string) =>
+  useQuery({
+    queryKey: ['connections', 'search', query],
+    queryFn: async () => {
+      if (query.length < 2) return [];
+      const { data } = await api.get<ApiResponse<any[]>>(
+        `/connections/search?q=${encodeURIComponent(query)}`
+      );
+      return data.data;
+    },
+    enabled: query.length >= 2,
+    staleTime: 0,
   });
 
 // ── Current user ───────────────────────────────────────

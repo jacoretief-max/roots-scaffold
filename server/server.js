@@ -176,6 +176,31 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
 
 // ── Connection routes ──────────────────────────────────
 
+// GET /api/connections/search?q=name
+app.get('/api/connections/search', requireAuth, async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.length < 2) return res.json({ data: [] });
+
+  const { rows } = await db.query(
+    `SELECT
+       c.id as "connectionId",
+       c.layer,
+       c.relation,
+       u.id,
+       u.display_name as "displayName",
+       u.avatar_colour as "avatarColour",
+       u.city
+     FROM connections c
+     JOIN users u ON u.id = c.connected_user_id
+     WHERE c.user_id = $1
+     AND LOWER(u.display_name) LIKE LOWER($2)
+     ORDER BY c.score DESC
+     LIMIT 10`,
+    [req.userId, `%${q}%`]
+  );
+  res.json({ data: rows });
+});
+
 // GET /api/connections
 app.get('/api/connections', requireAuth, async (req, res) => {
   const { layer } = req.query;
