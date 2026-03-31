@@ -329,7 +329,19 @@ export default function MemoryEventScreen() {
       </View>
 
       {/* Add perspective — only in structured view */}
-      {view === 'structured' && <AddPerspective eventId={id} />}
+      {view === 'structured' && (() => {
+        const myEntry = event.entries?.find(e => e.authorId === user?.id);
+        return myEntry
+          ? (
+            <View style={styles.alreadyAdded}>
+              <Text style={styles.alreadyAddedText}>Thanks for adding your perspective!</Text>
+              <TouchableOpacity onPress={() => {/* edit flow - coming soon */}}>
+                <Text style={styles.editLink}>Edit</Text>
+              </TouchableOpacity>
+            </View>
+          )
+          : <AddPerspective eventId={id} />;
+      })()}
     </SafeAreaView>
   );
 }
@@ -510,7 +522,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
   immersiveContent: {
-    paddingHorizontal: Spacing.xl * 1.5,
+    position: 'absolute',
+    bottom: 80,
+    left: Spacing.xl * 1.5,
+    right: Spacing.xl * 1.5,
     alignItems: 'center',
   },
   immersiveAuthor: {
@@ -583,5 +598,28 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontWeight: '700',
     fontFamily: Typography.fontFamily,
+  },
+
+  // Already added
+  alreadyAdded: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    borderTopWidth: 0.5,
+    borderTopColor: Colors.tan,
+    backgroundColor: Colors.card,
+  },
+  alreadyAddedText: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    fontStyle: 'italic',
+  },
+  editLink: {
+    fontSize: 13,
+    color: Colors.terracotta,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
   },
 });
