@@ -460,39 +460,40 @@ export default function NewMemoryScreen() {
       </View>
 
       {/* Footer */}
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}
-      >
-        <View style={styles.footer}>
-          {step === 2 && (
+      {step > 0 && (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={0}
+        >
+          <View style={styles.footer}>
+            {step === 2 && (
+              <TouchableOpacity
+                style={styles.dismissKeyboard}
+                onPress={() => Keyboard.dismiss()}
+              >
+                <Text style={styles.dismissKeyboardText}>Done typing</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
-              style={styles.dismissKeyboard}
-              onPress={() => Keyboard.dismiss()}
+              style={[styles.nextBtn, (!canProceed() || isPending) && styles.nextBtnDisabled]}
+              onPress={handleNext}
+              disabled={!canProceed() || isPending}
             >
-              <Text style={styles.dismissKeyboardText}>Done typing</Text>
+              {isPending
+                ? <ActivityIndicator color={Colors.white} />
+                : <Text style={styles.nextBtnText}>
+                    {step === TOTAL_STEPS - 1 ? 'Save memory' : 'Continue'}
+                  </Text>
+              }
             </TouchableOpacity>
-          )}
-          <TouchableOpacity
-            style={[styles.nextBtn, (!canProceed() || isPending) && styles.nextBtnDisabled]}
-            onPress={handleNext}
-            disabled={!canProceed() || isPending}
-          >
-            {isPending
-              ? <ActivityIndicator color={Colors.white} />
-              : <Text style={styles.nextBtnText}>
-                  {step === TOTAL_STEPS - 1 ? 'Save memory' : 'Continue'}
-                </Text>
-            }
-          </TouchableOpacity>
-
-          {step === 1 && (
-            <TouchableOpacity onPress={() => setStep(step + 1)} style={styles.skipBtn}>
-              <Text style={styles.skipBtnText}>Skip — just me</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </KeyboardAvoidingView>
+            {step === 1 && (
+              <TouchableOpacity onPress={() => setStep(step + 1)} style={styles.skipBtn}>
+                <Text style={styles.skipBtnText}>Skip — just me</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      )}
     </SafeAreaView>
   );
 }
