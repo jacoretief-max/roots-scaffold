@@ -139,8 +139,15 @@ app.post('/api/auth/refresh', async (req, res) => {
 // GET /api/users/me
 app.get('/api/users/me', requireAuth, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT id, display_name, email, phone_number, avatar_colour,
-            date_of_birth, city, lat, lng, settings, created_at
+    `SELECT
+       id,
+       display_name as "displayName",
+       email,
+       phone_number as "phoneNumber",
+       avatar_colour as "avatarColour",
+       date_of_birth as "dateOfBirth",
+       city, lat, lng, settings,
+       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"
      FROM users WHERE id = $1`,
     [req.userId]
   );
