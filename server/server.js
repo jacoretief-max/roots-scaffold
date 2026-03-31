@@ -68,7 +68,14 @@ app.post('/api/auth/register', async (req, res) => {
     const { rows } = await db.query(
       `INSERT INTO users (display_name, email, password_hash, date_of_birth, phone_number)
        VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, display_name, email, avatar_colour, date_of_birth, city, lat, lng, created_at`,
+       RETURNING
+         id,
+         display_name as "displayName",
+         email,
+         avatar_colour as "avatarColour",
+         date_of_birth as "dateOfBirth",
+         city, lat, lng,
+         to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"`,
       [displayName, email.toLowerCase(), hash, dateOfBirth, phoneNumber ?? null]
     );
     const user = rows[0];
@@ -109,7 +116,19 @@ app.post('/api/auth/login', async (req, res) => {
       refreshToken: signRefresh(user.id),
       expiresAt: Date.now() + 15 * 60 * 1000,
     };
-    const { password_hash, ...safeUser } = user;
+    const safeUser = {
+      id: user.id,
+      displayName: user.display_name,
+      email: user.email,
+      phoneNumber: user.phone_number,
+      avatarColour: user.avatar_colour,
+      dateOfBirth: user.date_of_birth,
+      city: user.city,
+      lat: user.lat,
+      lng: user.lng,
+      settings: user.settings,
+      createdAt: user.created_at,
+    };
     res.json({ data: { user: safeUser, tokens } });
   } catch (err) {
     console.error(err);
