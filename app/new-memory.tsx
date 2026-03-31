@@ -258,28 +258,45 @@ const Step3 = ({
   text, setText,
 }: {
   text: string; setText: (v: string) => void;
-}) => (
-  <KeyboardAvoidingView
-    style={styles.stepContent}
-    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-  >
-    <Text style={styles.stepTitle}>Your perspective</Text>
-    <Text style={styles.stepSub}>Write what this moment meant to you.</Text>
+}) => {
+  const scrollRef = useRef<ScrollView>(null);
 
-    <TextInput
-      style={styles.memoryInput}
-      value={text}
-      onChangeText={setText}
-      placeholder="What do you remember about this moment? How did it feel?"
-      placeholderTextColor={Colors.textLight}
-      multiline
-      maxLength={5000}
-      textAlignVertical="top"
-      autoFocus
-    />
-    <Text style={styles.charCount}>{text.length} / 5000</Text>
-  </KeyboardAvoidingView>
-);
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={120}
+    >
+      <ScrollView
+        ref={scrollRef}
+        style={styles.stepContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.stepTitle}>Your perspective</Text>
+        <Text style={styles.stepSub}>Write what this moment meant to you.</Text>
+
+        <TextInput
+          style={styles.memoryInput}
+          value={text}
+          onChangeText={setText}
+          placeholder="What do you remember about this moment? How did it feel?"
+          placeholderTextColor={Colors.textLight}
+          multiline
+          maxLength={5000}
+          textAlignVertical="top"
+          autoFocus
+          blurOnSubmit={false}
+          scrollEnabled={false}
+        />
+        <Text style={styles.charCount}>{text.length} / 5000</Text>
+
+        {/* Extra padding so content is never hidden behind keyboard */}
+        <View style={{ height: 120 }} />
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+};
 
 // ── Step 4: Visibility ─────────────────────────────────
 const Step4 = ({
