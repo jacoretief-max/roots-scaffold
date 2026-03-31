@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Stack } from 'expo-router';
+import { Stack, router } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -20,6 +20,16 @@ const queryClient = new QueryClient({
 function RootNavigator() {
   const { isAuthenticated, isLoading } = useAuthStore();
 
+  useEffect(() => {
+    if (!isLoading) {
+      if (isAuthenticated) {
+        router.replace('/(tabs)');
+      } else {
+        router.replace('/auth');
+      }
+    }
+  }, [isAuthenticated, isLoading]);
+
   if (isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center' }}>
@@ -30,26 +40,12 @@ function RootNavigator() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      {isAuthenticated ? (
-        <>
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="onboarding" />
-          <Stack.Screen
-            name="memory/[id]"
-            options={{ presentation: 'card' }}
-          />
-          <Stack.Screen
-            name="person/[id]"
-            options={{ presentation: 'card' }}
-          />
-          <Stack.Screen
-            name="new-memory"
-            options={{ presentation: 'modal' }}
-          />
-        </>
-      ) : (
-        <Stack.Screen name="auth/index" />
-      )}
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="auth/index" />
+      <Stack.Screen name="onboarding" />
+      <Stack.Screen name="memory/[id]" options={{ presentation: 'card' }} />
+      <Stack.Screen name="person/[id]" options={{ presentation: 'card' }} />
+      <Stack.Screen name="new-memory" options={{ presentation: 'modal' }} />
     </Stack>
   );
 }

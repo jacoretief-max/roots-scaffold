@@ -21,8 +21,10 @@ const api: AxiosInstance = axios.create({
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     const raw = await SecureStore.getItemAsync(TOKEN_KEY);
+    console.log('TOKEN FROM STORE:', raw ? 'found' : 'NOT FOUND');
     if (raw) {
       const tokens: AuthTokens = JSON.parse(raw);
+      console.log('ACCESS TOKEN:', tokens.accessToken?.slice(0, 20) + '...');
       config.headers.Authorization = `Bearer ${tokens.accessToken}`;
     }
     return config;

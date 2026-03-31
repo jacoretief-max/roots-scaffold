@@ -20,9 +20,10 @@ export const useMemories = () =>
     queryKey: QueryKeys.memories,
     queryFn: async (): Promise<MemoryEvent[]> => {
       const { data } = await api.get<ApiResponse<MemoryEvent[]>>('/memories');
+      console.log('MEMORIES RESPONSE:', JSON.stringify(data));
       return data.data;
     },
-    staleTime: 1000 * 60 * 5, // 5 min
+    staleTime: 0,
   });
 
 export const useMemory = (id: string) =>
