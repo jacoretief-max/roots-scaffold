@@ -175,7 +175,20 @@ app.get('/api/connections', requireAuth, async (req, res) => {
 // GET /api/memories
 app.get('/api/memories', requireAuth, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT e.*, COUNT(me.id) FILTER (WHERE me.is_new = true) AS new_entry_count
+    `SELECT
+       e.id,
+       e.title,
+       to_char(e.date, 'YYYY-MM-DD') as date,
+       e.location,
+       e.lat,
+       e.lng,
+       e.music,
+       e.created_by_user_id as "createdByUserId",
+       e.visibility,
+       e.participant_ids as "participantIds",
+       e.photo_urls as "photoUrls",
+       to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
+       COUNT(me.id) FILTER (WHERE me.is_new = true) AS "newEntryCount"
      FROM events e
      LEFT JOIN memory_entries me ON me.event_id = e.id
      WHERE $1 = ANY(e.participant_ids)
@@ -196,9 +209,13 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
 
   const { rows: entries } = await db.query(
     `SELECT
-       me.id, me.event_id, me.author_id, me.text,
-       me.time, me.is_new,
-       to_char(me.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
+       me.id,
+       me.event_id as "eventId",
+       me.author_id as "authorId",
+       me.text,
+       me.time,
+       me.is_new as "isNew",
+       to_char(me.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
        json_build_object(
          'id', u.id,
          'displayName', u.display_name,
