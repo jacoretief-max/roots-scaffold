@@ -563,20 +563,20 @@ const styles = StyleSheet.create({
   },
   headerNextBtn: {
     backgroundColor: Colors.terracotta,
+    borderRadius: BorderRadius.sm,
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
+    paddingVertical: 6,
     minWidth: 60,
     alignItems: 'center',
   },
   headerNextBtnDisabled: {
-    opacity: 0.4,
+    backgroundColor: Colors.tan,
   },
   headerNextBtnText: {
     fontSize: 13,
     color: Colors.white,
-    fontFamily: Typography.fontFamily,
     fontWeight: '700',
+    fontFamily: Typography.fontFamily,
   },
 
   // Step indicator
@@ -640,24 +640,27 @@ const styles = StyleSheet.create({
 
   dateInput: {
     justifyContent: 'center',
+    height: 48,
   },
   datePickerWrap: {
     backgroundColor: Colors.card,
-    borderRadius: BorderRadius.sm,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.md,
     marginTop: Spacing.xs,
     overflow: 'hidden',
   },
   datePickerDone: {
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
+    alignItems: 'flex-end',
+    padding: Spacing.md,
     borderTopWidth: 0.5,
     borderTopColor: Colors.tan,
   },
   datePickerDoneText: {
     fontSize: Typography.body,
     color: Colors.terracotta,
-    fontFamily: Typography.fontFamily,
     fontWeight: '700',
+    fontFamily: Typography.fontFamily,
   },
 
   // People step
