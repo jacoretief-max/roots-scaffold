@@ -195,7 +195,14 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
   if (!event) return res.status(404).json({ error: 'Not found' });
 
   const { rows: entries } = await db.query(
-    `SELECT me.*, u.display_name, u.avatar_colour
+    `SELECT
+       me.id, me.event_id, me.author_id, me.text,
+       me.time, me.is_new, me.created_at,
+       json_build_object(
+         'id', u.id,
+         'displayName', u.display_name,
+         'avatarColour', u.avatar_colour
+       ) as author
      FROM memory_entries me
      JOIN users u ON u.id = me.author_id
      WHERE me.event_id = $1
