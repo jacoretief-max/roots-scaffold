@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Platform, Animated,
-  KeyboardAvoidingView, ActivityIndicator,
+  KeyboardAvoidingView, ActivityIndicator, Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -446,26 +446,39 @@ export default function NewMemoryScreen() {
       </View>
 
       {/* Footer */}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.nextBtn, (!canProceed() || isPending) && styles.nextBtnDisabled]}
-          onPress={handleNext}
-          disabled={!canProceed() || isPending}
-        >
-          {isPending
-            ? <ActivityIndicator color={Colors.white} />
-            : <Text style={styles.nextBtnText}>
-                {step === TOTAL_STEPS - 1 ? 'Save memory' : 'Continue'}
-              </Text>
-          }
-        </TouchableOpacity>
-
-        {step === 1 && (
-          <TouchableOpacity onPress={() => setStep(step + 1)} style={styles.skipBtn}>
-            <Text style={styles.skipBtnText}>Skip — just me</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+      >
+        <View style={styles.footer}>
+          {step === 2 && (
+            <TouchableOpacity
+              style={styles.dismissKeyboard}
+              onPress={() => Keyboard.dismiss()}
+            >
+              <Text style={styles.dismissKeyboardText}>Done typing</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[styles.nextBtn, (!canProceed() || isPending) && styles.nextBtnDisabled]}
+            onPress={handleNext}
+            disabled={!canProceed() || isPending}
+          >
+            {isPending
+              ? <ActivityIndicator color={Colors.white} />
+              : <Text style={styles.nextBtnText}>
+                  {step === TOTAL_STEPS - 1 ? 'Save memory' : 'Continue'}
+                </Text>
+            }
           </TouchableOpacity>
-        )}
-      </View>
+
+          {step === 1 && (
+            <TouchableOpacity onPress={() => setStep(step + 1)} style={styles.skipBtn}>
+              <Text style={styles.skipBtnText}>Skip — just me</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -773,6 +786,12 @@ const styles = StyleSheet.create({
   skipBtnText: {
     fontSize: 13,
     color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  dismissKeyboard: { alignItems: 'center', paddingVertical: Spacing.sm },
+  dismissKeyboardText: {
+    fontSize: 13,
+    color: Colors.accent,
     fontFamily: Typography.fontFamily,
   },
 });
