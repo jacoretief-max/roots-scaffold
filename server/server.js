@@ -197,7 +197,8 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
   const { rows: entries } = await db.query(
     `SELECT
        me.id, me.event_id, me.author_id, me.text,
-       me.time, me.is_new, me.created_at,
+       me.time, me.is_new,
+       to_char(me.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as created_at,
        json_build_object(
          'id', u.id,
          'displayName', u.display_name,

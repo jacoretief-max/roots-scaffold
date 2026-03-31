@@ -80,9 +80,9 @@ const StructuredView = ({
                 {isMe ? 'You' : entry.author?.displayName}
               </Text>
               <Text style={styles.entryTime}>
-                {new Date(entry.createdAt).toLocaleDateString('en-GB', {
+                {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('en-GB', {
                   day: 'numeric', month: 'short', year: 'numeric'
-                })}
+                }) : ''}
               </Text>
             </View>
             {entry.isNew && !isMe && (
