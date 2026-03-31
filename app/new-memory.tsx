@@ -375,6 +375,15 @@ export default function NewMemoryScreen() {
   };
 
   const handleSubmit = () => {
+    console.log('SUBMIT PAYLOAD:', {
+      title: title.trim(),
+      date: dayjs(date).format('YYYY-MM-DD'),
+      location: location.trim() || undefined,
+      visibility,
+      participantIds,
+      memoryText: memoryText.trim() || undefined,
+    });
+
     const participantIds = [
       user?.id,
       ...participants.filter(p => p.isRootsUser && p.id).map(p => p.id!),
@@ -391,7 +400,11 @@ export default function NewMemoryScreen() {
       },
       {
         onSuccess: (event) => {
+          console.log('SUCCESS:', event.id);
           router.replace(`/memory/${event.id}`);
+        },
+        onError: (err) => {
+          console.log('ERROR:', err);
         },
       }
     );
