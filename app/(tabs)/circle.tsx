@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, FlatList,
+  StyleSheet, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle } from 'react-native-svg';
 import { router } from 'expo-router';
 import { useConnections } from '@/api/hooks';
 import { Connection, DunbarLayer } from '@/types';
@@ -20,12 +20,12 @@ const DunbarDiagram = ({
   activeLayer: DunbarLayer | null;
   onPress: (layer: DunbarLayer) => void;
 }) => {
-  const size = 200;
+  const size = 180;
   const cx = size / 2;
   const cy = size / 2;
-  const radii = [90, 70, 50, 30];
+  const radii = [82, 64, 46, 28];
   const layers = ['meaningful', 'active', 'close', 'intimate'] as DunbarLayer[];
-  const ringColors = ['#EAE0D0', '#D4C8B4', '#C45A3A33', '#C45A3A66'];
+  const ringColors = ['#EAE0D0', '#DDD0BA', '#C45A3A22', '#C45A3A44'];
 
   return (
     <View style={styles.diagramWrap}>
@@ -34,38 +34,42 @@ const DunbarDiagram = ({
           <Circle
             key={layers[i]}
             cx={cx} cy={cy} r={r}
-            fill={activeLayer === layers[i] ? '#C45A3A22' : ringColors[i]}
+            fill={activeLayer === layers[i] ? '#C45A3A18' : ringColors[i]}
             stroke={activeLayer === layers[i] ? Colors.terracotta : Colors.tan}
             strokeWidth={activeLayer === layers[i] ? 1.5 : 0.5}
           />
         ))}
-        {/* Centre dot */}
         <Circle cx={cx} cy={cy} r={8} fill={Colors.terracotta} />
       </Svg>
 
-      {/* Tappable count labels below diagram */}
+      {/* Layer count pills */}
       <View style={styles.layerCounts}>
-        {DunbarLayers.map((l) => (
-          <TouchableOpacity
-            key={l.key}
-            style={[styles.layerCount, activeLayer === l.key && styles.layerCountActive]}
-            onPress={() => onPress(l.key as DunbarLayer)}
-          >
-            <Text style={[styles.layerCountNum, activeLayer === l.key && styles.layerCountNumActive]}>
-              {counts[l.key] ?? 0}
-            </Text>
-            <Text style={[styles.layerCountLabel, activeLayer === l.key && styles.layerCountLabelActive]}>
-              {l.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {DunbarLayers.map((l) => {
+          const count = counts[l.key] ?? 0;
+          const isActive = activeLayer === l.key;
+          return (
+            <TouchableOpacity
+              key={l.key}
+              style={[styles.layerCount, isActive && styles.layerCountActive]}
+              onPress={() => onPress(l.key as DunbarLayer)}
+            >
+              <Text style={[styles.layerCountNum, isActive && styles.layerCountNumActive]}>
+                {count}
+              </Text>
+              <Text style={[styles.layerCountLabel, isActive && styles.layerCountLabelActive]}>
+                {l.label}
+              </Text>
+              <Text style={styles.layerCountLimit}>/ {l.limit}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      {/* Layer description when filter active */}
+      {/* Layer description */}
       {activeLayer && (
         <View style={styles.layerDesc}>
           <Text style={styles.layerDescText}>
-            {DunbarLayers.find((l) => l.key === activeLayer)?.description}
+            {DunbarLayers.find(l => l.key === activeLayer)?.description}
           </Text>
         </View>
       )}
@@ -75,10 +79,33 @@ const DunbarDiagram = ({
 
 // ── Connection card ────────────────────────────────────
 const ConnectionCard = ({ item }: { item: Connection }) => {
+  const score = item.score ?? 80;
   const scoreColor =
-    item.score > 75 ? Colors.scoreHealthy
-    : item.score > 50 ? Colors.scoreMedium
+    score > 75 ? Colors.scoreHealthy
+    : score > 50 ? Colors.scoreMedium
     : Colors.scoreLow;
+
+  const displayName = item.connectedUser?.displayName
+    ?? (item as any).display_name
+    ?? 'Unknown';
+
+  const avatarColour = item.connectedUser?.avatarColour
+    ?? (item as any).avatar_colour
+    ?? Colors.terracotta;
+
+  const city = item.connectedUser?.city ?? (item as any).city;
+
+  const lastContactText = () => {
+    if (!item.lastContactAt) return 'No contact logged';
+    const days = Math.floor(
+      (Date.now() - new Date(item.lastContactAt).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 7) return `${days} days ago`;
+    if (days < 30) return `${Math.floor(days / 7)} weeks ago`;
+    return `${Math.floor(days / 30)} months ago`;
+  };
 
   return (
     <TouchableOpacity
@@ -87,34 +114,43 @@ const ConnectionCard = ({ item }: { item: Connection }) => {
       activeOpacity={0.85}
     >
       {/* Avatar */}
-      <View style={[styles.avatar, { backgroundColor: item.connectedUser?.avatarColour ?? Colors.tan }]}>
+      <View style={[styles.avatar, { backgroundColor: avatarColour }]}>
         <Text style={styles.avatarText}>
-          {item.connectedUser?.displayName.charAt(0).toUpperCase() ?? '?'}
+          {displayName.charAt(0).toUpperCase()}
         </Text>
-        {/* Status dot */}
         <View style={[styles.statusDot, { backgroundColor: Colors.statusAvailable }]} />
       </View>
 
       {/* Info */}
       <View style={styles.cardInfo}>
-        <Text style={styles.cardName}>{item.connectedUser?.displayName}</Text>
+        <View style={styles.cardNameRow}>
+          <Text style={styles.cardName}>{displayName}</Text>
+          <Text style={[styles.scoreNum, { color: scoreColor }]}>{score}</Text>
+        </View>
+
         <Text style={styles.cardMeta}>
-          {item.relation} · {item.connectedUser?.city}
+          {item.relation ?? 'Connection'}
+          {city ? ` · ${city}` : ''}
         </Text>
 
         {/* Score bar */}
         <View style={styles.scoreBarBg}>
-          <View style={[styles.scoreBarFill, { width: `${item.score}%`, backgroundColor: scoreColor }]} />
+          <View style={[
+            styles.scoreBarFill,
+            { width: `${score}%` as any, backgroundColor: scoreColor }
+          ]} />
         </View>
+
+        {/* Last contact */}
+        <Text style={styles.lastContact}>{lastContactText()}</Text>
 
         {/* Nudge */}
         {item.nudge && (
-          <Text style={styles.nudge}>{item.nudge}</Text>
+          <View style={styles.nudgeRow}>
+            <Text style={styles.nudgeText}>{item.nudge}</Text>
+          </View>
         )}
       </View>
-
-      {/* Score number */}
-      <Text style={[styles.scoreNum, { color: scoreColor }]}>{item.score}</Text>
     </TouchableOpacity>
   );
 };
@@ -122,24 +158,32 @@ const ConnectionCard = ({ item }: { item: Connection }) => {
 // ── Circle screen ──────────────────────────────────────
 export default function CircleScreen() {
   const [activeLayer, setActiveLayer] = useState<DunbarLayer | null>(null);
-  const { data: connections = [], isLoading } = useConnections(activeLayer ?? undefined);
 
-  // Count per layer
-  const { data: allConnections = [] } = useConnections();
+  const { data: allConnections = [], isLoading: loadingAll } = useConnections();
+  const { data: filtered = [], isLoading: loadingFiltered } = useConnections(
+    activeLayer ?? undefined
+  );
+
+  const isLoading = loadingAll || loadingFiltered;
+
   const counts = allConnections.reduce((acc, c) => {
-    acc[c.layer] = (acc[c.layer] ?? 0) + 1;
+    const layer = c.layer ?? (c as any).layer;
+    acc[layer] = (acc[layer] ?? 0) + 1;
     return acc;
   }, {} as Record<string, number>);
 
   const handleLayerPress = (layer: DunbarLayer) => {
-    setActiveLayer((prev) => (prev === layer ? null : layer));
+    setActiveLayer(prev => prev === layer ? null : layer);
   };
+
+  const displayConnections = activeLayer ? filtered : allConnections;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Circle</Text>
 
+        {/* Dunbar diagram */}
         <DunbarDiagram
           counts={counts}
           activeLayer={activeLayer}
@@ -147,16 +191,54 @@ export default function CircleScreen() {
         />
 
         <View style={styles.section}>
+          {/* Section label */}
           <Text style={styles.sectionLabel}>
             {activeLayer
-              ? `${DunbarLayers.find((l) => l.key === activeLayer)?.label} connections`
-              : 'All connections'}
+              ? `${DunbarLayers.find(l => l.key === activeLayer)?.label} · ${displayConnections.length} ${displayConnections.length === 1 ? 'person' : 'people'}`
+              : `All connections · ${allConnections.length}`
+            }
           </Text>
 
-          {connections.map((c) => (
+          {/* Loading */}
+          {isLoading && (
+            <ActivityIndicator color={Colors.terracotta} style={{ marginTop: Spacing.lg }} />
+          )}
+
+          {/* Empty state */}
+          {!isLoading && allConnections.length === 0 && (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>Your circle is empty</Text>
+              <Text style={styles.emptyDesc}>
+                Go to Connect to search for people and add them to your circle.
+              </Text>
+              <TouchableOpacity
+                style={styles.emptyBtn}
+                onPress={() => router.push('/(tabs)/connect')}
+              >
+                <Text style={styles.emptyBtnText}>Go to Connect</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* Empty filtered state */}
+          {!isLoading && allConnections.length > 0 && displayConnections.length === 0 && (
+            <View style={styles.empty}>
+              <Text style={styles.emptyTitle}>
+                No one in your {DunbarLayers.find(l => l.key === activeLayer)?.label.toLowerCase()} circle yet
+              </Text>
+              <Text style={styles.emptyDesc}>
+                Add people from Connect and assign them to this layer.
+              </Text>
+            </View>
+          )}
+
+          {/* Connection cards */}
+          {!isLoading && displayConnections.map((c) => (
             <ConnectionCard key={c.id} item={c} />
           ))}
         </View>
+
+        <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -171,14 +253,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
 
   // Dunbar diagram
   diagramWrap: { alignItems: 'center', paddingVertical: Spacing.lg },
   layerCounts: {
     flexDirection: 'row',
-    gap: Spacing.xl,
+    gap: Spacing.lg,
     marginTop: Spacing.lg,
   },
   layerCount: {
@@ -186,17 +268,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.sm,
+    minWidth: 60,
   },
   layerCountActive: { backgroundColor: Colors.terracotta + '18' },
   layerCountNum: {
-    fontSize: 20,
+    fontSize: 24,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
     color: Colors.textDark,
   },
   layerCountNumActive: { color: Colors.terracotta },
-  layerCountLabel: { fontSize: 11, color: Colors.textLight, marginTop: 2 },
+  layerCountLabel: {
+    fontSize: 11,
+    color: Colors.textLight,
+    marginTop: 1,
+    fontFamily: Typography.fontFamily,
+  },
   layerCountLabelActive: { color: Colors.terracotta },
+  layerCountLimit: {
+    fontSize: 10,
+    color: Colors.tan,
+    fontFamily: Typography.fontFamily,
+  },
   layerDesc: {
     marginTop: Spacing.sm,
     paddingHorizontal: Spacing.xl,
@@ -210,7 +303,7 @@ const styles = StyleSheet.create({
   },
 
   // Connections
-  section: { paddingHorizontal: Spacing.lg, paddingBottom: 100 },
+  section: { paddingHorizontal: Spacing.lg },
   sectionLabel: {
     fontSize: Typography.label,
     color: Colors.terracotta,
@@ -227,53 +320,114 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     marginBottom: Spacing.sm,
     gap: Spacing.md,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
     ...Shadows.card,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontSize: 16, color: Colors.white, fontWeight: '600' },
+  avatarText: { fontSize: 18, color: Colors.white, fontWeight: '600' },
   statusDot: {
     position: 'absolute',
     bottom: 1,
     right: 1,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
     borderWidth: 1.5,
     borderColor: Colors.card,
   },
   cardInfo: { flex: 1 },
+  cardNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 2,
+  },
   cardName: {
     fontSize: Typography.body,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
     color: Colors.textDark,
   },
-  cardMeta: { fontSize: 12, color: Colors.textLight, marginTop: 1, marginBottom: 6 },
+  scoreNum: {
+    fontSize: 16,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+  },
+  cardMeta: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginBottom: Spacing.sm,
+    fontFamily: Typography.fontFamily,
+  },
   scoreBarBg: {
     height: 4,
     backgroundColor: Colors.tan,
     borderRadius: 2,
     overflow: 'hidden',
+    marginBottom: Spacing.xs,
   },
   scoreBarFill: { height: '100%', borderRadius: 2 },
-  nudge: {
+  lastContact: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    marginTop: 2,
+  },
+  nudgeRow: {
+    marginTop: Spacing.sm,
+    padding: Spacing.sm,
+    backgroundColor: Colors.terracotta + '10',
+    borderLeftWidth: 2,
+    borderLeftColor: Colors.terracotta,
+  },
+  nudgeText: {
     fontSize: 12,
     color: Colors.terracottaDark,
     fontStyle: 'italic',
-    marginTop: 5,
+    fontFamily: Typography.fontFamily,
     lineHeight: 17,
   },
-  scoreNum: {
-    fontSize: 18,
+
+  // Empty states
+  empty: {
+    alignItems: 'center',
+    paddingTop: Spacing.xl,
+    paddingBottom: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+  },
+  emptyTitle: {
+    fontSize: Typography.heading.sm,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
-    minWidth: 36,
-    textAlign: 'right',
+    color: Colors.textDark,
+    marginBottom: Spacing.sm,
+    textAlign: 'center',
+  },
+  emptyDesc: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: Spacing.lg,
+  },
+  emptyBtn: {
+    backgroundColor: Colors.terracotta,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+  },
+  emptyBtnText: {
+    fontSize: Typography.body,
+    color: Colors.white,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamily,
   },
 });
