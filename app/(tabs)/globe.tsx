@@ -36,51 +36,46 @@ const STATUS_LABELS = {
 };
 
 // ── Simple land texture (placeholder until GeoJSON in Phase 3) ──
-const createLandTexture = (): THREE.Texture | null => {
-  try {
-    const size = 512;
-    const data = new Uint8Array(size * size);
+const createLandTexture = (): THREE.DataTexture => {
+  const size = 256;
+  const data = new Uint8Array(size * size * 3); // RGB only
 
-    const continents = [
-      // North America
-      { cx: 0.18, cy: 0.38, rx: 0.1, ry: 0.14 },
-      // South America
-      { cx: 0.22, cy: 0.62, rx: 0.065, ry: 0.13 },
-      // Europe
-      { cx: 0.52, cy: 0.33, rx: 0.055, ry: 0.08 },
-      // Africa
-      { cx: 0.53, cy: 0.55, rx: 0.075, ry: 0.14 },
-      // Asia
-      { cx: 0.68, cy: 0.35, rx: 0.18, ry: 0.12 },
-      // Australia
-      { cx: 0.78, cy: 0.65, rx: 0.07, ry: 0.06 },
-      // Greenland
-      { cx: 0.29, cy: 0.2, rx: 0.04, ry: 0.05 },
-    ];
+  const continents = [
+    { cx: 0.18, cy: 0.38, rx: 0.10, ry: 0.14 },
+    { cx: 0.22, cy: 0.62, rx: 0.065, ry: 0.13 },
+    { cx: 0.52, cy: 0.33, rx: 0.055, ry: 0.08 },
+    { cx: 0.53, cy: 0.55, rx: 0.075, ry: 0.14 },
+    { cx: 0.68, cy: 0.35, rx: 0.18, ry: 0.12 },
+    { cx: 0.78, cy: 0.65, rx: 0.07, ry: 0.06 },
+    { cx: 0.29, cy: 0.20, rx: 0.04, ry: 0.05 },
+  ];
 
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const nx = x / size;
-        const ny = y / size;
-        let isLand = false;
-        for (const c of continents) {
-          const dx = (nx - c.cx) / c.rx;
-          const dy = (ny - c.cy) / c.ry;
-          if (dx * dx + dy * dy < 1) {
-            isLand = true;
-            break;
-          }
-        }
-        data[y * size + x] = isLand ? 255 : 0;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const nx = x / size;
+      const ny = y / size;
+      let isLand = false;
+      for (const c of continents) {
+        const dx = (nx - c.cx) / c.rx;
+        const dy = (ny - c.cy) / c.ry;
+        if (dx * dx + dy * dy < 1) { isLand = true; break; }
+      }
+      const i = (y * size + x) * 3;
+      if (isLand) {
+        data[i]     = 45;  // R — sage green
+        data[i + 1] = 107; // G
+        data[i + 2] = 42;  // B
+      } else {
+        data[i]     = 13;  // R — ocean blue
+        data[i + 1] = 43;  // G
+        data[i + 2] = 94;  // B
       }
     }
-
-    const texture = new THREE.DataTexture(data, size, size, THREE.RedFormat);
-    texture.needsUpdate = true;
-    return texture;
-  } catch {
-    return null;
   }
+
+  const texture = new THREE.DataTexture(data, size, size, THREE.RGBFormat);
+  texture.needsUpdate = true;
+  return texture;
 };
 
 // ── Globe renderer ────────────────────────────────────
@@ -143,15 +138,11 @@ const useGlobe = () => {
 
     // ── Land ──
     const landGeometry = new THREE.SphereGeometry(1.001, 64, 64);
-    const landMaterial = new THREE.MeshPhongMaterial({
-      color: new THREE.Color('#2d6b2a'),
-      transparent: true,
-      opacity: 0.85,
-    });
     const landTexture = createLandTexture();
-    if (landTexture) {
-      landMaterial.alphaMap = landTexture;
-    }
+    const landMaterial = new THREE.MeshPhongMaterial({
+      map: landTexture,
+      shininess: 10,
+    });
     const land = new THREE.Mesh(landGeometry, landMaterial);
     scene.add(land);
     landRef.current = land;
@@ -359,7 +350,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     padding: Spacing.lg,
     marginTop: -24,
-    minHeight: 300,
+    minHeight: Dimensions.get('window').height * 0.5,
   },
   listLabel: {
     fontSize: Typography.label,
