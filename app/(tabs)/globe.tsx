@@ -7,6 +7,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GLView } from 'expo-gl';
 import * as THREE from 'three';
+import { Renderer } from 'expo-three';
 import { router } from 'expo-router';
 import { useConnections } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
@@ -67,7 +68,7 @@ const useGlobe = () => {
   const objectsRef = useRef<THREE.Object3D[]>([]);
 
   const onContextCreate = (gl: any) => {
-    const renderer = new THREE.WebGLRenderer({ context: gl, antialias: true });
+    const renderer = new Renderer({ gl });
     renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
     rendererRef.current = renderer;
 
