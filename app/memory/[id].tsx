@@ -3,11 +3,11 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Animated,
-  Dimensions,
+  Dimensions, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useMemory, useAddMemoryEntry } from '@/api/hooks';
+import { useMemory, useAddMemoryEntry, useUpdateMemoryEntry } from '@/api/hooks';
 import { useAuthStore } from '@/store/authStore';
 import { MemoryEntry } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
@@ -221,6 +221,10 @@ export default function MemoryEventScreen() {
   const { data: event, isLoading } = useMemory(id);
   const { user } = useAuthStore();
   const [view, setView] = useState<'structured' | 'immersive'>('structured');
+  const [editVisible, setEditVisible] = useState(false);
+  const [editText, setEditText] = useState('');
+  const [editEntryId, setEditEntryId] = useState('');
+  const { mutate: updateEntry, isPending: isUpdating } = useUpdateMemoryEntry(id);
 
   if (isLoading) {
     return (
@@ -242,6 +246,14 @@ export default function MemoryEventScreen() {
   }
 
   const bgColors = FALLBACK_COLORS;
+
+  const openEdit = () => {
+    const myEntry = event.entries?.find(e => e.authorId === user?.id);
+    if (!myEntry) return;
+    setEditEntryId(myEntry.id);
+    setEditText(myEntry.text);
+    setEditVisible(true);
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -335,13 +347,64 @@ export default function MemoryEventScreen() {
           ? (
             <View style={styles.alreadyAdded}>
               <Text style={styles.alreadyAddedText}>Thanks for adding your perspective!</Text>
-              <TouchableOpacity onPress={() => {/* edit flow - coming soon */}}>
+              <TouchableOpacity onPress={openEdit}>
                 <Text style={styles.editLink}>Edit</Text>
               </TouchableOpacity>
             </View>
           )
           : <AddPerspective eventId={id} />;
       })()}
+
+      {/* Edit perspective modal */}
+      <Modal
+        visible={editVisible}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setEditVisible(false)}
+      >
+        <SafeAreaView style={styles.editModal} edges={['top', 'bottom']}>
+          {/* Header */}
+          <View style={styles.editHeader}>
+            <TouchableOpacity onPress={() => setEditVisible(false)}>
+              <Text style={styles.editCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.editTitle}>Edit perspective</Text>
+            <TouchableOpacity
+              onPress={() => {
+                if (!editText.trim()) return;
+                updateEntry(
+                  { entryId: editEntryId, text: editText.trim() },
+                  { onSuccess: () => setEditVisible(false) }
+                );
+              }}
+              disabled={!editText.trim() || isUpdating}
+            >
+              <Text style={[styles.editSave, (!editText.trim() || isUpdating) && styles.editSaveDisabled]}>
+                {isUpdating ? 'Saving…' : 'Save'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Text input */}
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={80}
+          >
+            <TextInput
+              style={styles.editInput}
+              value={editText}
+              onChangeText={setEditText}
+              multiline
+              autoFocus
+              maxLength={5000}
+              textAlignVertical="top"
+              placeholderTextColor={Colors.textLight}
+            />
+            <Text style={styles.editCharCount}>{editText.length} / 5000</Text>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -629,5 +692,56 @@ const styles = StyleSheet.create({
     color: Colors.terracotta,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
+  },
+
+  // Edit modal
+  editModal: {
+    flex: 1,
+    backgroundColor: Colors.background,
+  },
+  editHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  editCancel: {
+    fontSize: Typography.body,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  editTitle: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+  },
+  editSave: {
+    fontSize: Typography.body,
+    color: Colors.terracotta,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+  },
+  editSaveDisabled: {
+    opacity: 0.4,
+  },
+  editInput: {
+    flex: 1,
+    padding: Spacing.lg,
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+    lineHeight: 24,
+  },
+  editCharCount: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'right',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
   },
 });
