@@ -66,6 +66,20 @@ export const useAddMemoryEntry = (eventId: string) => {
   });
 };
 
+export const useUpdateMemoryEntry = (eventId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ entryId, text }: { entryId: string; text: string }) => {
+      const { data } = await api.patch(
+        `/memories/${eventId}/entries/${entryId}`,
+        { text }
+      );
+      return data.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.memory(eventId) }),
+  });
+};
+
 // ── Connections ────────────────────────────────────────
 export const useConnections = (layer?: string) =>
   useQuery({
