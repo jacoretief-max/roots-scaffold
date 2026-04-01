@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, PanResponder, Dimensions,
@@ -6,310 +6,243 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GLView } from 'expo-gl';
-import { Renderer } from 'expo-three';
 import * as THREE from 'three';
 import { router } from 'expo-router';
 import { useConnections } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GLOBE_HEIGHT = SCREEN_WIDTH * 0.9;
+const GLOBE_HEIGHT = SCREEN_WIDTH * 0.85;
 
-// ── Status helpers ─────────────────────────────────────
-const getStatus = (): 'available' | 'busy' | 'sleeping' => {
-  const hour = new Date().getHours();
-  if (hour >= 22 || hour < 7) return 'sleeping';
-  if (hour >= 9 && hour < 18) return 'available';
-  return 'busy';
+const CITY_TIMEZONES: Record<string, string> = {
+  'johannesburg': 'Africa/Johannesburg',
+  'cape town': 'Africa/Johannesburg',
+  'durban': 'Africa/Johannesburg',
+  'london': 'Europe/London',
+  'paris': 'Europe/Paris',
+  'berlin': 'Europe/Berlin',
+  'amsterdam': 'Europe/Amsterdam',
+  'new york': 'America/New_York',
+  'los angeles': 'America/Los_Angeles',
+  'chicago': 'America/Chicago',
+  'dubai': 'Asia/Dubai',
+  'singapore': 'Asia/Singapore',
+  'sydney': 'Australia/Sydney',
+  'melbourne': 'Australia/Melbourne',
+  'tokyo': 'Asia/Tokyo',
+  'mumbai': 'Asia/Kolkata',
+  'nairobi': 'Africa/Nairobi',
+  'toronto': 'America/Toronto',
+  'denver': 'America/Denver',
+  'aurora': 'America/Denver',
 };
 
-const STATUS_COLORS = {
-  available: Colors.statusAvailable,
-  busy: Colors.statusBusy,
-  sleeping: Colors.statusSleeping,
+const getTimezone = (city?: string): string => {
+  if (!city) return 'UTC';
+  return CITY_TIMEZONES[city.toLowerCase().trim()] ?? 'UTC';
 };
 
-const STATUS_LABELS = {
-  available: 'Available',
-  busy: 'Busy',
-  sleeping: 'Sleeping',
+const getLocalTime = (city?: string) => {
+  const tz = getTimezone(city);
+  try {
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+    const hourStr = now.toLocaleString('en-GB', { timeZone: tz, hour: '2-digit', hour12: false });
+    const hour = parseInt(hourStr, 10);
+    const status = hour >= 22 || hour < 7 ? 'sleeping' : hour >= 9 && hour < 18 ? 'available' : 'busy';
+    return { time, status };
+  } catch {
+    return { time: '--:--', status: 'available' as const };
+  }
 };
 
-// ── Globe renderer ────────────────────────────────────
+const STATUS_COLORS = { available: Colors.statusAvailable, busy: Colors.statusBusy, sleeping: Colors.statusSleeping };
+const STATUS_LABELS = { available: 'Available', busy: 'Busy', sleeping: 'Sleeping' };
+
 const useGlobe = () => {
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const sceneRef = useRef<THREE.Scene | null>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const earthRef = useRef<THREE.Mesh | null>(null);
   const animFrameRef = useRef<number>(0);
-  const rotationRef = useRef({ x: 0.2, y: 0 });
+  const rotationRef = useRef({ x: 0.15, y: 0 });
   const autoSpinRef = useRef(true);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const objectsRef = useRef<THREE.Object3D[]>([]);
 
-  const onContextCreate = useCallback((gl: any) => {
-    const renderer = new Renderer({ gl });
+  const onContextCreate = (gl: any) => {
+    const renderer = new THREE.WebGLRenderer({ context: gl, antialias: true });
     renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
-    renderer.setPixelRatio(1);
     rendererRef.current = renderer;
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#0F1F2E');
-    sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(
-      45,
-      gl.drawingBufferWidth / gl.drawingBufferHeight,
-      0.1,
-      1000
-    );
+    const camera = new THREE.PerspectiveCamera(45, gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 1000);
     camera.position.z = 2.8;
-    cameraRef.current = camera;
 
-    // ── Stars ──
-    const starGeometry = new THREE.BufferGeometry();
-    const starCount = 1500;
-    const starPositions = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount * 3; i++) {
-      starPositions[i] = (Math.random() - 0.5) * 100;
+    // Stars
+    const starPos = new Float32Array(2000 * 3);
+    for (let i = 0; i < 2000 * 3; i++) starPos[i] = (Math.random() - 0.5) * 120;
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.06, transparent: true, opacity: 0.6 })));
+
+    // Earth sphere
+    const sphere = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 48, 48),
+      new THREE.MeshPhongMaterial({ color: new THREE.Color('#0a1628'), shininess: 20, specular: new THREE.Color('#1a3a6a') })
+    );
+    scene.add(sphere);
+    objectsRef.current.push(sphere);
+
+    // Latitude lines
+    const latMat = new THREE.LineBasicMaterial({ color: 0x1a4a8a, transparent: true, opacity: 0.35 });
+    [-60, -30, 0, 30, 60].forEach(lat => {
+      const pts: THREE.Vector3[] = [];
+      const phi = (90 - lat) * (Math.PI / 180);
+      for (let lng = 0; lng <= 360; lng += 3) {
+        const theta = lng * (Math.PI / 180);
+        pts.push(new THREE.Vector3(1.01 * Math.sin(phi) * Math.cos(theta), 1.01 * Math.cos(phi), 1.01 * Math.sin(phi) * Math.sin(theta)));
+      }
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), latMat);
+      scene.add(line);
+      objectsRef.current.push(line);
+    });
+
+    // Longitude lines
+    const lngMat = new THREE.LineBasicMaterial({ color: 0x1a4a8a, transparent: true, opacity: 0.2 });
+    for (let lng = 0; lng < 360; lng += 30) {
+      const pts: THREE.Vector3[] = [];
+      const theta = lng * (Math.PI / 180);
+      for (let lat = -90; lat <= 90; lat += 3) {
+        const phi = (90 - lat) * (Math.PI / 180);
+        pts.push(new THREE.Vector3(1.01 * Math.sin(phi) * Math.cos(theta), 1.01 * Math.cos(phi), 1.01 * Math.sin(phi) * Math.sin(theta)));
+      }
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lngMat);
+      scene.add(line);
+      objectsRef.current.push(line);
     }
-    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-    const starMaterial = new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: 0.08,
-      transparent: true,
-      opacity: 0.7,
-    });
-    scene.add(new THREE.Points(starGeometry, starMaterial));
 
-    // ── Ocean ──
-    const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
-    const oceanMaterial = new THREE.MeshPhongMaterial({
-      color: new THREE.Color('#0d2b5e'),
-      shininess: 60,
-      specular: new THREE.Color('#1a4a8a'),
-    });
-    const ocean = new THREE.Mesh(earthGeometry, oceanMaterial);
-    scene.add(ocean);
-    earthRef.current = ocean;
+    // Equator highlight
+    const eqPts: THREE.Vector3[] = [];
+    for (let lng = 0; lng <= 360; lng += 2) {
+      const t = lng * (Math.PI / 180);
+      eqPts.push(new THREE.Vector3(1.015 * Math.cos(t), 0, 1.015 * Math.sin(t)));
+    }
+    const eq = new THREE.Line(new THREE.BufferGeometry().setFromPoints(eqPts), new THREE.LineBasicMaterial({ color: 0xC45A3A, transparent: true, opacity: 0.5 }));
+    scene.add(eq);
+    objectsRef.current.push(eq);
 
-    // ── Land using shader — no texture upload needed ──────
-    const landGeometry = new THREE.SphereGeometry(1.002, 64, 64);
-    const landMaterial = new THREE.ShaderMaterial({
-      transparent: true,
-      uniforms: {},
-      vertexShader: `
-        varying vec2 vUv;
-        varying vec3 vNormal;
-        void main() {
-          vUv = uv;
-          vNormal = normalize(normalMatrix * normal);
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        varying vec2 vUv;
-        varying vec3 vNormal;
+    // Atmosphere
+    scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.12, 32, 32), new THREE.MeshPhongMaterial({ color: new THREE.Color('#3366cc'), transparent: true, opacity: 0.06, side: THREE.FrontSide })));
 
-        float ellipse(vec2 p, vec2 center, vec2 radius) {
-          vec2 d = (p - center) / radius;
-          return dot(d, d);
-        }
+    // Lighting
+    scene.add(new THREE.AmbientLight(0x334466, 1.2));
+    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+    sun.position.set(5, 3, 5);
+    scene.add(sun);
 
-        void main() {
-          vec2 uv = vUv;
-          bool isLand = false;
-
-          // North America
-          if (ellipse(uv, vec2(0.18, 0.38), vec2(0.10, 0.14)) < 1.0) isLand = true;
-          // South America
-          if (ellipse(uv, vec2(0.22, 0.62), vec2(0.065, 0.13)) < 1.0) isLand = true;
-          // Europe
-          if (ellipse(uv, vec2(0.52, 0.33), vec2(0.055, 0.08)) < 1.0) isLand = true;
-          // Africa
-          if (ellipse(uv, vec2(0.53, 0.55), vec2(0.075, 0.14)) < 1.0) isLand = true;
-          // Asia
-          if (ellipse(uv, vec2(0.68, 0.35), vec2(0.18, 0.12)) < 1.0) isLand = true;
-          // Australia
-          if (ellipse(uv, vec2(0.78, 0.65), vec2(0.07, 0.06)) < 1.0) isLand = true;
-          // Greenland
-          if (ellipse(uv, vec2(0.29, 0.20), vec2(0.04, 0.05)) < 1.0) isLand = true;
-
-          if (!isLand) discard;
-
-          // Sage green with lighting
-          float light = dot(vNormal, normalize(vec3(1.0, 0.5, 1.0))) * 0.4 + 0.6;
-          gl_FragColor = vec4(0.18 * light, 0.42 * light, 0.16 * light, 1.0);
-        }
-      `,
-    });
-    const land = new THREE.Mesh(landGeometry, landMaterial);
-    scene.add(land);
-    earthRef.current = ocean;
-
-    // ── Atmosphere ──
-    const atmosphereGeometry = new THREE.SphereGeometry(1.15, 64, 64);
-    const atmosphereMaterial = new THREE.MeshPhongMaterial({
-      color: new THREE.Color('#4488ff'),
-      transparent: true,
-      opacity: 0.08,
-      side: THREE.FrontSide,
-    });
-    scene.add(new THREE.Mesh(atmosphereGeometry, atmosphereMaterial));
-
-    const outerAtmosphereGeometry = new THREE.SphereGeometry(1.25, 64, 64);
-    const outerAtmosphereMaterial = new THREE.MeshPhongMaterial({
-      color: new THREE.Color('#2255cc'),
-      transparent: true,
-      opacity: 0.04,
-      side: THREE.FrontSide,
-    });
-    scene.add(new THREE.Mesh(outerAtmosphereGeometry, outerAtmosphereMaterial));
-
-    // ── Lighting ──
-    scene.add(new THREE.AmbientLight(0x333355, 0.8));
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    sunLight.position.set(5, 3, 5);
-    scene.add(sunLight);
-    const fillLight = new THREE.DirectionalLight(0x334466, 0.3);
-    fillLight.position.set(-5, -3, -5);
-    scene.add(fillLight);
-
-    // ── Animation loop ──
     const animate = () => {
       animFrameRef.current = requestAnimationFrame(animate);
-
-      if (autoSpinRef.current) {
-        rotationRef.current.y += 0.002;
-      }
-
-      ocean.rotation.x = rotationRef.current.x;
-      ocean.rotation.y = rotationRef.current.y;
-      land.rotation.x = rotationRef.current.x;
-      land.rotation.y = rotationRef.current.y;
-
+      if (autoSpinRef.current) rotationRef.current.y += 0.003;
+      objectsRef.current.forEach(o => { o.rotation.x = rotationRef.current.x; o.rotation.y = rotationRef.current.y; });
       renderer.render(scene, camera);
       gl.endFrameEXP();
     };
     animate();
-  }, []);
+  };
 
-  const handleRotate = useCallback((dx: number, dy: number) => {
+  const handleRotate = (dx: number, dy: number) => {
     autoSpinRef.current = false;
     rotationRef.current.y += dx * 0.008;
-    rotationRef.current.x += dy * 0.008;
-    rotationRef.current.x = Math.max(-1.2, Math.min(1.2, rotationRef.current.x));
+    rotationRef.current.x = Math.max(-1.2, Math.min(1.2, rotationRef.current.x + dy * 0.008));
+    clearTimeout((handleRotate as any)._t);
+    (handleRotate as any)._t = setTimeout(() => { autoSpinRef.current = true; }, 3000);
+  };
 
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      autoSpinRef.current = true;
-    }, 3000);
-  }, []);
-
-  const cleanup = useCallback(() => {
-    cancelAnimationFrame(animFrameRef.current);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    rendererRef.current?.dispose();
-  }, []);
+  const cleanup = () => { cancelAnimationFrame(animFrameRef.current); rendererRef.current?.dispose(); };
 
   return { onContextCreate, handleRotate, cleanup };
 };
 
-// ── Connection list item ───────────────────────────────
-const ConnectionListItem = ({ item }: { item: any }) => {
+const ConnectionItem = ({ item }: { item: any }) => {
   const displayName = item.connectedUser?.displayName ?? 'Unknown';
   const avatarColour = item.connectedUser?.avatarColour ?? Colors.terracotta;
   const city = item.connectedUser?.city ?? '';
-  const status = getStatus();
+  const { time, status } = getLocalTime(city);
 
   return (
-    <TouchableOpacity
-      style={styles.connectionItem}
-      onPress={() => router.push(`/person/${item.id}`)}
-      activeOpacity={0.85}
-    >
-      <View style={[styles.connectionAvatar, { backgroundColor: avatarColour }]}>
-        <Text style={styles.connectionAvatarText}>
-          {displayName.charAt(0).toUpperCase()}
-        </Text>
-        <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[status] }]} />
+    <TouchableOpacity style={styles.connectionItem} onPress={() => router.push(`/person/${item.id}`)} activeOpacity={0.85}>
+      <View style={[styles.avatar, { backgroundColor: avatarColour }]}>
+        <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
       </View>
       <View style={styles.connectionInfo}>
         <Text style={styles.connectionName}>{displayName}</Text>
-        {city ? <Text style={styles.connectionCity}>{city}</Text> : null}
+        <Text style={styles.connectionCity}>{city || 'Location not set'}</Text>
       </View>
-      <View style={[styles.statusBadge, { borderColor: STATUS_COLORS[status] + '44' }]}>
-        <View style={[styles.statusDotSmall, { backgroundColor: STATUS_COLORS[status] }]} />
-        <Text style={[styles.statusLabel, { color: STATUS_COLORS[status] }]}>
-          {STATUS_LABELS[status]}
-        </Text>
+      <View style={styles.timeWrap}>
+        <Text style={styles.localTime}>{time}</Text>
+        <View style={styles.statusRow}>
+          <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[status as keyof typeof STATUS_COLORS] }]} />
+          <Text style={[styles.statusLabel, { color: STATUS_COLORS[status as keyof typeof STATUS_COLORS] }]}>
+            {STATUS_LABELS[status as keyof typeof STATUS_LABELS]}
+          </Text>
+        </View>
       </View>
     </TouchableOpacity>
   );
 };
 
-// ── Globe screen ───────────────────────────────────────
 export default function GlobeScreen() {
-  const { onContextCreate, handleRotate, cleanup } = useGlobe();
   const { data: connections = [], isLoading } = useConnections();
+  const { onContextCreate, handleRotate, cleanup } = useGlobe();
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: (_, gestureState) => {
-        handleRotate(gestureState.dx, gestureState.dy);
-      },
-    })
-  ).current;
+  const panResponder = useRef(PanResponder.create({
+    onStartShouldSetPanResponder: () => true,
+    onMoveShouldSetPanResponder: () => true,
+    onPanResponderMove: (_, gs) => handleRotate(gs.dx, gs.dy),
+  })).current;
 
-  useEffect(() => {
-    return () => cleanup();
-  }, []);
+  useEffect(() => () => cleanup(), []);
+
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        scrollEventThrottle={16}
-      >
-        {/* Globe */}
-        <View
-          style={styles.globeWrap}
-          {...panResponder.panHandlers}
-        >
-          <GLView
-            style={styles.glView}
-            onContextCreate={onContextCreate}
-          />
-
-          {/* Title overlay */}
-          <View style={styles.globeOverlay}>
-            <Text style={styles.globeTitle}>Globe</Text>
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={styles.globeWrap} {...panResponder.panHandlers}>
+          <GLView style={styles.glView} onContextCreate={onContextCreate} />
+          <View style={styles.overlay}>
+            <Text style={styles.overlayTitle}>Globe</Text>
+            <Text style={styles.overlayTime}>{timeStr} your time</Text>
+          </View>
+          <View style={styles.dragHint}>
+            <Text style={styles.dragHintText}>drag to rotate</Text>
           </View>
         </View>
 
-        {/* Connection list */}
         <View style={styles.listWrap}>
           <Text style={styles.listLabel}>
             Your circle · {connections.length} {connections.length === 1 ? 'person' : 'people'}
           </Text>
 
-          {isLoading && (
-            <ActivityIndicator color={Colors.terracotta} style={{ marginTop: Spacing.lg }} />
-          )}
+          {isLoading && <ActivityIndicator color={Colors.terracotta} style={{ marginTop: Spacing.lg }} />}
 
           {!isLoading && connections.length === 0 && (
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>No connections yet.</Text>
-              <Text style={styles.emptySub}>Add people from Connect.</Text>
+              <Text style={styles.emptyTitle}>No connections yet</Text>
+              <Text style={styles.emptySub}>Add people from Connect to see them here.</Text>
             </View>
           )}
 
-          {connections.map((c: any) => (
-            <ConnectionListItem key={c.id} item={c} />
-          ))}
-        </View>
+          {connections.map((c: any) => <ConnectionItem key={c.id} item={c} />)}
 
+          {connections.length > 0 && (
+            <View style={styles.tzNote}>
+              <Text style={styles.tzNoteText}>
+                Times shown in each person's local timezone based on their city. Add cities in their profile for accurate times.
+              </Text>
+            </View>
+          )}
+        </View>
         <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
@@ -318,119 +251,29 @@ export default function GlobeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.globeBackground },
-
-  // Globe
-  globeWrap: {
-    width: SCREEN_WIDTH,
-    height: GLOBE_HEIGHT,
-    backgroundColor: Colors.globeBackground,
-  },
-  glView: {
-    width: SCREEN_WIDTH,
-    height: GLOBE_HEIGHT,
-  },
-  globeOverlay: {
-    position: 'absolute',
-    top: Spacing.lg,
-    left: Spacing.lg,
-  },
-  globeTitle: {
-    fontSize: Typography.heading.lg,
-    fontFamily: Typography.fontFamily,
-    fontWeight: '700',
-    color: Colors.white,
-    opacity: 0.9,
-  },
-
-  // Connection list
-  listWrap: {
-    backgroundColor: Colors.background,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: Spacing.lg,
-    marginTop: -24,
-    minHeight: Dimensions.get('window').height * 0.5,
-  },
-  listLabel: {
-    fontSize: Typography.label,
-    color: Colors.terracotta,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    fontFamily: Typography.fontFamily,
-    marginBottom: Spacing.md,
-  },
-
-  // Connection item
-  connectionItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: Colors.tan,
-    gap: Spacing.md,
-  },
-  connectionAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  connectionAvatarText: { fontSize: 16, color: Colors.white, fontWeight: '600' },
-  statusDot: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 11,
-    height: 11,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: Colors.background,
-  },
+  globeWrap: { width: SCREEN_WIDTH, height: GLOBE_HEIGHT, backgroundColor: Colors.globeBackground },
+  glView: { width: SCREEN_WIDTH, height: GLOBE_HEIGHT },
+  overlay: { position: 'absolute', top: Spacing.lg, left: Spacing.lg },
+  overlayTitle: { fontSize: Typography.heading.lg, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.white, opacity: 0.9 },
+  overlayTime: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: Typography.fontFamily, marginTop: 2 },
+  dragHint: { position: 'absolute', bottom: Spacing.xl, left: 0, right: 0, alignItems: 'center' },
+  dragHintText: { fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: Typography.fontFamily, letterSpacing: 0.8 },
+  listWrap: { backgroundColor: Colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.lg, marginTop: -24, minHeight: 400 },
+  listLabel: { fontSize: Typography.label, color: Colors.terracotta, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: Typography.fontFamily, marginBottom: Spacing.md },
+  connectionItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.md, borderBottomWidth: 0.5, borderBottomColor: Colors.tan, gap: Spacing.md },
+  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontSize: 16, color: Colors.white, fontWeight: '600' },
   connectionInfo: { flex: 1 },
-  connectionName: {
-    fontSize: Typography.body,
-    fontFamily: Typography.fontFamily,
-    fontWeight: '700',
-    color: Colors.textDark,
-  },
-  connectionCity: {
-    fontSize: 12,
-    color: Colors.textLight,
-    marginTop: 2,
-    fontFamily: Typography.fontFamily,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.pill,
-    borderWidth: 0.5,
-  },
-  statusDotSmall: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusLabel: {
-    fontSize: 11,
-    fontFamily: Typography.fontFamily,
-    fontWeight: '600',
-  },
-
-  // Empty
+  connectionName: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
+  connectionCity: { fontSize: 12, color: Colors.textLight, marginTop: 2, fontFamily: Typography.fontFamily },
+  timeWrap: { alignItems: 'flex-end' },
+  localTime: { fontSize: 16, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusLabel: { fontSize: 11, fontFamily: Typography.fontFamily, fontWeight: '600' },
   empty: { alignItems: 'center', paddingTop: Spacing.xl },
-  emptyText: {
-    fontSize: Typography.body,
-    color: Colors.textDark,
-    fontFamily: Typography.fontFamily,
-  },
-  emptySub: {
-    fontSize: 13,
-    color: Colors.textLight,
-    marginTop: 4,
-    fontFamily: Typography.fontFamily,
-  },
+  emptyTitle: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
+  emptySub: { fontSize: 13, color: Colors.textLight, marginTop: 4, fontFamily: Typography.fontFamily, textAlign: 'center' },
+  tzNote: { marginTop: Spacing.lg, padding: Spacing.md, backgroundColor: Colors.tan, borderRadius: BorderRadius.sm },
+  tzNoteText: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily, lineHeight: 18, textAlign: 'center' },
 });
