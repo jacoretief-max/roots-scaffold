@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { GLView } from 'expo-gl';
+import { Renderer } from 'expo-three';
 import * as THREE from 'three';
 import { router } from 'expo-router';
 import { useConnections } from '@/api/hooks';
@@ -95,10 +96,7 @@ const useGlobe = () => {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const onContextCreate = useCallback((gl: any) => {
-    const renderer = new THREE.WebGLRenderer({
-      context: gl,
-      antialias: true,
-    });
+    const renderer = new Renderer({ gl });
     renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
     renderer.setPixelRatio(1);
     rendererRef.current = renderer;
