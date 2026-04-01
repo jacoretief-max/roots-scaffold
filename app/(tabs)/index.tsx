@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
-  StyleSheet, ActivityIndicator,
+  StyleSheet, ActivityIndicator, Animated,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -9,9 +9,49 @@ import { useMemories } from '@/api/hooks';
 import { MemoryEvent } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 
+// Generates a consistent warm palette from a string (title + id)
+// Same memory always gets same colours — not random
+const WARM_PALETTES = [
+  ['#C45A3A', '#9A3A22', '#E8593C'],   // terracotta
+  ['#4A7A52', '#2D5C38', '#6B9E74'],   // sage
+  ['#7A5C3A', '#5C3D1E', '#A67C52'],   // warm brown
+  ['#4A6A7A', '#2D4E5C', '#6B8E9E'],   // slate blue
+  ['#7A4A5C', '#5C2D3E', '#9E6B7C'],   // dusty rose
+  ['#534AB7', '#3C3489', '#7F77DD'],   // purple
+  ['#BA7517', '#854F0B', '#EF9F27'],   // amber
+  ['#1D9E75', '#0F6E56', '#5DCAA5'],   // teal
+];
+
+const getPalette = (id: string): string[] => {
+  const index = id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  return WARM_PALETTES[index % WARM_PALETTES.length];
+};
+
 // ── Memory card ────────────────────────────────────────
 const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   const hasNew = (item.newEntryCount ?? 0) > 0;
+  const palette = getPalette(item.id);
+  const [colorIndex, setColorIndex] = useState(0);
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      Animated.sequence([
+        Animated.timing(fadeAnim, {
+          toValue: 0.7,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]).start();
+      setColorIndex(i => (i + 1) % palette.length);
+    }, 2200);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <TouchableOpacity
@@ -19,8 +59,13 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
       onPress={() => router.push(`/memory/${item.id}`)}
       activeOpacity={0.85}
     >
-      {/* Background colour from first photo — placeholder terracotta */}
-      <View style={[styles.cardBg, { backgroundColor: Colors.terracotta }]} />
+      {/* Animated background */}
+      <Animated.View
+        style={[
+          styles.cardBg,
+          { backgroundColor: palette[colorIndex], opacity: fadeAnim }
+        ]}
+      />
 
       {/* Dark gradient overlay */}
       <View style={styles.cardOverlay} />
@@ -31,7 +76,10 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
           {item.participants?.slice(0, 4).map((p, i) => (
             <View
               key={p.id}
-              style={[styles.avatar, { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }]}
+              style={[
+                styles.avatar,
+                { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }
+              ]}
             >
               <Text style={styles.avatarText}>
                 {p.displayName.charAt(0).toUpperCase()}
@@ -50,7 +98,10 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
       <View style={styles.cardBottom}>
         <Text style={styles.cardTitle}>{item.title}</Text>
         <Text style={styles.cardMeta}>
-          {item.location} · {new Date(item.date).getFullYear()}
+          {item.location
+            ? `${item.location} · ${new Date(item.date).getFullYear()}`
+            : new Date(item.date).getFullYear().toString()
+          }
         </Text>
       </View>
     </TouchableOpacity>
