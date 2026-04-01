@@ -211,7 +211,24 @@ app.get('/api/connections', requireAuth, async (req, res) => {
     where += ` AND c.layer = $${params.length}`;
   }
   const { rows } = await db.query(
-    `SELECT c.*, u.display_name, u.avatar_colour, u.city, u.lat, u.lng
+    `SELECT
+       c.id,
+       c.user_id as "userId",
+       c.connected_user_id as "connectedUserId",
+       c.relation,
+       c.layer,
+       c.since,
+       c.contact_frequency as "contactFrequency",
+       c.score,
+       c.last_contact_at as "lastContactAt",
+       c.nudge,
+       to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
+       json_build_object(
+         'id', u.id,
+         'displayName', u.display_name,
+         'avatarColour', u.avatar_colour,
+         'city', u.city
+       ) as "connectedUser"
      FROM connections c
      JOIN users u ON u.id = c.connected_user_id
      WHERE ${where}
