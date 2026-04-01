@@ -35,56 +35,12 @@ const STATUS_LABELS = {
   sleeping: 'Sleeping',
 };
 
-// ── Simple land texture (placeholder until GeoJSON in Phase 3) ──
-const createLandTexture = (): THREE.DataTexture => {
-  const size = 256;
-  const data = new Uint8Array(size * size * 3); // RGB only
-
-  const continents = [
-    { cx: 0.18, cy: 0.38, rx: 0.10, ry: 0.14 },
-    { cx: 0.22, cy: 0.62, rx: 0.065, ry: 0.13 },
-    { cx: 0.52, cy: 0.33, rx: 0.055, ry: 0.08 },
-    { cx: 0.53, cy: 0.55, rx: 0.075, ry: 0.14 },
-    { cx: 0.68, cy: 0.35, rx: 0.18, ry: 0.12 },
-    { cx: 0.78, cy: 0.65, rx: 0.07, ry: 0.06 },
-    { cx: 0.29, cy: 0.20, rx: 0.04, ry: 0.05 },
-  ];
-
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const nx = x / size;
-      const ny = y / size;
-      let isLand = false;
-      for (const c of continents) {
-        const dx = (nx - c.cx) / c.rx;
-        const dy = (ny - c.cy) / c.ry;
-        if (dx * dx + dy * dy < 1) { isLand = true; break; }
-      }
-      const i = (y * size + x) * 3;
-      if (isLand) {
-        data[i]     = 45;  // R — sage green
-        data[i + 1] = 107; // G
-        data[i + 2] = 42;  // B
-      } else {
-        data[i]     = 13;  // R — ocean blue
-        data[i + 1] = 43;  // G
-        data[i + 2] = 94;  // B
-      }
-    }
-  }
-
-  const texture = new THREE.DataTexture(data, size, size, THREE.RGBFormat);
-  texture.needsUpdate = true;
-  return texture;
-};
-
 // ── Globe renderer ────────────────────────────────────
 const useGlobe = () => {
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const earthRef = useRef<THREE.Mesh | null>(null);
-  const landRef = useRef<THREE.Mesh | null>(null);
   const animFrameRef = useRef<number>(0);
   const rotationRef = useRef({ x: 0.2, y: 0 });
   const autoSpinRef = useRef(true);
@@ -136,16 +92,59 @@ const useGlobe = () => {
     scene.add(ocean);
     earthRef.current = ocean;
 
-    // ── Land ──
-    const landGeometry = new THREE.SphereGeometry(1.001, 64, 64);
-    const landTexture = createLandTexture();
-    const landMaterial = new THREE.MeshPhongMaterial({
-      map: landTexture,
-      shininess: 10,
+    // ── Land using shader — no texture upload needed ──────
+    const landGeometry = new THREE.SphereGeometry(1.002, 64, 64);
+    const landMaterial = new THREE.ShaderMaterial({
+      transparent: true,
+      uniforms: {},
+      vertexShader: `
+        varying vec2 vUv;
+        varying vec3 vNormal;
+        void main() {
+          vUv = uv;
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+        varying vec3 vNormal;
+
+        float ellipse(vec2 p, vec2 center, vec2 radius) {
+          vec2 d = (p - center) / radius;
+          return dot(d, d);
+        }
+
+        void main() {
+          vec2 uv = vUv;
+          bool isLand = false;
+
+          // North America
+          if (ellipse(uv, vec2(0.18, 0.38), vec2(0.10, 0.14)) < 1.0) isLand = true;
+          // South America
+          if (ellipse(uv, vec2(0.22, 0.62), vec2(0.065, 0.13)) < 1.0) isLand = true;
+          // Europe
+          if (ellipse(uv, vec2(0.52, 0.33), vec2(0.055, 0.08)) < 1.0) isLand = true;
+          // Africa
+          if (ellipse(uv, vec2(0.53, 0.55), vec2(0.075, 0.14)) < 1.0) isLand = true;
+          // Asia
+          if (ellipse(uv, vec2(0.68, 0.35), vec2(0.18, 0.12)) < 1.0) isLand = true;
+          // Australia
+          if (ellipse(uv, vec2(0.78, 0.65), vec2(0.07, 0.06)) < 1.0) isLand = true;
+          // Greenland
+          if (ellipse(uv, vec2(0.29, 0.20), vec2(0.04, 0.05)) < 1.0) isLand = true;
+
+          if (!isLand) discard;
+
+          // Sage green with lighting
+          float light = dot(vNormal, normalize(vec3(1.0, 0.5, 1.0))) * 0.4 + 0.6;
+          gl_FragColor = vec4(0.18 * light, 0.42 * light, 0.16 * light, 1.0);
+        }
+      `,
     });
     const land = new THREE.Mesh(landGeometry, landMaterial);
     scene.add(land);
-    landRef.current = land;
+    earthRef.current = ocean;
 
     // ── Atmosphere ──
     const atmosphereGeometry = new THREE.SphereGeometry(1.15, 64, 64);
