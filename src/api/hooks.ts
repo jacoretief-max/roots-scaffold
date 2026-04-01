@@ -115,6 +115,67 @@ export const useConnectionSearch = (query: string) =>
     staleTime: 0,
   });
 
+// Search all Roots users
+export const useUserSearch = (query: string) =>
+  useQuery({
+    queryKey: ['users', 'search', query],
+    queryFn: async () => {
+      if (query.length < 2) return [];
+      const { data } = await api.get(
+        `/users/search?q=${encodeURIComponent(query)}`
+      );
+      return data.data;
+    },
+    enabled: query.length >= 2,
+    staleTime: 0,
+  });
+
+// Add connection
+export const useAddConnection = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      connectedUserId: string;
+      relation: string;
+      layer: string;
+      since?: string;
+      contactFrequency?: number;
+    }) => {
+      const { data } = await api.post('/connections', payload);
+      return data.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.connections }),
+  });
+};
+
+// Remove connection
+export const useRemoveConnection = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/connections/${id}`);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.connections }),
+  });
+};
+
+// Update connection
+export const useUpdateConnection = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...payload }: {
+      id: string;
+      layer?: string;
+      relation?: string;
+      contactFrequency?: number;
+    }) => {
+      const { data } = await api.patch(`/connections/${id}`, payload);
+      return data.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.connections }),
+  });
+};
+
 // ── Current user ───────────────────────────────────────
 export const useMe = () =>
   useQuery({

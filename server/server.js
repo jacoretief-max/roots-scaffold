@@ -221,6 +221,91 @@ app.get('/api/connections', requireAuth, async (req, res) => {
   res.json({ data: rows });
 });
 
+// GET /api/users/search?q=name
+// Search all Roots users (excluding self + existing connections)
+app.get('/api/users/search', requireAuth, async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.length < 2) return res.json({ data: [] });
+
+  const { rows } = await db.query(
+    `SELECT
+       u.id,
+       u.display_name as "displayName",
+       u.avatar_colour as "avatarColour",
+       u.city,
+       CASE WHEN c.id IS NOT NULL THEN true ELSE false END as "inCircle"
+     FROM users u
+     LEFT JOIN connections c
+       ON c.connected_user_id = u.id AND c.user_id = $1
+     WHERE u.id != $1
+     AND LOWER(u.display_name) LIKE LOWER($2)
+     ORDER BY u.display_name
+     LIMIT 20`,
+    [req.userId, `%${q}%`]
+  );
+  res.json({ data: rows });
+});
+
+// POST /api/connections
+// Add someone to your circle
+app.post('/api/connections', requireAuth, async (req, res) => {
+  const { connectedUserId, relation, layer, since, contactFrequency } = req.body;
+  if (!connectedUserId || !layer) {
+    return res.status(400).json({ error: 'connectedUserId and layer required' });
+  }
+
+  try {
+    const { rows: [connection] } = await db.query(
+      `INSERT INTO connections
+         (user_id, connected_user_id, relation, layer, since, contact_frequency)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (user_id, connected_user_id)
+       DO UPDATE SET layer = $4, relation = $3
+       RETURNING *`,
+      [
+        req.userId,
+        connectedUserId,
+        relation ?? null,
+        layer,
+        since ?? null,
+        contactFrequency ?? 14,
+      ]
+    );
+    res.status(201).json({ data: connection });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to add connection' });
+  }
+});
+
+// DELETE /api/connections/:id
+// Remove someone from your circle
+app.delete('/api/connections/:id', requireAuth, async (req, res) => {
+  await db.query(
+    'DELETE FROM connections WHERE id = $1 AND user_id = $2',
+    [req.params.id, req.userId]
+  );
+  res.json({ data: { ok: true } });
+});
+
+// PATCH /api/connections/:id
+// Update layer, relation, contact frequency
+app.patch('/api/connections/:id', requireAuth, async (req, res) => {
+  const { layer, relation, contactFrequency } = req.body;
+  const { rows: [connection] } = await db.query(
+    `UPDATE connections
+     SET
+       layer = COALESCE($1, layer),
+       relation = COALESCE($2, relation),
+       contact_frequency = COALESCE($3, contact_frequency)
+     WHERE id = $4 AND user_id = $5
+     RETURNING *`,
+    [layer, relation, contactFrequency, req.params.id, req.userId]
+  );
+  if (!connection) return res.status(404).json({ error: 'Connection not found' });
+  res.json({ data: connection });
+});
+
 // ── Memory routes ──────────────────────────────────────
 
 // GET /api/memories
