@@ -1,35 +1,448 @@
-import { View, Text, StyleSheet } from 'react-native';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, ScrollView,
+  TouchableOpacity, PanResponder, Dimensions,
+  ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Typography, Spacing } from '@/constants/theme';
+import { GLView } from 'expo-gl';
+import * as THREE from 'three';
+import { router } from 'expo-router';
+import { useConnections } from '@/api/hooks';
+import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
-// Globe screen — Three.js implementation goes here in Phase 2
-export default function GlobeScreen() {
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const GLOBE_HEIGHT = SCREEN_WIDTH * 0.9;
+
+// ── Status helpers ─────────────────────────────────────
+const getStatus = (): 'available' | 'busy' | 'sleeping' => {
+  const hour = new Date().getHours();
+  if (hour >= 22 || hour < 7) return 'sleeping';
+  if (hour >= 9 && hour < 18) return 'available';
+  return 'busy';
+};
+
+const STATUS_COLORS = {
+  available: Colors.statusAvailable,
+  busy: Colors.statusBusy,
+  sleeping: Colors.statusSleeping,
+};
+
+const STATUS_LABELS = {
+  available: 'Available',
+  busy: 'Busy',
+  sleeping: 'Sleeping',
+};
+
+// ── Simple land texture (placeholder until GeoJSON in Phase 3) ──
+const createLandTexture = (): THREE.Texture | null => {
+  try {
+    const size = 512;
+    const data = new Uint8Array(size * size);
+
+    const continents = [
+      // North America
+      { cx: 0.18, cy: 0.38, rx: 0.1, ry: 0.14 },
+      // South America
+      { cx: 0.22, cy: 0.62, rx: 0.065, ry: 0.13 },
+      // Europe
+      { cx: 0.52, cy: 0.33, rx: 0.055, ry: 0.08 },
+      // Africa
+      { cx: 0.53, cy: 0.55, rx: 0.075, ry: 0.14 },
+      // Asia
+      { cx: 0.68, cy: 0.35, rx: 0.18, ry: 0.12 },
+      // Australia
+      { cx: 0.78, cy: 0.65, rx: 0.07, ry: 0.06 },
+      // Greenland
+      { cx: 0.29, cy: 0.2, rx: 0.04, ry: 0.05 },
+    ];
+
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const nx = x / size;
+        const ny = y / size;
+        let isLand = false;
+        for (const c of continents) {
+          const dx = (nx - c.cx) / c.rx;
+          const dy = (ny - c.cy) / c.ry;
+          if (dx * dx + dy * dy < 1) {
+            isLand = true;
+            break;
+          }
+        }
+        data[y * size + x] = isLand ? 255 : 0;
+      }
+    }
+
+    const texture = new THREE.DataTexture(data, size, size, THREE.RedFormat);
+    texture.needsUpdate = true;
+    return texture;
+  } catch {
+    return null;
+  }
+};
+
+// ── Globe renderer ────────────────────────────────────
+const useGlobe = () => {
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+  const sceneRef = useRef<THREE.Scene | null>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const earthRef = useRef<THREE.Mesh | null>(null);
+  const landRef = useRef<THREE.Mesh | null>(null);
+  const animFrameRef = useRef<number>(0);
+  const rotationRef = useRef({ x: 0.2, y: 0 });
+  const autoSpinRef = useRef(true);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onContextCreate = useCallback((gl: any) => {
+    const renderer = new THREE.WebGLRenderer({
+      context: gl,
+      antialias: true,
+    });
+    renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
+    renderer.setPixelRatio(1);
+    rendererRef.current = renderer;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#0F1F2E');
+    sceneRef.current = scene;
+
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      gl.drawingBufferWidth / gl.drawingBufferHeight,
+      0.1,
+      1000
+    );
+    camera.position.z = 2.8;
+    cameraRef.current = camera;
+
+    // ── Stars ──
+    const starGeometry = new THREE.BufferGeometry();
+    const starCount = 1500;
+    const starPositions = new Float32Array(starCount * 3);
+    for (let i = 0; i < starCount * 3; i++) {
+      starPositions[i] = (Math.random() - 0.5) * 100;
+    }
+    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    const starMaterial = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 0.08,
+      transparent: true,
+      opacity: 0.7,
+    });
+    scene.add(new THREE.Points(starGeometry, starMaterial));
+
+    // ── Ocean ──
+    const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
+    const oceanMaterial = new THREE.MeshPhongMaterial({
+      color: new THREE.Color('#0d2b5e'),
+      shininess: 60,
+      specular: new THREE.Color('#1a4a8a'),
+    });
+    const ocean = new THREE.Mesh(earthGeometry, oceanMaterial);
+    scene.add(ocean);
+    earthRef.current = ocean;
+
+    // ── Land ──
+    const landGeometry = new THREE.SphereGeometry(1.001, 64, 64);
+    const landMaterial = new THREE.MeshPhongMaterial({
+      color: new THREE.Color('#2d6b2a'),
+      transparent: true,
+      opacity: 0.85,
+    });
+    const landTexture = createLandTexture();
+    if (landTexture) {
+      landMaterial.alphaMap = landTexture;
+    }
+    const land = new THREE.Mesh(landGeometry, landMaterial);
+    scene.add(land);
+    landRef.current = land;
+
+    // ── Atmosphere ──
+    const atmosphereGeometry = new THREE.SphereGeometry(1.15, 64, 64);
+    const atmosphereMaterial = new THREE.MeshPhongMaterial({
+      color: new THREE.Color('#4488ff'),
+      transparent: true,
+      opacity: 0.08,
+      side: THREE.FrontSide,
+    });
+    scene.add(new THREE.Mesh(atmosphereGeometry, atmosphereMaterial));
+
+    const outerAtmosphereGeometry = new THREE.SphereGeometry(1.25, 64, 64);
+    const outerAtmosphereMaterial = new THREE.MeshPhongMaterial({
+      color: new THREE.Color('#2255cc'),
+      transparent: true,
+      opacity: 0.04,
+      side: THREE.FrontSide,
+    });
+    scene.add(new THREE.Mesh(outerAtmosphereGeometry, outerAtmosphereMaterial));
+
+    // ── Lighting ──
+    scene.add(new THREE.AmbientLight(0x333355, 0.8));
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    sunLight.position.set(5, 3, 5);
+    scene.add(sunLight);
+    const fillLight = new THREE.DirectionalLight(0x334466, 0.3);
+    fillLight.position.set(-5, -3, -5);
+    scene.add(fillLight);
+
+    // ── Animation loop ──
+    const animate = () => {
+      animFrameRef.current = requestAnimationFrame(animate);
+
+      if (autoSpinRef.current) {
+        rotationRef.current.y += 0.002;
+      }
+
+      ocean.rotation.x = rotationRef.current.x;
+      ocean.rotation.y = rotationRef.current.y;
+      land.rotation.x = rotationRef.current.x;
+      land.rotation.y = rotationRef.current.y;
+
+      renderer.render(scene, camera);
+      gl.endFrameEXP();
+    };
+    animate();
+  }, []);
+
+  const handleRotate = useCallback((dx: number, dy: number) => {
+    autoSpinRef.current = false;
+    rotationRef.current.y += dx * 0.008;
+    rotationRef.current.x += dy * 0.008;
+    rotationRef.current.x = Math.max(-1.2, Math.min(1.2, rotationRef.current.x));
+
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      autoSpinRef.current = true;
+    }, 3000);
+  }, []);
+
+  const cleanup = useCallback(() => {
+    cancelAnimationFrame(animFrameRef.current);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    rendererRef.current?.dispose();
+  }, []);
+
+  return { onContextCreate, handleRotate, cleanup };
+};
+
+// ── Connection list item ───────────────────────────────
+const ConnectionListItem = ({ item }: { item: any }) => {
+  const displayName = item.connectedUser?.displayName ?? 'Unknown';
+  const avatarColour = item.connectedUser?.avatarColour ?? Colors.terracotta;
+  const city = item.connectedUser?.city ?? '';
+  const status = getStatus();
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.globe}>
-        <Text style={styles.globeLabel}>Globe</Text>
-        <Text style={styles.globeSub}>
-          Three.js / react-three-fiber{'\n'}renders here in Phase 2
+    <TouchableOpacity
+      style={styles.connectionItem}
+      onPress={() => router.push(`/person/${item.id}`)}
+      activeOpacity={0.85}
+    >
+      <View style={[styles.connectionAvatar, { backgroundColor: avatarColour }]}>
+        <Text style={styles.connectionAvatarText}>
+          {displayName.charAt(0).toUpperCase()}
+        </Text>
+        <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[status] }]} />
+      </View>
+      <View style={styles.connectionInfo}>
+        <Text style={styles.connectionName}>{displayName}</Text>
+        {city ? <Text style={styles.connectionCity}>{city}</Text> : null}
+      </View>
+      <View style={[styles.statusBadge, { borderColor: STATUS_COLORS[status] + '44' }]}>
+        <View style={[styles.statusDotSmall, { backgroundColor: STATUS_COLORS[status] }]} />
+        <Text style={[styles.statusLabel, { color: STATUS_COLORS[status] }]}>
+          {STATUS_LABELS[status]}
         </Text>
       </View>
+    </TouchableOpacity>
+  );
+};
+
+// ── Globe screen ───────────────────────────────────────
+export default function GlobeScreen() {
+  const { onContextCreate, handleRotate, cleanup } = useGlobe();
+  const { data: connections = [], isLoading } = useConnections();
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderMove: (_, gestureState) => {
+        handleRotate(gestureState.dx, gestureState.dy);
+      },
+    })
+  ).current;
+
+  useEffect(() => {
+    return () => cleanup();
+  }, []);
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+      >
+        {/* Globe */}
+        <View
+          style={styles.globeWrap}
+          {...panResponder.panHandlers}
+        >
+          <GLView
+            style={styles.glView}
+            onContextCreate={onContextCreate}
+          />
+
+          {/* Title overlay */}
+          <View style={styles.globeOverlay}>
+            <Text style={styles.globeTitle}>Globe</Text>
+          </View>
+        </View>
+
+        {/* Connection list */}
+        <View style={styles.listWrap}>
+          <Text style={styles.listLabel}>
+            Your circle · {connections.length} {connections.length === 1 ? 'person' : 'people'}
+          </Text>
+
+          {isLoading && (
+            <ActivityIndicator color={Colors.terracotta} style={{ marginTop: Spacing.lg }} />
+          )}
+
+          {!isLoading && connections.length === 0 && (
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>No connections yet.</Text>
+              <Text style={styles.emptySub}>Add people from Connect.</Text>
+            </View>
+          )}
+
+          {connections.map((c: any) => (
+            <ConnectionListItem key={c.id} item={c} />
+          ))}
+        </View>
+
+        <View style={{ height: 100 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.globeBackground },
-  globe: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  globeLabel: {
+
+  // Globe
+  globeWrap: {
+    width: SCREEN_WIDTH,
+    height: GLOBE_HEIGHT,
+    backgroundColor: Colors.globeBackground,
+  },
+  glView: {
+    width: SCREEN_WIDTH,
+    height: GLOBE_HEIGHT,
+  },
+  globeOverlay: {
+    position: 'absolute',
+    top: Spacing.lg,
+    left: Spacing.lg,
+  },
+  globeTitle: {
     fontSize: Typography.heading.lg,
     fontFamily: Typography.fontFamily,
-    color: '#fff',
     fontWeight: '700',
+    color: Colors.white,
+    opacity: 0.9,
   },
-  globeSub: {
+
+  // Connection list
+  listWrap: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: Spacing.lg,
+    marginTop: -24,
+    minHeight: 300,
+  },
+  listLabel: {
+    fontSize: Typography.label,
+    color: Colors.terracotta,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontFamily: Typography.fontFamily,
+    marginBottom: Spacing.md,
+  },
+
+  // Connection item
+  connectionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+    gap: Spacing.md,
+  },
+  connectionAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  connectionAvatarText: { fontSize: 16, color: Colors.white, fontWeight: '600' },
+  statusDot: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: Colors.background,
+  },
+  connectionInfo: { flex: 1 },
+  connectionName: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+  },
+  connectionCity: {
+    fontSize: 12,
+    color: Colors.textLight,
+    marginTop: 2,
+    fontFamily: Typography.fontFamily,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.pill,
+    borderWidth: 0.5,
+  },
+  statusDotSmall: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  statusLabel: {
+    fontSize: 11,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+  },
+
+  // Empty
+  empty: { alignItems: 'center', paddingTop: Spacing.xl },
+  emptyText: {
+    fontSize: Typography.body,
+    color: Colors.textDark,
+    fontFamily: Typography.fontFamily,
+  },
+  emptySub: {
     fontSize: 13,
-    color: 'rgba(255,255,255,0.5)',
-    textAlign: 'center',
-    marginTop: Spacing.sm,
-    lineHeight: 20,
+    color: Colors.textLight,
+    marginTop: 4,
+    fontFamily: Typography.fontFamily,
   },
 });
