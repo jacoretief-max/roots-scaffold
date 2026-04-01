@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack, router } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, AppState } from 'react-native';
 import { useAuthStore } from '@/store/authStore';
 import { Colors } from '@/constants/theme';
 
@@ -52,9 +52,24 @@ function RootNavigator() {
 
 export default function RootLayout() {
   const loadTokensFromStorage = useAuthStore((s) => s.loadTokensFromStorage);
+  const ensureFreshToken = useAuthStore((s) => s.ensureFreshToken);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
     loadTokensFromStorage();
+  }, []);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        ensureFreshToken();
+      }
+      appState.current = nextAppState;
+    });
+    return () => subscription.remove();
   }, []);
 
   return (
