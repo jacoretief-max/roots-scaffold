@@ -306,6 +306,23 @@ app.post('/api/memories/:id/entries', requireAuth, async (req, res) => {
   res.status(201).json({ data: entry });
 });
 
+// PATCH /api/memories/:eventId/entries/:entryId
+app.patch('/api/memories/:eventId/entries/:entryId', requireAuth, async (req, res) => {
+  const { text } = req.body;
+  if (!text?.trim()) return res.status(400).json({ error: 'Text required' });
+
+  const { rows: [entry] } = await db.query(
+    `UPDATE memory_entries
+     SET text = $1
+     WHERE id = $2 AND author_id = $3
+     RETURNING *`,
+    [text.trim(), req.params.entryId, req.userId]
+  );
+
+  if (!entry) return res.status(404).json({ error: 'Entry not found or not yours' });
+  res.json({ data: entry });
+});
+
 // ── Media presign (stub — replace with real AWS S3 presign) ──
 app.post('/api/media/presign', requireAuth, async (req, res) => {
   // TODO: replace with real AWS SDK presigned URL generation
