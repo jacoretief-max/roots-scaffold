@@ -191,7 +191,6 @@ export const useMe = () =>
 
 export const useUpdateProfile = () => {
   const qc = useQueryClient();
-  const { setUser } = useAuthStore.getState();
   return useMutation({
     mutationFn: async (payload: {
       displayName?: string;
@@ -204,7 +203,6 @@ export const useUpdateProfile = () => {
       return data.data;
     },
     onSuccess: (user) => {
-      console.log('PROFILE UPDATE RESPONSE:', JSON.stringify(user));
       useAuthStore.getState().setUser(user);
       qc.invalidateQueries({ queryKey: QueryKeys.me });
     },
@@ -226,16 +224,13 @@ export const useChangePassword = () =>
 export const useUploadPhoto = () =>
   useMutation({
     mutationFn: async (localUri: string): Promise<string> => {
-      console.log('UPLOAD START:', localUri);
       const base64 = await FileSystem.readAsStringAsync(localUri, {
         encoding: 'base64' as any,
       });
-      console.log('BASE64 LENGTH:', base64.length);
       const { data } = await api.post('/media/upload', {
         base64,
         contentType: 'image/jpeg',
       });
-      console.log('UPLOAD RESPONSE:', JSON.stringify(data));
       return data.data.publicUrl;
     },
   });
