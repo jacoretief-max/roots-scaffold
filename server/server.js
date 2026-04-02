@@ -9,6 +9,15 @@ const { Pool } = require('pg');
 const redis = require('redis');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const multer = require('multer');
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => {
+    cb(null, file.mimetype.startsWith('image/'));
+  },
+});
 
 const app = express();
 app.use(express.json({ limit: '10mb' }));
@@ -227,6 +236,31 @@ app.patch('/api/users/me/password', requireAuth, async (req, res) => {
   const hash = await bcrypt.hash(newPassword, 12);
   await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.userId]);
   res.json({ data: { ok: true } });
+});
+
+// POST /api/users/me/photo — multipart avatar upload
+app.post('/api/users/me/photo', requireAuth, upload.single('photo'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file' });
+  const { buffer, mimetype } = req.file;
+  await db.query(
+    'UPDATE users SET avatar_data = $1, avatar_mime = $2 WHERE id = $3',
+    [buffer, mimetype, req.userId]
+  );
+  const avatarUrl = `/api/users/${req.userId}/photo`;
+  await db.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [avatarUrl, req.userId]);
+  res.json({ avatarUrl });
+});
+
+// GET /api/users/:id/photo — serve avatar image (no auth required)
+app.get('/api/users/:id/photo', async (req, res) => {
+  const { rows: [row] } = await db.query(
+    'SELECT avatar_data, avatar_mime FROM users WHERE id = $1',
+    [req.params.id]
+  );
+  if (!row?.avatar_data) return res.status(404).send('No photo');
+  res.set('Content-Type', row.avatar_mime);
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.send(row.avatar_data);
 });
 
 // ── Connection routes ──────────────────────────────────

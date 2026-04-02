@@ -6,6 +6,7 @@ import {
 } from '@/types';
 import { useAuthStore } from '@/store/authStore';
 import * as FileSystem from 'expo-file-system/legacy';
+import { BASE_URL } from './client';
 
 // ── Query keys ─────────────────────────────────────────
 export const QueryKeys = {
@@ -221,16 +222,23 @@ export const useChangePassword = () =>
   });
 
 // ── Media upload (presigned S3) ────────────────────────
-export const useUploadPhoto = () =>
-  useMutation({
-    mutationFn: async (localUri: string): Promise<string> => {
-      const base64 = await FileSystem.readAsStringAsync(localUri, {
-        encoding: 'base64' as any,
+export const useUploadPhoto = () => {
+  const { setUser } = useAuthStore();
+  return useMutation({
+    mutationFn: async (imageUri: string): Promise<string> => {
+      const formData = new FormData();
+      formData.append('photo', {
+        uri: imageUri,
+        name: 'avatar.jpg',
+        type: 'image/jpeg',
+      } as any);
+      const response = await api.post('/users/me/photo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-      const { data } = await api.post('/media/upload', {
-        base64,
-        contentType: 'image/jpeg',
-      });
-      return data.data.publicUrl;
+      return response.data.avatarUrl as string;
+    },
+    onSuccess: (avatarUrl) => {
+      setUser((prev: any) => ({ ...prev, avatarUrl }));
     },
   });
+};

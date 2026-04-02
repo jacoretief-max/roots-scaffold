@@ -8,6 +8,7 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '@/store/authStore';
 import { useUpdateProfile, useUploadPhoto } from '@/api/hooks';
+import { BASE_URL } from '@/api/client';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 const AVATAR_COLORS = [
@@ -30,6 +31,12 @@ export default function PersonaliseScreen() {
 
   const hasChanges = selectedColour !== user?.avatarColour || avatarUri !== null;
 
+  const resolvedAvatarUrl = user?.avatarUrl?.startsWith('http')
+    ? user.avatarUrl
+    : user?.avatarUrl
+    ? `${BASE_URL.replace('/api', '')}${user.avatarUrl}`
+    : null;
+
   const handlePickPhoto = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
@@ -50,9 +57,9 @@ export default function PersonaliseScreen() {
   const handleSave = () => {
     if (avatarUri) {
       uploadPhoto(avatarUri, {
-        onSuccess: (publicUrl) => {
+        onSuccess: () => {
           updateProfile(
-            { avatarColour: selectedColour, avatarUrl: publicUrl },
+            { avatarColour: selectedColour },
             {
               onSuccess: () => { Alert.alert('Saved', 'Your profile has been updated.'); router.back(); },
               onError: () => Alert.alert('Error', 'Failed to save. Please try again.'),
@@ -94,8 +101,8 @@ export default function PersonaliseScreen() {
 
         {/* Avatar preview */}
         <View style={styles.previewWrap}>
-          {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+          {(avatarUri || resolvedAvatarUrl) ? (
+            <Image source={{ uri: avatarUri ?? resolvedAvatarUrl! }} style={styles.avatarImage} />
           ) : (
             <View style={[styles.avatarPreview, { backgroundColor: selectedColour }]}>
               <Text style={styles.avatarPreviewText}>

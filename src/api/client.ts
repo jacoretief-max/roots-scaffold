@@ -6,7 +6,7 @@ import { AuthTokens } from '@/types';
 // Set your API base URL here. During development, use your
 // local machine's IP (not localhost — device can't reach that).
 // In production, replace with your deployed API URL.
-const BASE_URL = 'https://roots-scaffold-production.up.railway.app/api';
+export const BASE_URL = 'https://roots-scaffold-production.up.railway.app/api';
 
 const TOKEN_KEY = 'roots_auth_tokens';
 

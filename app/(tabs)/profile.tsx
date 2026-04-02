@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Alert, Image, ScrollView } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
+import { BASE_URL } from '@/api/client';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 import dayjs from 'dayjs';
 
@@ -48,7 +49,11 @@ export default function ProfileScreen() {
     ]);
   };
 
-  console.log('USER IN PROFILE:', JSON.stringify(user));
+  const resolvedAvatarUrl = user?.avatarUrl?.startsWith('http')
+    ? user.avatarUrl
+    : user?.avatarUrl
+    ? `${BASE_URL.replace('/api', '')}${user.avatarUrl}`
+    : null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -59,9 +64,9 @@ export default function ProfileScreen() {
           onPress={() => router.push('/profile/personalise')}
           activeOpacity={0.85}
         >
-          {(user as any)?.avatarUrl ? (
+          {resolvedAvatarUrl ? (
             <Image
-              source={{ uri: (user as any).avatarUrl }}
+              source={{ uri: resolvedAvatarUrl }}
               style={styles.avatarImage}
             />
           ) : (
