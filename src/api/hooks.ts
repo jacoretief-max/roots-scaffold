@@ -177,6 +177,20 @@ export const useUpdateConnection = () => {
   });
 };
 
+// Log contact
+export const useLogContact = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (connectionId: string) => {
+      const { data } = await api.post(`/connections/${connectionId}/log-contact`);
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QueryKeys.connections });
+    },
+  });
+};
+
 // ── Current user ───────────────────────────────────────
 export const useMe = () =>
   useQuery({

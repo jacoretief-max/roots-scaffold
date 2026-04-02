@@ -327,6 +327,36 @@ app.get('/api/connections', requireAuth, async (req, res) => {
   res.json({ data: rows });
 });
 
+// GET /api/connections/:id
+app.get('/api/connections/:id', requireAuth, async (req, res) => {
+  const { rows: [c] } = await db.query(
+    `SELECT
+       c.id,
+       c.user_id as "userId",
+       c.connected_user_id as "connectedUserId",
+       c.relation,
+       c.layer,
+       c.since,
+       c.contact_frequency as "contactFrequency",
+       c.score,
+       c.last_contact_at as "lastContactAt",
+       c.nudge,
+       to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
+       json_build_object(
+         'id', u.id,
+         'displayName', u.display_name,
+         'avatarColour', u.avatar_colour,
+         'city', u.city
+       ) as "connectedUser"
+     FROM connections c
+     JOIN users u ON u.id = c.connected_user_id
+     WHERE c.id = $1 AND c.user_id = $2`,
+    [req.params.id, req.userId]
+  );
+  if (!c) return res.status(404).json({ error: 'Connection not found' });
+  res.json({ data: c });
+});
+
 // GET /api/users/search?q=name
 // Search all Roots users (excluding self + existing connections)
 app.get('/api/users/search', requireAuth, async (req, res) => {
@@ -407,6 +437,20 @@ app.patch('/api/connections/:id', requireAuth, async (req, res) => {
      WHERE id = $4 AND user_id = $5
      RETURNING *`,
     [layer, relation, contactFrequency, req.params.id, req.userId]
+  );
+  if (!connection) return res.status(404).json({ error: 'Connection not found' });
+  res.json({ data: connection });
+});
+
+// POST /api/connections/:id/log-contact
+app.post('/api/connections/:id/log-contact', requireAuth, async (req, res) => {
+  const { rows: [connection] } = await db.query(
+    `UPDATE connections
+     SET last_contact_at = NOW(),
+         score = LEAST(100, score + 5)
+     WHERE id = $1 AND user_id = $2
+     RETURNING *`,
+    [req.params.id, req.userId]
   );
   if (!connection) return res.status(404).json({ error: 'Connection not found' });
   res.json({ data: connection });
