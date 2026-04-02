@@ -174,6 +174,40 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
   res.json({ data: rows[0] });
 });
 
+// PATCH /api/users/me — update profile
+app.patch('/api/users/me', requireAuth, async (req, res) => {
+  const { displayName, city, avatarColour, avatarUrl, phoneNumber } = req.body;
+  const { rows: [user] } = await db.query(
+    `UPDATE users SET
+       display_name    = COALESCE($1, display_name),
+       city            = COALESCE($2, city),
+       avatar_colour   = COALESCE($3, avatar_colour),
+       avatar_url      = COALESCE($4, avatar_url),
+       phone_number    = COALESCE($5, phone_number)
+     WHERE id = $6
+     RETURNING id, display_name, email, phone_number, avatar_colour,
+               avatar_url, date_of_birth, city, lat, lng, settings, created_at`,
+    [displayName, city, avatarColour, avatarUrl, phoneNumber, req.userId]
+  );
+  res.json({ data: user });
+});
+
+// PATCH /api/users/me/password
+app.patch('/api/users/me/password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Both passwords required' });
+  }
+  const { rows: [user] } = await db.query(
+    'SELECT * FROM users WHERE id = $1', [req.userId]
+  );
+  const valid = await bcrypt.compare(currentPassword, user.password_hash);
+  if (!valid) return res.status(401).json({ error: 'Current password incorrect' });
+  const hash = await bcrypt.hash(newPassword, 12);
+  await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.userId]);
+  res.json({ data: { ok: true } });
+});
+
 // ── Connection routes ──────────────────────────────────
 
 // GET /api/connections/search?q=name
