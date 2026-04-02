@@ -184,7 +184,7 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
 // PATCH /api/users/me — update profile
 app.patch('/api/users/me', requireAuth, async (req, res) => {
   const { displayName, city, avatarColour, avatarUrl, phoneNumber } = req.body;
-  const { rows: [user] } = await db.query(
+  const { rows: [u] } = await db.query(
     `UPDATE users SET
        display_name    = COALESCE($1, display_name),
        city            = COALESCE($2, city),
@@ -196,7 +196,20 @@ app.patch('/api/users/me', requireAuth, async (req, res) => {
                avatar_url, date_of_birth, city, lat, lng, settings, created_at`,
     [displayName, city, avatarColour, avatarUrl, phoneNumber, req.userId]
   );
-  res.json({ data: user });
+  res.json({ data: {
+    id: u.id,
+    displayName: u.display_name,
+    email: u.email,
+    phoneNumber: u.phone_number,
+    avatarColour: u.avatar_colour,
+    avatarUrl: u.avatar_url,
+    dateOfBirth: u.date_of_birth,
+    city: u.city,
+    lat: u.lat,
+    lng: u.lng,
+    settings: u.settings,
+    createdAt: u.created_at,
+  }});
 });
 
 // PATCH /api/users/me/password
@@ -464,6 +477,22 @@ app.patch('/api/memories/:eventId/entries/:entryId', requireAuth, async (req, re
 
   if (!entry) return res.status(404).json({ error: 'Entry not found or not yours' });
   res.json({ data: entry });
+});
+
+// POST /api/media/upload — base64 image upload (dev only)
+// Replace with real S3 presign in production
+app.post('/api/media/upload', requireAuth, async (req, res) => {
+  const { base64, contentType } = req.body;
+  if (!base64) return res.status(400).json({ error: 'base64 required' });
+
+  const dataUrl = `data:${contentType ?? 'image/jpeg'};base64,${base64}`;
+
+  await db.query(
+    'UPDATE users SET avatar_url = $1 WHERE id = $2',
+    [dataUrl, req.userId]
+  );
+
+  res.json({ data: { publicUrl: dataUrl } });
 });
 
 // ── Media presign (stub — replace with real AWS S3 presign) ──

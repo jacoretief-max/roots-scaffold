@@ -203,7 +203,8 @@ export const useUpdateProfile = () => {
       return data.data;
     },
     onSuccess: (user) => {
-      setUser(user);
+      console.log('PROFILE UPDATE RESPONSE:', JSON.stringify(user));
+      useAuthStore.getState().setUser(user);
       qc.invalidateQueries({ queryKey: QueryKeys.me });
     },
   });
@@ -224,24 +225,14 @@ export const useChangePassword = () =>
 export const useUploadPhoto = () =>
   useMutation({
     mutationFn: async (localUri: string): Promise<string> => {
-      // Step 1: get presigned URL from our API
-      const { data } = await api.post<ApiResponse<{ uploadUrl: string; publicUrl: string }>>(
-        '/media/presign',
-        { contentType: 'image/jpeg' }
-      );
-      const { uploadUrl, publicUrl } = data.data;
-
-      // Step 2: upload directly to S3 — bypasses our API server
-      const blob = await fetch(localUri).then((r) => r.blob());
-      await fetch(uploadUrl, {
-        method: 'PUT',
-        body: blob,
-        headers: { 'Content-Type': 'image/jpeg' },
+      const FileSystem = await import('expo-file-system');
+      const base64 = await FileSystem.readAsStringAsync(localUri, {
+        encoding: FileSystem.EncodingType.Base64,
       });
-
-      // Step 3: confirm upload with our API
-      await api.post('/media/confirm', { publicUrl });
-
-      return publicUrl;
+      const { data } = await api.post('/media/upload', {
+        base64,
+        contentType: 'image/jpeg',
+      });
+      return data.data.publicUrl;
     },
   });
