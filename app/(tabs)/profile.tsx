@@ -48,6 +48,8 @@ export default function ProfileScreen() {
     ]);
   };
 
+  console.log('USER IN PROFILE:', JSON.stringify(user));
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Avatar + name header */}
