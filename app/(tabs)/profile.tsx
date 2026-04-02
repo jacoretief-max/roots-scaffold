@@ -112,7 +112,7 @@ export default function ProfileScreen() {
           />
           <SettingsRow
             label="Profile photo"
-            value="Upload a photo"
+            value="Coming in Phase 4"
             onPress={() => router.push('/profile/personalise')}
           />
         </View>

@@ -1,14 +1,12 @@
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, Image,
+  ScrollView, Alert, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '@/store/authStore';
-import { useUpdateProfile, useUploadPhoto } from '@/api/hooks';
-import { BASE_URL } from '@/api/client';
+import { useUpdateProfile } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 const AVATAR_COLORS = [
@@ -25,61 +23,19 @@ const AVATAR_COLORS = [
 export default function PersonaliseScreen() {
   const { user } = useAuthStore();
   const [selectedColour, setSelectedColour] = useState(user?.avatarColour ?? Colors.terracotta);
-  const [avatarUri, setAvatarUri] = useState<string | null>(null);
-  const { mutate: updateProfile, isPending: isSaving } = useUpdateProfile();
-  const { mutate: uploadPhoto, isPending: isUploading } = useUploadPhoto();
+  const { mutate: updateProfile, isPending } = useUpdateProfile();
 
-  const hasChanges = selectedColour !== user?.avatarColour || avatarUri !== null;
-
-  const resolvedAvatarUrl = user?.avatarUrl?.startsWith('http')
-    ? user.avatarUrl
-    : user?.avatarUrl
-    ? `${BASE_URL.replace('/api', '')}${user.avatarUrl}`
-    : null;
-
-  const handlePickPhoto = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please allow access to your photo library.');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setAvatarUri(result.assets[0].uri);
-    }
-  };
+  const hasChanges = selectedColour !== user?.avatarColour;
 
   const handleSave = () => {
-    if (avatarUri) {
-      uploadPhoto(avatarUri, {
-        onSuccess: () => {
-          updateProfile(
-            { avatarColour: selectedColour },
-            {
-              onSuccess: () => { Alert.alert('Saved', 'Your profile has been updated.'); router.back(); },
-              onError: () => Alert.alert('Error', 'Failed to save. Please try again.'),
-            }
-          );
-        },
-        onError: () => Alert.alert('Upload failed', 'Could not upload photo. Please try again.'),
-      });
-    } else {
-      updateProfile(
-        { avatarColour: selectedColour },
-        {
-          onSuccess: () => { Alert.alert('Saved', 'Your profile has been updated.'); router.back(); },
-          onError: () => Alert.alert('Error', 'Failed to save. Please try again.'),
-        }
-      );
-    }
+    updateProfile(
+      { avatarColour: selectedColour },
+      {
+        onSuccess: () => { Alert.alert('Saved', 'Your profile has been updated.'); router.back(); },
+        onError: () => Alert.alert('Error', 'Failed to save. Please try again.'),
+      }
+    );
   };
-
-  const isPending = isSaving || isUploading;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -99,25 +55,16 @@ export default function PersonaliseScreen() {
 
       <ScrollView style={styles.content}>
 
-        {/* Avatar preview */}
+        {/* Avatar preview — photo upload coming Phase 4 */}
         <View style={styles.previewWrap}>
-          {(avatarUri || resolvedAvatarUrl) ? (
-            <Image source={{ uri: avatarUri ?? resolvedAvatarUrl! }} style={styles.avatarImage} />
-          ) : (
-            <View style={[styles.avatarPreview, { backgroundColor: selectedColour }]}>
-              <Text style={styles.avatarPreviewText}>
-                {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
-              </Text>
-            </View>
-          )}
-          <TouchableOpacity style={styles.uploadBtn} onPress={handlePickPhoto}>
-            <Text style={styles.uploadBtnText}>Upload photo</Text>
-          </TouchableOpacity>
-          {avatarUri && (
-            <TouchableOpacity onPress={() => setAvatarUri(null)} style={styles.removePhoto}>
-              <Text style={styles.removePhotoText}>Remove photo</Text>
-            </TouchableOpacity>
-          )}
+          <View style={[styles.avatarPreview, { backgroundColor: selectedColour }]}>
+            <Text style={styles.avatarPreviewText}>
+              {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
+            </Text>
+          </View>
+          <View style={styles.comingSoonBadge}>
+            <Text style={styles.comingSoonText}>Photo upload · Phase 4</Text>
+          </View>
         </View>
 
         {/* Colour swatches */}
@@ -178,27 +125,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarPreviewText: { fontSize: 40, color: Colors.white, fontWeight: '700' },
-  avatarImage: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
+  comingSoonBadge: {
+    backgroundColor: Colors.tan,
+    borderRadius: BorderRadius.pill,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 4,
+    marginTop: Spacing.sm,
   },
-  uploadBtn: {
-    backgroundColor: Colors.card,
-    borderWidth: 0.5,
-    borderColor: Colors.tan,
-    borderRadius: BorderRadius.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-  },
-  uploadBtnText: {
-    fontSize: Typography.body,
-    color: Colors.terracotta,
-    fontWeight: '700',
+  comingSoonText: {
+    fontSize: 12,
+    color: Colors.textLight,
     fontFamily: Typography.fontFamily,
   },
-  removePhoto: { paddingVertical: Spacing.xs },
-  removePhotoText: { fontSize: 13, color: Colors.textLight, fontFamily: Typography.fontFamily },
 
   sectionLabel: {
     fontSize: Typography.label,

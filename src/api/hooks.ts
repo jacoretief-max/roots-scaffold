@@ -5,8 +5,6 @@ import {
   User, PaginatedResponse, ApiResponse
 } from '@/types';
 import { useAuthStore } from '@/store/authStore';
-import * as FileSystem from 'expo-file-system/legacy';
-import { BASE_URL } from './client';
 
 // ── Query keys ─────────────────────────────────────────
 export const QueryKeys = {
@@ -221,24 +219,3 @@ export const useChangePassword = () =>
     },
   });
 
-// ── Media upload (presigned S3) ────────────────────────
-export const useUploadPhoto = () => {
-  const { setUser } = useAuthStore();
-  return useMutation({
-    mutationFn: async (imageUri: string): Promise<string> => {
-      const formData = new FormData();
-      formData.append('photo', {
-        uri: imageUri,
-        name: 'avatar.jpg',
-        type: 'image/jpeg',
-      } as any);
-      const response = await api.post('/users/me/photo', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      return response.data.avatarUrl as string;
-    },
-    onSuccess: (avatarUrl) => {
-      setUser((prev: any) => ({ ...prev, avatarUrl }));
-    },
-  });
-};
