@@ -51,15 +51,22 @@ export default function PersonaliseScreen() {
     if (avatarUri) {
       uploadPhoto(avatarUri, {
         onSuccess: (publicUrl) => {
+          console.log('PHOTO URL:', publicUrl);
           updateProfile(
             { avatarColour: selectedColour, avatarUrl: publicUrl },
             {
               onSuccess: () => { Alert.alert('Saved', 'Your profile has been updated.'); router.back(); },
-              onError: () => Alert.alert('Error', 'Failed to save. Please try again.'),
+              onError: (err) => {
+                console.log('UPDATE ERROR:', JSON.stringify(err));
+                Alert.alert('Error', 'Failed to save. Please try again.');
+              },
             }
           );
         },
-        onError: () => Alert.alert('Upload failed', 'Could not upload photo. Please try again.'),
+        onError: (err) => {
+          console.log('UPLOAD FAILED:', JSON.stringify(err));
+          Alert.alert('Upload failed', 'Could not upload photo. Please try again.');
+        },
       });
     } else {
       updateProfile(

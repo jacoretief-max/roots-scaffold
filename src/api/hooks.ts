@@ -226,13 +226,21 @@ export const useChangePassword = () =>
 export const useUploadPhoto = () =>
   useMutation({
     mutationFn: async (localUri: string): Promise<string> => {
-      const base64 = await FileSystem.readAsStringAsync(localUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      const { data } = await api.post('/media/upload', {
-        base64,
-        contentType: 'image/jpeg',
-      });
-      return data.data.publicUrl;
+      console.log('UPLOAD START:', localUri);
+      try {
+        const base64 = await FileSystem.readAsStringAsync(localUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        console.log('BASE64 LENGTH:', base64.length);
+        const { data } = await api.post('/media/upload', {
+          base64,
+          contentType: 'image/jpeg',
+        });
+        console.log('UPLOAD RESPONSE:', JSON.stringify(data));
+        return data.data.publicUrl;
+      } catch (err) {
+        console.log('UPLOAD ERROR:', JSON.stringify(err));
+        throw err;
+      }
     },
   });
