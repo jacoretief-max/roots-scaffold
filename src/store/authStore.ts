@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import { User, AuthTokens } from '@/types';
 import api from '@/api/client';
@@ -29,17 +30,33 @@ export const useAuthStore = create<AuthState>((set) => ({
   setUser: (user) => set({ user, isAuthenticated: true }),
 
   setTokens: async (tokens) => {
-    await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(tokens));
+    try {
+      await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(tokens));
+    } catch {
+      // Fallback for Expo Go development
+      await AsyncStorage.setItem(TOKEN_KEY, JSON.stringify(tokens));
+    }
     set({ tokens });
   },
 
   logout: async () => {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
+    try {
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+    } catch {}
+    try {
+      await AsyncStorage.removeItem(TOKEN_KEY);
+    } catch {}
     set({ user: null, tokens: null, isAuthenticated: false });
   },
 
   ensureFreshToken: async () => {
-    const raw = await SecureStore.getItemAsync(TOKEN_KEY);
+    let raw = null;
+    try {
+      raw = await SecureStore.getItemAsync(TOKEN_KEY);
+    } catch {
+      raw = await AsyncStorage.getItem(TOKEN_KEY);
+    }
+    if (!raw) raw = await AsyncStorage.getItem(TOKEN_KEY);
     if (!raw) return;
 
     const tokens: AuthTokens = JSON.parse(raw);
@@ -57,11 +74,16 @@ export const useAuthStore = create<AuthState>((set) => ({
           refreshToken: data.data.refreshToken,
           expiresAt: Date.now() + 15 * 60 * 1000,
         };
-        await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(newTokens));
+        try {
+          await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(newTokens));
+        } catch {
+          await AsyncStorage.setItem(TOKEN_KEY, JSON.stringify(newTokens));
+        }
         set({ tokens: newTokens });
       } catch {
         // Refresh failed — log out
-        await SecureStore.deleteItemAsync(TOKEN_KEY);
+        try { await SecureStore.deleteItemAsync(TOKEN_KEY); } catch {}
+        try { await AsyncStorage.removeItem(TOKEN_KEY); } catch {}
         set({ user: null, tokens: null, isAuthenticated: false });
       }
     }
@@ -70,7 +92,16 @@ export const useAuthStore = create<AuthState>((set) => ({
   loadTokensFromStorage: async () => {
     console.log('LOADING TOKENS...');
     try {
-      const raw = await SecureStore.getItemAsync(TOKEN_KEY);
+      let raw = null;
+      try {
+        raw = await SecureStore.getItemAsync(TOKEN_KEY);
+      } catch {
+        raw = await AsyncStorage.getItem(TOKEN_KEY);
+      }
+      if (!raw) {
+        // Try AsyncStorage fallback
+        raw = await AsyncStorage.getItem(TOKEN_KEY);
+      }
       console.log('RAW TOKEN:', raw ? 'found' : 'not found');
       if (raw) {
         const tokens: AuthTokens = JSON.parse(raw);
@@ -81,7 +112,8 @@ export const useAuthStore = create<AuthState>((set) => ({
           set({ user: data.data, isAuthenticated: true, isLoading: false });
         } catch (err: any) {
           console.log('ME ERROR:', err?.message, err?.response?.status);
-          await SecureStore.deleteItemAsync(TOKEN_KEY);
+          try { await SecureStore.deleteItemAsync(TOKEN_KEY); } catch {}
+          try { await AsyncStorage.removeItem(TOKEN_KEY); } catch {}
           set({ isLoading: false });
         }
       } else {
