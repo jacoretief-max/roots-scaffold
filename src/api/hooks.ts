@@ -5,7 +5,7 @@ import {
   User, PaginatedResponse, ApiResponse
 } from '@/types';
 import { useAuthStore } from '@/store/authStore';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // ── Query keys ─────────────────────────────────────────
 export const QueryKeys = {
