@@ -4,6 +4,7 @@ import {
   MemoryEvent, MemoryEntry, Connection,
   User, PaginatedResponse, ApiResponse
 } from '@/types';
+import { useAuthStore } from '@/store/authStore';
 
 // ── Query keys ─────────────────────────────────────────
 export const QueryKeys = {
@@ -185,6 +186,38 @@ export const useMe = () =>
       return data.data;
     },
     staleTime: 1000 * 60 * 10,
+  });
+
+export const useUpdateProfile = () => {
+  const qc = useQueryClient();
+  const { setUser } = useAuthStore.getState();
+  return useMutation({
+    mutationFn: async (payload: {
+      displayName?: string;
+      city?: string;
+      avatarColour?: string;
+      avatarUrl?: string;
+      phoneNumber?: string;
+    }) => {
+      const { data } = await api.patch('/users/me', payload);
+      return data.data;
+    },
+    onSuccess: (user) => {
+      setUser(user);
+      qc.invalidateQueries({ queryKey: QueryKeys.me });
+    },
+  });
+};
+
+export const useChangePassword = () =>
+  useMutation({
+    mutationFn: async ({ currentPassword, newPassword }: {
+      currentPassword: string;
+      newPassword: string;
+    }) => {
+      const { data } = await api.patch('/users/me/password', { currentPassword, newPassword });
+      return data.data;
+    },
   });
 
 // ── Media upload (presigned S3) ────────────────────────
