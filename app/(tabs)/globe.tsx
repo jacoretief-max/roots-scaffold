@@ -1,249 +1,307 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, PanResponder, Dimensions,
-  ActivityIndicator,
+  TouchableOpacity, Dimensions, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { GLView } from 'expo-gl';
-import * as THREE from 'three';
-import { Renderer } from 'expo-three';
 import { router } from 'expo-router';
 import { useConnections } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const GLOBE_HEIGHT = SCREEN_WIDTH * 0.85;
-
-const CITY_TIMEZONES: Record<string, string> = {
-  'johannesburg': 'Africa/Johannesburg',
-  'cape town': 'Africa/Johannesburg',
-  'durban': 'Africa/Johannesburg',
-  'london': 'Europe/London',
-  'paris': 'Europe/Paris',
-  'berlin': 'Europe/Berlin',
-  'amsterdam': 'Europe/Amsterdam',
-  'new york': 'America/New_York',
-  'los angeles': 'America/Los_Angeles',
-  'chicago': 'America/Chicago',
-  'dubai': 'Asia/Dubai',
-  'singapore': 'Asia/Singapore',
-  'sydney': 'Australia/Sydney',
-  'melbourne': 'Australia/Melbourne',
-  'tokyo': 'Asia/Tokyo',
-  'mumbai': 'Asia/Kolkata',
-  'nairobi': 'Africa/Nairobi',
-  'toronto': 'America/Toronto',
-  'denver': 'America/Denver',
-  'aurora': 'America/Denver',
+// ── Timezone config ────────────────────────────────────
+const CITY_TIMEZONES: Record<string, { tz: string; region: string }> = {
+  // Africa
+  'johannesburg': { tz: 'Africa/Johannesburg', region: 'Africa' },
+  'cape town':    { tz: 'Africa/Johannesburg', region: 'Africa' },
+  'durban':       { tz: 'Africa/Johannesburg', region: 'Africa' },
+  'nairobi':      { tz: 'Africa/Nairobi',      region: 'Africa' },
+  'lagos':        { tz: 'Africa/Lagos',         region: 'Africa' },
+  'cairo':        { tz: 'Africa/Cairo',         region: 'Africa' },
+  // Europe
+  'london':       { tz: 'Europe/London',        region: 'Europe' },
+  'paris':        { tz: 'Europe/Paris',         region: 'Europe' },
+  'berlin':       { tz: 'Europe/Berlin',        region: 'Europe' },
+  'amsterdam':    { tz: 'Europe/Amsterdam',     region: 'Europe' },
+  'madrid':       { tz: 'Europe/Madrid',        region: 'Europe' },
+  'rome':         { tz: 'Europe/Rome',          region: 'Europe' },
+  'zurich':       { tz: 'Europe/Zurich',        region: 'Europe' },
+  'stockholm':    { tz: 'Europe/Stockholm',     region: 'Europe' },
+  // Americas
+  'new york':     { tz: 'America/New_York',     region: 'Americas' },
+  'los angeles':  { tz: 'America/Los_Angeles',  region: 'Americas' },
+  'chicago':      { tz: 'America/Chicago',      region: 'Americas' },
+  'toronto':      { tz: 'America/Toronto',      region: 'Americas' },
+  'denver':       { tz: 'America/Denver',       region: 'Americas' },
+  'aurora':       { tz: 'America/Denver',       region: 'Americas' },
+  'miami':        { tz: 'America/New_York',     region: 'Americas' },
+  'vancouver':    { tz: 'America/Vancouver',    region: 'Americas' },
+  'sao paulo':    { tz: 'America/Sao_Paulo',    region: 'Americas' },
+  'mexico city':  { tz: 'America/Mexico_City',  region: 'Americas' },
+  // Middle East & Asia
+  'dubai':        { tz: 'Asia/Dubai',           region: 'Middle East & Asia' },
+  'singapore':    { tz: 'Asia/Singapore',       region: 'Middle East & Asia' },
+  'tokyo':        { tz: 'Asia/Tokyo',           region: 'Middle East & Asia' },
+  'mumbai':       { tz: 'Asia/Kolkata',         region: 'Middle East & Asia' },
+  'delhi':        { tz: 'Asia/Kolkata',         region: 'Middle East & Asia' },
+  'hong kong':    { tz: 'Asia/Hong_Kong',       region: 'Middle East & Asia' },
+  'shanghai':     { tz: 'Asia/Shanghai',        region: 'Middle East & Asia' },
+  'seoul':        { tz: 'Asia/Seoul',           region: 'Middle East & Asia' },
+  'istanbul':     { tz: 'Europe/Istanbul',      region: 'Middle East & Asia' },
+  // Oceania
+  'sydney':       { tz: 'Australia/Sydney',     region: 'Oceania' },
+  'melbourne':    { tz: 'Australia/Melbourne',  region: 'Oceania' },
+  'auckland':     { tz: 'Pacific/Auckland',     region: 'Oceania' },
 };
 
-const getTimezone = (city?: string): string => {
-  if (!city) return 'UTC';
-  return CITY_TIMEZONES[city.toLowerCase().trim()] ?? 'UTC';
+const REGION_ORDER = ['Africa', 'Europe', 'Americas', 'Middle East & Asia', 'Oceania'];
+
+const getCityInfo = (city?: string) => {
+  if (!city) return { tz: 'UTC', region: 'Unknown' };
+  return CITY_TIMEZONES[city.toLowerCase().trim()] ?? { tz: 'UTC', region: 'Unknown' };
 };
 
 const getLocalTime = (city?: string) => {
-  const tz = getTimezone(city);
+  const { tz } = getCityInfo(city);
   try {
     const now = new Date();
-    const time = now.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
-    const hourStr = now.toLocaleString('en-GB', { timeZone: tz, hour: '2-digit', hour12: false });
+    const time = now.toLocaleTimeString('en-GB', {
+      timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    const hourStr = now.toLocaleString('en-GB', {
+      timeZone: tz, hour: '2-digit', hour12: false,
+    });
     const hour = parseInt(hourStr, 10);
-    const status = hour >= 22 || hour < 7 ? 'sleeping' : hour >= 9 && hour < 18 ? 'available' : 'busy';
-    return { time, status };
+    const status =
+      hour >= 22 || hour < 7 ? 'sleeping'
+      : hour >= 9 && hour < 18 ? 'available'
+      : 'busy';
+    return { time, hour, status };
   } catch {
-    return { time: '--:--', status: 'available' as const };
+    return { time: '--:--', hour: 12, status: 'available' as const };
   }
 };
 
-const STATUS_COLORS = { available: Colors.statusAvailable, busy: Colors.statusBusy, sleeping: Colors.statusSleeping };
-const STATUS_LABELS = { available: 'Available', busy: 'Busy', sleeping: 'Sleeping' };
+// ── Time of day bar ────────────────────────────────────
+const TimeOfDayBar = ({ hour }: { hour: number }) => {
+  const pct = (hour / 24) * 100;
+  const isDay = hour >= 6 && hour < 20;
+  const barColor = isDay ? '#EF9F27' : '#3C3489';
 
-const useGlobe = () => {
-  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-  const animFrameRef = useRef<number>(0);
-  const rotationRef = useRef({ x: 0.15, y: 0 });
-  const autoSpinRef = useRef(true);
-  const objectsRef = useRef<THREE.Object3D[]>([]);
-
-  const onContextCreate = (gl: any) => {
-    const renderer = new Renderer({ gl });
-    renderer.setSize(gl.drawingBufferWidth, gl.drawingBufferHeight);
-    rendererRef.current = renderer;
-
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color('#0F1F2E');
-
-    const camera = new THREE.PerspectiveCamera(45, gl.drawingBufferWidth / gl.drawingBufferHeight, 0.1, 1000);
-    camera.position.z = 2.8;
-
-    // Stars
-    const starPos = new Float32Array(2000 * 3);
-    for (let i = 0; i < 2000 * 3; i++) starPos[i] = (Math.random() - 0.5) * 120;
-    const starGeo = new THREE.BufferGeometry();
-    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-    scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xffffff, size: 0.06, transparent: true, opacity: 0.6 })));
-
-    // Earth sphere
-    const sphere = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 48, 48),
-      new THREE.MeshPhongMaterial({ color: new THREE.Color('#0a1628'), shininess: 20, specular: new THREE.Color('#1a3a6a') })
-    );
-    scene.add(sphere);
-    objectsRef.current.push(sphere);
-
-    // Latitude lines
-    const latMat = new THREE.LineBasicMaterial({ color: 0x1a4a8a, transparent: true, opacity: 0.35 });
-    [-60, -30, 0, 30, 60].forEach(lat => {
-      const pts: THREE.Vector3[] = [];
-      const phi = (90 - lat) * (Math.PI / 180);
-      for (let lng = 0; lng <= 360; lng += 3) {
-        const theta = lng * (Math.PI / 180);
-        pts.push(new THREE.Vector3(1.01 * Math.sin(phi) * Math.cos(theta), 1.01 * Math.cos(phi), 1.01 * Math.sin(phi) * Math.sin(theta)));
-      }
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), latMat);
-      scene.add(line);
-      objectsRef.current.push(line);
-    });
-
-    // Longitude lines
-    const lngMat = new THREE.LineBasicMaterial({ color: 0x1a4a8a, transparent: true, opacity: 0.2 });
-    for (let lng = 0; lng < 360; lng += 30) {
-      const pts: THREE.Vector3[] = [];
-      const theta = lng * (Math.PI / 180);
-      for (let lat = -90; lat <= 90; lat += 3) {
-        const phi = (90 - lat) * (Math.PI / 180);
-        pts.push(new THREE.Vector3(1.01 * Math.sin(phi) * Math.cos(theta), 1.01 * Math.cos(phi), 1.01 * Math.sin(phi) * Math.sin(theta)));
-      }
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), lngMat);
-      scene.add(line);
-      objectsRef.current.push(line);
-    }
-
-    // Equator highlight
-    const eqPts: THREE.Vector3[] = [];
-    for (let lng = 0; lng <= 360; lng += 2) {
-      const t = lng * (Math.PI / 180);
-      eqPts.push(new THREE.Vector3(1.015 * Math.cos(t), 0, 1.015 * Math.sin(t)));
-    }
-    const eq = new THREE.Line(new THREE.BufferGeometry().setFromPoints(eqPts), new THREE.LineBasicMaterial({ color: 0xC45A3A, transparent: true, opacity: 0.5 }));
-    scene.add(eq);
-    objectsRef.current.push(eq);
-
-    // Atmosphere
-    scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.12, 32, 32), new THREE.MeshPhongMaterial({ color: new THREE.Color('#3366cc'), transparent: true, opacity: 0.06, side: THREE.FrontSide })));
-
-    // Lighting
-    scene.add(new THREE.AmbientLight(0x334466, 1.2));
-    const sun = new THREE.DirectionalLight(0xffffff, 0.8);
-    sun.position.set(5, 3, 5);
-    scene.add(sun);
-
-    const animate = () => {
-      animFrameRef.current = requestAnimationFrame(animate);
-      if (autoSpinRef.current) rotationRef.current.y += 0.003;
-      objectsRef.current.forEach(o => { o.rotation.x = rotationRef.current.x; o.rotation.y = rotationRef.current.y; });
-      renderer.render(scene, camera);
-      gl.endFrameEXP();
-    };
-    animate();
-  };
-
-  const handleRotate = (dx: number, dy: number) => {
-    autoSpinRef.current = false;
-    rotationRef.current.y += dx * 0.008;
-    rotationRef.current.x = Math.max(-1.2, Math.min(1.2, rotationRef.current.x + dy * 0.008));
-    clearTimeout((handleRotate as any)._t);
-    (handleRotate as any)._t = setTimeout(() => { autoSpinRef.current = true; }, 3000);
-  };
-
-  const cleanup = () => { cancelAnimationFrame(animFrameRef.current); rendererRef.current?.dispose(); };
-
-  return { onContextCreate, handleRotate, cleanup };
+  return (
+    <View style={styles.timeBar}>
+      <View style={styles.timeBarBg}>
+        <View style={[styles.timeBarFill, { width: `${pct}%` as any, backgroundColor: barColor }]} />
+        <View style={[styles.timeBarMarker, { left: `${pct}%` as any, backgroundColor: barColor }]} />
+      </View>
+    </View>
+  );
 };
 
-const ConnectionItem = ({ item }: { item: any }) => {
+const STATUS_COLORS = {
+  available: Colors.statusAvailable,
+  busy: Colors.statusBusy,
+  sleeping: Colors.statusSleeping,
+};
+const STATUS_LABELS = {
+  available: 'Available',
+  busy: 'Busy',
+  sleeping: 'Sleeping',
+};
+
+// ── Connection row ─────────────────────────────────────
+const ConnectionRow = ({ item }: { item: any }) => {
   const displayName = item.connectedUser?.displayName ?? 'Unknown';
   const avatarColour = item.connectedUser?.avatarColour ?? Colors.terracotta;
   const city = item.connectedUser?.city ?? '';
-  const { time, status } = getLocalTime(city);
+  const { time, hour, status } = getLocalTime(city);
+  const statusColor = STATUS_COLORS[status as keyof typeof STATUS_COLORS];
 
   return (
-    <TouchableOpacity style={styles.connectionItem} onPress={() => router.push(`/person/${item.id}`)} activeOpacity={0.85}>
+    <TouchableOpacity
+      style={styles.connectionRow}
+      onPress={() => router.push(`/person/${item.id}`)}
+      activeOpacity={0.85}
+    >
+      {/* Avatar */}
       <View style={[styles.avatar, { backgroundColor: avatarColour }]}>
-        <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+        <Text style={styles.avatarText}>
+          {displayName.charAt(0).toUpperCase()}
+        </Text>
+        <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
       </View>
-      <View style={styles.connectionInfo}>
-        <Text style={styles.connectionName}>{displayName}</Text>
-        <Text style={styles.connectionCity}>{city || 'Location not set'}</Text>
-      </View>
-      <View style={styles.timeWrap}>
-        <Text style={styles.localTime}>{time}</Text>
-        <View style={styles.statusRow}>
-          <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[status as keyof typeof STATUS_COLORS] }]} />
-          <Text style={[styles.statusLabel, { color: STATUS_COLORS[status as keyof typeof STATUS_COLORS] }]}>
+
+      {/* Info + time bar */}
+      <View style={styles.rowInfo}>
+        <View style={styles.rowTopLine}>
+          <Text style={styles.rowName}>{displayName}</Text>
+          <Text style={[styles.rowStatus, { color: statusColor }]}>
             {STATUS_LABELS[status as keyof typeof STATUS_LABELS]}
           </Text>
         </View>
+        <View style={styles.rowBottomLine}>
+          <Text style={styles.rowCity}>{city || 'Location not set'}</Text>
+          <Text style={styles.rowTime}>{time}</Text>
+        </View>
+        <TimeOfDayBar hour={hour} />
       </View>
     </TouchableOpacity>
   );
 };
 
+// ── Region group header ────────────────────────────────
+const RegionHeader = ({
+  region,
+  count,
+  expanded,
+  onToggle,
+}: {
+  region: string;
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) => (
+  <TouchableOpacity style={styles.regionHeader} onPress={onToggle} activeOpacity={0.7}>
+    <View style={styles.regionLeft}>
+      <Text style={styles.regionName}>{region}</Text>
+      <Text style={styles.regionCount}>{count} {count === 1 ? 'person' : 'people'}</Text>
+    </View>
+    <Text style={styles.regionChevron}>{expanded ? '▾' : '▸'}</Text>
+  </TouchableOpacity>
+);
+
+// ── Globe screen ───────────────────────────────────────
 export default function GlobeScreen() {
   const { data: connections = [], isLoading } = useConnections();
-  const { onContextCreate, handleRotate, cleanup } = useGlobe();
+  const [expandedRegions, setExpandedRegions] = useState<Record<string, boolean>>({});
+  const [currentTime, setCurrentTime] = useState(new Date());
 
-  const panResponder = useRef(PanResponder.create({
-    onStartShouldSetPanResponder: () => true,
-    onMoveShouldSetPanResponder: () => true,
-    onPanResponderMove: (_, gs) => handleRotate(gs.dx, gs.dy),
-  })).current;
+  // Refresh every 60 seconds
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
-  useEffect(() => () => cleanup(), []);
+  // Group connections by region
+  const grouped = connections.reduce((acc, c) => {
+    const city = (c as any).connectedUser?.city ?? '';
+    const { region } = getCityInfo(city);
+    if (!acc[region]) acc[region] = [];
+    acc[region].push(c);
+    return acc;
+  }, {} as Record<string, any[]>);
 
-  const now = new Date();
-  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  // Auto-expand all regions on first load
+  useEffect(() => {
+    if (connections.length > 0 && Object.keys(expandedRegions).length === 0) {
+      const initial: Record<string, boolean> = {};
+      Object.keys(grouped).forEach(r => { initial[r] = true; });
+      setExpandedRegions(initial);
+    }
+  }, [connections.length]);
+
+  const toggleRegion = (region: string) => {
+    setExpandedRegions(prev => ({ ...prev, [region]: !prev[region] }));
+  };
+
+  const timeStr = currentTime.toLocaleTimeString('en-GB', {
+    hour: '2-digit', minute: '2-digit',
+  });
+
+  const orderedRegions = REGION_ORDER.filter(r => grouped[r]);
+  const unknownConnections = grouped['Unknown'] ?? [];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.globeWrap} {...panResponder.panHandlers}>
-          <GLView style={styles.glView} onContextCreate={onContextCreate} />
-          <View style={styles.overlay}>
-            <Text style={styles.overlayTitle}>Globe</Text>
-            <Text style={styles.overlayTime}>{timeStr} your time</Text>
+
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.title}>Globe</Text>
+            <Text style={styles.subtitle}>Your time: {timeStr}</Text>
           </View>
-          <View style={styles.dragHint}>
-            <Text style={styles.dragHintText}>drag to rotate</Text>
+          <View style={styles.headerStats}>
+            <Text style={styles.headerStatsNum}>{connections.length}</Text>
+            <Text style={styles.headerStatsLabel}>connections</Text>
           </View>
         </View>
 
-        <View style={styles.listWrap}>
-          <Text style={styles.listLabel}>
-            Your circle · {connections.length} {connections.length === 1 ? 'person' : 'people'}
-          </Text>
-
-          {isLoading && <ActivityIndicator color={Colors.terracotta} style={{ marginTop: Spacing.lg }} />}
-
-          {!isLoading && connections.length === 0 && (
-            <View style={styles.empty}>
-              <Text style={styles.emptyTitle}>No connections yet</Text>
-              <Text style={styles.emptySub}>Add people from Connect to see them here.</Text>
-            </View>
-          )}
-
-          {connections.map((c: any) => <ConnectionItem key={c.id} item={c} />)}
-
-          {connections.length > 0 && (
-            <View style={styles.tzNote}>
-              <Text style={styles.tzNoteText}>
-                Times shown in each person's local timezone based on their city. Add cities in their profile for accurate times.
+        {/* Status legend */}
+        <View style={styles.legend}>
+          {Object.entries(STATUS_COLORS).map(([key, color]) => (
+            <View key={key} style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: color }]} />
+              <Text style={styles.legendLabel}>
+                {STATUS_LABELS[key as keyof typeof STATUS_LABELS]}
               </Text>
             </View>
-          )}
+          ))}
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#EF9F27' }]} />
+            <Text style={styles.legendLabel}>Day</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#3C3489' }]} />
+            <Text style={styles.legendLabel}>Night</Text>
+          </View>
         </View>
+
+        {isLoading && (
+          <ActivityIndicator color={Colors.terracotta} style={{ marginTop: 40 }} />
+        )}
+
+        {!isLoading && connections.length === 0 && (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>No connections yet</Text>
+            <Text style={styles.emptySub}>
+              Add people from Connect to see them here grouped by their timezone.
+            </Text>
+            <TouchableOpacity
+              style={styles.emptyBtn}
+              onPress={() => router.push('/(tabs)/connect')}
+            >
+              <Text style={styles.emptyBtnText}>Go to Connect</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Grouped by region */}
+        {orderedRegions.map(region => (
+          <View key={region} style={styles.regionGroup}>
+            <RegionHeader
+              region={region}
+              count={grouped[region].length}
+              expanded={expandedRegions[region] ?? true}
+              onToggle={() => toggleRegion(region)}
+            />
+            {(expandedRegions[region] ?? true) && grouped[region].map((c: any) => (
+              <ConnectionRow key={c.id} item={c} />
+            ))}
+          </View>
+        ))}
+
+        {/* Unknown location connections */}
+        {unknownConnections.length > 0 && (
+          <View style={styles.regionGroup}>
+            <RegionHeader
+              region="Location not set"
+              count={unknownConnections.length}
+              expanded={expandedRegions['Unknown'] ?? true}
+              onToggle={() => toggleRegion('Unknown')}
+            />
+            {(expandedRegions['Unknown'] ?? true) && unknownConnections.map((c: any) => (
+              <ConnectionRow key={c.id} item={c} />
+            ))}
+          </View>
+        )}
+
+        {/* Refresh note */}
+        {connections.length > 0 && (
+          <Text style={styles.refreshNote}>
+            Times refresh every minute · Tap a person to view their profile
+          </Text>
+        )}
+
         <View style={{ height: 100 }} />
       </ScrollView>
     </SafeAreaView>
@@ -251,30 +309,219 @@ export default function GlobeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.globeBackground },
-  globeWrap: { width: SCREEN_WIDTH, height: GLOBE_HEIGHT, backgroundColor: Colors.globeBackground },
-  glView: { width: SCREEN_WIDTH, height: GLOBE_HEIGHT },
-  overlay: { position: 'absolute', top: Spacing.lg, left: Spacing.lg },
-  overlayTitle: { fontSize: Typography.heading.lg, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.white, opacity: 0.9 },
-  overlayTime: { fontSize: 12, color: 'rgba(255,255,255,0.5)', fontFamily: Typography.fontFamily, marginTop: 2 },
-  dragHint: { position: 'absolute', bottom: Spacing.xl, left: 0, right: 0, alignItems: 'center' },
-  dragHintText: { fontSize: 11, color: 'rgba(255,255,255,0.3)', fontFamily: Typography.fontFamily, letterSpacing: 0.8 },
-  listWrap: { backgroundColor: Colors.background, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: Spacing.lg, marginTop: -24, minHeight: 400 },
-  listLabel: { fontSize: Typography.label, color: Colors.terracotta, textTransform: 'uppercase', letterSpacing: 0.8, fontFamily: Typography.fontFamily, marginBottom: Spacing.md },
-  connectionItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.md, borderBottomWidth: 0.5, borderBottomColor: Colors.tan, gap: Spacing.md },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: Colors.background },
+
+  // Header
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  title: {
+    fontSize: Typography.heading.lg,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    marginTop: 2,
+  },
+  headerStats: { alignItems: 'flex-end' },
+  headerStatsNum: {
+    fontSize: 28,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.terracotta,
+  },
+  headerStatsLabel: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+
+  // Legend
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendLabel: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily },
+
+  // Region group
+  regionGroup: {
+    marginTop: Spacing.md,
+    marginHorizontal: Spacing.lg,
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    overflow: 'hidden',
+  },
+  regionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    backgroundColor: Colors.tan + '44',
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  regionLeft: { gap: 2 },
+  regionName: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+  },
+  regionCount: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  regionChevron: {
+    fontSize: 14,
+    color: Colors.textLight,
+  },
+
+  // Connection row
+  connectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    gap: Spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
   avatarText: { fontSize: 16, color: Colors.white, fontWeight: '600' },
-  connectionInfo: { flex: 1 },
-  connectionName: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
-  connectionCity: { fontSize: 12, color: Colors.textLight, marginTop: 2, fontFamily: Typography.fontFamily },
-  timeWrap: { alignItems: 'flex-end' },
-  localTime: { fontSize: 16, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusLabel: { fontSize: 11, fontFamily: Typography.fontFamily, fontWeight: '600' },
-  empty: { alignItems: 'center', paddingTop: Spacing.xl },
-  emptyTitle: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
-  emptySub: { fontSize: 13, color: Colors.textLight, marginTop: 4, fontFamily: Typography.fontFamily, textAlign: 'center' },
-  tzNote: { marginTop: Spacing.lg, padding: Spacing.md, backgroundColor: Colors.tan, borderRadius: BorderRadius.sm },
-  tzNoteText: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily, lineHeight: 18, textAlign: 'center' },
+  statusDot: {
+    position: 'absolute',
+    bottom: 1,
+    right: 1,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: Colors.card,
+  },
+  rowInfo: { flex: 1, gap: 3 },
+  rowTopLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  rowName: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+  },
+  rowStatus: {
+    fontSize: 11,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+  },
+  rowBottomLine: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  rowCity: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  rowTime: {
+    fontSize: 15,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+  },
+
+  // Time of day bar
+  timeBar: { marginTop: 4 },
+  timeBarBg: {
+    height: 3,
+    backgroundColor: Colors.tan,
+    borderRadius: 2,
+    overflow: 'visible',
+    position: 'relative',
+  },
+  timeBarFill: {
+    height: '100%',
+    borderRadius: 2,
+  },
+  timeBarMarker: {
+    position: 'absolute',
+    top: -2,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    marginLeft: -3,
+  },
+
+  // Empty
+  empty: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: Spacing.xl,
+  },
+  emptyTitle: {
+    fontSize: Typography.heading.sm,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+    marginBottom: Spacing.sm,
+  },
+  emptySub: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: Spacing.lg,
+  },
+  emptyBtn: {
+    backgroundColor: Colors.terracotta,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
+  },
+  emptyBtnText: {
+    fontSize: Typography.body,
+    color: Colors.white,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamily,
+  },
+
+  // Refresh note
+  refreshNote: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'center',
+    marginTop: Spacing.lg,
+    marginHorizontal: Spacing.lg,
+  },
 });
