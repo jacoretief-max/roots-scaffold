@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Image, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
@@ -77,7 +77,11 @@ export default function ProfileScreen() {
       </View>
 
       {/* Settings sections */}
-      <View style={styles.sections}>
+      <ScrollView
+        style={styles.sections}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
 
         <SectionHeader title="Account" />
         <View style={styles.sectionCard}>
@@ -143,7 +147,7 @@ export default function ProfileScreen() {
         </View>
 
         <Text style={styles.version}>Roots v1.0 · Phase 2</Text>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -204,7 +208,6 @@ const styles = StyleSheet.create({
   },
 
   sections: {
-    flex: 1,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.lg,
   },
