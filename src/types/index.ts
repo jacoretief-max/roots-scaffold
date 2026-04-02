@@ -14,6 +14,7 @@ export interface User {
   email: string;
   phoneNumber?: string;
   avatarColour: string;       // one of 8 preset hex colours
+  avatarUrl?: string;
   dateOfBirth: string;        // ISO date — 18+ gate enforced at signup
   city: string;
   lat: number;

@@ -158,20 +158,27 @@ app.post('/api/auth/refresh', async (req, res) => {
 // GET /api/users/me
 app.get('/api/users/me', requireAuth, async (req, res) => {
   const { rows } = await db.query(
-    `SELECT
-       id,
-       display_name as "displayName",
-       email,
-       phone_number as "phoneNumber",
-       avatar_colour as "avatarColour",
-       date_of_birth as "dateOfBirth",
-       city, lat, lng, settings,
-       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"
+    `SELECT id, display_name, email, phone_number, avatar_colour,
+            avatar_url, date_of_birth, city, lat, lng, settings, created_at
      FROM users WHERE id = $1`,
     [req.userId]
   );
   if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-  res.json({ data: rows[0] });
+  const u = rows[0];
+  res.json({ data: {
+    id: u.id,
+    displayName: u.display_name,
+    email: u.email,
+    phoneNumber: u.phone_number,
+    avatarColour: u.avatar_colour,
+    avatarUrl: u.avatar_url,
+    dateOfBirth: u.date_of_birth,
+    city: u.city,
+    lat: u.lat,
+    lng: u.lng,
+    settings: u.settings,
+    createdAt: u.created_at,
+  }});
 });
 
 // PATCH /api/users/me — update profile

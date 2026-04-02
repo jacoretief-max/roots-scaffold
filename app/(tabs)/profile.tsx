@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
@@ -54,12 +54,19 @@ export default function ProfileScreen() {
       <View style={styles.profileHeader}>
         <TouchableOpacity
           style={[styles.avatarWrap, { backgroundColor: user?.avatarColour ?? Colors.terracotta }]}
-          onPress={() => router.push('/profile/account')}
+          onPress={() => router.push('/profile/personalise')}
           activeOpacity={0.85}
         >
-          <Text style={styles.avatarText}>
-            {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
-          </Text>
+          {(user as any)?.avatarUrl ? (
+            <Image
+              source={{ uri: (user as any).avatarUrl }}
+              style={styles.avatarImage}
+            />
+          ) : (
+            <Text style={styles.avatarText}>
+              {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
+            </Text>
+          )}
           <View style={styles.editBadge}>
             <Text style={styles.editBadgeText}>Edit</Text>
           </View>
@@ -160,6 +167,11 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   avatarText: { fontSize: 32, color: Colors.white, fontWeight: '700' },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
   editBadge: {
     position: 'absolute',
     bottom: 0,
