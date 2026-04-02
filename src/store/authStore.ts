@@ -76,6 +76,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         // Fetch the user profile to confirm token is still valid
         try {
           const { data } = await api.get('/users/me');
+          console.log('ME RESPONSE:', JSON.stringify(data.data));
           set({ user: data.data, isAuthenticated: true, isLoading: false });
         } catch {
           // Token invalid or expired — clear and show login
