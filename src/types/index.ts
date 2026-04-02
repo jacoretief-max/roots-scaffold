@@ -78,7 +78,12 @@ export interface MemoryEntry {
   isNew: boolean;             // unread badge
   createdAt: string;
   // Populated from join
-  author?: User;
+  author?: {
+    id: string;
+    displayName: string;
+    avatarColour: string;
+    avatarUrl?: string;
+  };
 }
 
 // ── Invites ───────────────────────────────────────────

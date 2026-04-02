@@ -427,7 +427,8 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
        json_build_object(
          'id', u.id,
          'displayName', u.display_name,
-         'avatarColour', u.avatar_colour
+         'avatarColour', u.avatar_colour,
+         'avatarUrl', u.avatar_url
        ) as author
      FROM memory_entries me
      JOIN users u ON u.id = me.author_id

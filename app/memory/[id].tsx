@@ -3,7 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Animated,
-  Dimensions, Modal,
+  Dimensions, Modal, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -67,14 +67,18 @@ const StructuredView = ({
         <View key={entry.id} style={[styles.entryCard, isMe && styles.entryCardMe]}>
           {/* Author row */}
           <View style={styles.entryHeader}>
-            <View style={[
-              styles.entryAvatar,
-              { backgroundColor: entry.author?.avatarColour ?? Colors.terracotta }
-            ]}>
-              <Text style={styles.entryAvatarText}>
-                {entry.author?.displayName?.charAt(0).toUpperCase() ?? '?'}
-              </Text>
-            </View>
+            {entry.author?.avatarUrl ? (
+              <Image
+                source={{ uri: entry.author.avatarUrl }}
+                style={styles.entryAvatar}
+              />
+            ) : (
+              <View style={[styles.entryAvatar, { backgroundColor: entry.author?.avatarColour ?? Colors.terracotta }]}>
+                <Text style={styles.entryAvatarText}>
+                  {entry.author?.displayName?.charAt(0).toUpperCase() ?? '?'}
+                </Text>
+              </View>
+            )}
             <View>
               <Text style={styles.entryAuthor}>
                 {isMe ? 'You' : entry.author?.displayName}
