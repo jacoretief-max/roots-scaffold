@@ -46,6 +46,12 @@ function RootNavigator() {
       <Stack.Screen name="memory/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="person/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="new-memory" options={{ presentation: 'modal' }} />
+      <Stack.Screen name="profile/account" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/personalise" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/password" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/privacy" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/verification" options={{ headerShown: false }} />
+      <Stack.Screen name="profile/security" options={{ headerShown: false }} />
     </Stack>
   );
 }
