@@ -5,6 +5,7 @@ import {
   User, PaginatedResponse, ApiResponse
 } from '@/types';
 import { useAuthStore } from '@/store/authStore';
+import * as FileSystem from 'expo-file-system';
 
 // ── Query keys ─────────────────────────────────────────
 export const QueryKeys = {
@@ -225,7 +226,6 @@ export const useChangePassword = () =>
 export const useUploadPhoto = () =>
   useMutation({
     mutationFn: async (localUri: string): Promise<string> => {
-      const FileSystem = await import('expo-file-system');
       const base64 = await FileSystem.readAsStringAsync(localUri, {
         encoding: FileSystem.EncodingType.Base64,
       });
