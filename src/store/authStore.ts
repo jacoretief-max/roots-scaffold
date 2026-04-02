@@ -68,25 +68,28 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   loadTokensFromStorage: async () => {
+    console.log('LOADING TOKENS...');
     try {
       const raw = await SecureStore.getItemAsync(TOKEN_KEY);
+      console.log('RAW TOKEN:', raw ? 'found' : 'not found');
       if (raw) {
         const tokens: AuthTokens = JSON.parse(raw);
         set({ tokens });
-        // Fetch the user profile to confirm token is still valid
         try {
           const { data } = await api.get('/users/me');
           console.log('ME RESPONSE:', JSON.stringify(data.data));
           set({ user: data.data, isAuthenticated: true, isLoading: false });
-        } catch {
-          // Token invalid or expired — clear and show login
+        } catch (err: any) {
+          console.log('ME ERROR:', err?.message, err?.response?.status);
           await SecureStore.deleteItemAsync(TOKEN_KEY);
           set({ isLoading: false });
         }
       } else {
+        console.log('NO TOKEN FOUND');
         set({ isLoading: false });
       }
-    } catch {
+    } catch (err: any) {
+      console.log('STORAGE ERROR:', err?.message);
       set({ isLoading: false });
     }
   },
