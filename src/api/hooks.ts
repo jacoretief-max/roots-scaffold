@@ -227,24 +227,15 @@ export const useUploadPhoto = () =>
   useMutation({
     mutationFn: async (localUri: string): Promise<string> => {
       console.log('UPLOAD START:', localUri);
-      try {
-        const base64 = await FileSystem.readAsStringAsync(localUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        console.log('BASE64 LENGTH:', base64.length);
-        const { data } = await api.post('/media/upload', {
-          base64,
-          contentType: 'image/jpeg',
-        });
-        console.log('UPLOAD RESPONSE:', JSON.stringify(data));
-        return data.data.publicUrl;
-      } catch (err: any) {
-        console.log('UPLOAD ERROR TYPE:', typeof err);
-        console.log('UPLOAD ERROR MESSAGE:', err?.message);
-        console.log('UPLOAD ERROR CODE:', err?.code);
-        console.log('UPLOAD ERROR RESPONSE:', err?.response?.status, err?.response?.data);
-        console.log('UPLOAD ERROR STACK:', err?.stack);
-        throw err;
-      }
+      const base64 = await FileSystem.readAsStringAsync(localUri, {
+        encoding: 'base64' as any,
+      });
+      console.log('BASE64 LENGTH:', base64.length);
+      const { data } = await api.post('/media/upload', {
+        base64,
+        contentType: 'image/jpeg',
+      });
+      console.log('UPLOAD RESPONSE:', JSON.stringify(data));
+      return data.data.publicUrl;
     },
   });
