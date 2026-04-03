@@ -435,9 +435,11 @@ const styles = StyleSheet.create({
     ...Shadows.fab,
   },
   addBtnText: {
-    fontSize: 24,
+    fontSize: 22,
     color: Colors.white,
-    lineHeight: 28,
+    lineHeight: 22,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   tabRow: {
     flexDirection: 'row',
@@ -521,13 +523,17 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.terracotta,
     borderRadius: BorderRadius.pill,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   newBadgeText: {
     fontSize: 9,
     color: Colors.white,
     fontWeight: '700',
     letterSpacing: 0.8,
+    lineHeight: 11,
+    includeFontPadding: false,
   },
   cardBottom: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: Spacing.md },
   cardTitle: {
