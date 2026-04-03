@@ -485,7 +485,7 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
     if (match && match.phoneNumber) {
       // Update the connected user's phone number
       await db.query(
-        'UPDATE users SET phone_number = $1 WHERE id = $2 AND phone_number IS NULL',
+        'UPDATE users SET phone_number = $1 WHERE id = $2',
         [match.phoneNumber, connection.connected_user_id]
       );
       matched.push({
