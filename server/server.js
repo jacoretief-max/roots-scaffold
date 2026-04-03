@@ -469,10 +469,20 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
     // Find matching contact by name or phone
     const match = contacts.find(c => {
       const contactName = c.name?.toLowerCase().trim();
-      const nameMatch = contactName === connectionName ||
-        connectionName.includes(contactName) ||
-        contactName?.includes(connectionName);
+      if (!contactName || contactName.length < 3) return false;
 
+      // Try both "first last" and "last, first" formats
+      const nameParts = connectionName.split(' ');
+      const reversedName = nameParts.length === 2
+        ? `${nameParts[1]}, ${nameParts[0]}`
+        : connectionName;
+
+      const nameMatch =
+        contactName === connectionName ||
+        contactName === reversedName ||
+        contactName.replace(',', '').split(' ').reverse().join(' ') === connectionName;
+
+      // Phone match — last 9 digits
       const phoneMatch = c.phoneNumber &&
         connection.phone_number &&
         c.phoneNumber.replace(/\D/g, '').endsWith(
