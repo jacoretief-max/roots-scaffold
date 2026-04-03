@@ -216,7 +216,9 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   const entryCount = (item as any).entryCount ?? 0;
   const palette = getPalette(item.id);
   const [colorIndex, setColorIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
+  const expandAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -228,6 +230,17 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
     }, 2200);
     return () => clearInterval(interval);
   }, []);
+
+  const toggleExpanded = () => {
+    const toValue = expanded ? 0 : 1;
+    Animated.spring(expandAnim, {
+      toValue,
+      useNativeDriver: true,
+      tension: 100,
+      friction: 8,
+    }).start();
+    setExpanded(!expanded);
+  };
 
   const participants = item.participants ?? [];
   const visibleParticipants = participants.slice(0, 4);
@@ -242,25 +255,56 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
       <Animated.View style={[styles.cardBg, { backgroundColor: palette[colorIndex], opacity: fadeAnim }]} />
       <View style={styles.cardOverlay} />
 
-      {/* Top row: avatars + new badge */}
+      {/* Top row */}
       <View style={styles.cardTop}>
-        <View style={styles.avatarRow}>
-          {visibleParticipants.map((p: any, i: number) => (
-            <View
-              key={`${p.id}-${i}`}
-              style={[styles.avatar, { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }]}
-            >
-              <Text style={styles.avatarText}>
-                {p.displayName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          ))}
-          {overflowCount > 0 && (
-            <View style={[styles.avatar, styles.avatarOverflow, { marginLeft: -8 }]}>
-              <Text style={styles.avatarOverflowText}>+{overflowCount}</Text>
+        <TouchableOpacity
+          style={styles.avatarCluster}
+          onPress={(e) => { e.stopPropagation(); toggleExpanded(); }}
+          activeOpacity={0.8}
+        >
+          {/* Collapsed — stacked avatars */}
+          {!expanded && (
+            <View style={styles.avatarRow}>
+              {visibleParticipants.map((p: any, i: number) => (
+                <View
+                  key={`${p.id}-${i}`}
+                  style={[styles.avatar, { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }]}
+                >
+                  <Text style={styles.avatarText}>
+                    {p.displayName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+              ))}
+              {overflowCount > 0 && (
+                <View style={[styles.avatar, styles.avatarOverflow, { marginLeft: -8 }]}>
+                  <Text style={styles.avatarOverflowText}>+{overflowCount}</Text>
+                </View>
+              )}
             </View>
           )}
-        </View>
+
+          {/* Expanded — names list */}
+          {expanded && (
+            <Animated.View
+              style={[
+                styles.participantNames,
+                { opacity: expandAnim, transform: [{ scale: expandAnim }] }
+              ]}
+            >
+              {participants.map((p: any) => (
+                <View key={p.id} style={styles.participantNameRow}>
+                  <View style={[styles.avatarSmall, { backgroundColor: p.avatarColour }]}>
+                    <Text style={styles.avatarSmallText}>
+                      {p.displayName.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <Text style={styles.participantNameText}>{p.displayName}</Text>
+                </View>
+              ))}
+            </Animated.View>
+          )}
+        </TouchableOpacity>
+
         {hasNew && (
           <View style={styles.newBadge}>
             <Text style={styles.newBadgeText}>NEW</Text>
@@ -268,7 +312,7 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
         )}
       </View>
 
-      {/* Bottom: title + meta row */}
+      {/* Bottom */}
       <View style={styles.cardBottom}>
         <Text style={styles.cardTitle}>{item.title}</Text>
         <View style={styles.cardMetaRow}>
@@ -301,16 +345,25 @@ export default function MemoriesScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Memories</Text>
-        <View style={styles.tabs}>
-          {(['recent', 'all'] as const).map((t) => (
-            <TouchableOpacity key={t} onPress={() => setTab(t)} style={styles.tab}>
-              <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-                {t === 'recent' ? 'Recent' : 'All Memories'}
-              </Text>
-              {tab === t && <View style={styles.tabUnderline} />}
-            </TouchableOpacity>
-          ))}
-        </View>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => router.push('/new-memory')}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.addBtnText}>+</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Tabs */}
+      <View style={styles.tabRow}>
+        {(['recent', 'all'] as const).map((t) => (
+          <TouchableOpacity key={t} onPress={() => setTab(t)} style={styles.tab}>
+            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
+              {t === 'recent' ? 'Recent' : 'All Memories'}
+            </Text>
+            {tab === t && <View style={styles.tabUnderline} />}
+          </TouchableOpacity>
+        ))}
       </View>
 
       {/* Feed */}
@@ -351,14 +404,6 @@ export default function MemoriesScreen() {
         </>
       )}
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={styles.fab}
-        onPress={() => router.push('/new-memory')}
-        activeOpacity={0.85}
-      >
-        <Text style={styles.fabIcon}>+</Text>
-      </TouchableOpacity>
     </SafeAreaView>
   );
 }
@@ -367,18 +412,42 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
 
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    paddingBottom: 0,
+    paddingBottom: Spacing.sm,
   },
   headerTitle: {
     fontSize: Typography.heading.lg,
     fontFamily: Typography.fontFamily,
-    color: Colors.textDark,
     fontWeight: '700',
+    color: Colors.textDark,
+  },
+  addBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.terracotta,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Shadows.fab,
+  },
+  addBtnText: {
+    fontSize: 24,
+    color: Colors.white,
+    lineHeight: 28,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    gap: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
     marginBottom: Spacing.md,
   },
-  tabs: { flexDirection: 'row', gap: Spacing.xl },
   tab: { paddingBottom: Spacing.sm },
   tabText: {
     fontSize: Typography.body,
@@ -411,7 +480,33 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: Spacing.md,
   },
+  avatarCluster: {
+    minHeight: 36,
+    justifyContent: 'center',
+  },
   avatarRow: { flexDirection: 'row' },
+  participantNames: {
+    gap: 4,
+  },
+  participantNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  avatarSmall: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarSmallText: { fontSize: 9, color: Colors.white, fontWeight: '700' },
+  participantNameText: {
+    fontSize: 12,
+    color: Colors.white,
+    fontWeight: '600',
+    fontFamily: Typography.fontFamily,
+  },
   avatar: {
     width: 32,
     height: 32,
@@ -478,19 +573,6 @@ const styles = StyleSheet.create({
   },
   emptySubText: { fontSize: 13, color: Colors.textLight, marginTop: 4 },
 
-  fab: {
-    position: 'absolute',
-    bottom: 90,
-    right: Spacing.lg,
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: Colors.terracotta,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...Shadows.fab,
-  },
-  fabIcon: { fontSize: 28, color: Colors.white, lineHeight: 32 },
 
   // Breadcrumb
   breadcrumb: {
