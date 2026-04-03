@@ -466,17 +466,25 @@ app.get('/api/memories', requireAuth, async (req, res) => {
        e.title,
        to_char(e.date, 'YYYY-MM-DD') as date,
        e.location,
-       e.lat,
-       e.lng,
-       e.music,
-       e.created_by_user_id as "createdByUserId",
        e.visibility,
        e.participant_ids as "participantIds",
        e.photo_urls as "photoUrls",
        to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
-       COUNT(me.id) FILTER (WHERE me.is_new = true) AS "newEntryCount"
+       COUNT(me.id) as "entryCount",
+       COUNT(me.id) FILTER (WHERE me.is_new = true) AS "newEntryCount",
+       COALESCE(
+         json_agg(
+           json_build_object(
+             'id', u.id,
+             'displayName', u.display_name,
+             'avatarColour', u.avatar_colour
+           )
+         ) FILTER (WHERE u.id IS NOT NULL),
+         '[]'
+       ) as participants
      FROM events e
      LEFT JOIN memory_entries me ON me.event_id = e.id
+     LEFT JOIN users u ON u.id = ANY(e.participant_ids)
      WHERE $1 = ANY(e.participant_ids)
      GROUP BY e.id
      ORDER BY e.created_at DESC`,

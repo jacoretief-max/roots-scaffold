@@ -213,6 +213,7 @@ const AllMemoriesGrid = ({ memories }: { memories: MemoryEvent[] }) => {
 // ── Memory card ────────────────────────────────────────
 const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   const hasNew = (item.newEntryCount ?? 0) > 0;
+  const entryCount = (item as any).entryCount ?? 0;
   const palette = getPalette(item.id);
   const [colorIndex, setColorIndex] = useState(0);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -220,21 +221,17 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   useEffect(() => {
     const interval = setInterval(() => {
       Animated.sequence([
-        Animated.timing(fadeAnim, {
-          toValue: 0.7,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
+        Animated.timing(fadeAnim, { toValue: 0.7, duration: 400, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
       ]).start();
       setColorIndex(i => (i + 1) % palette.length);
     }, 2200);
     return () => clearInterval(interval);
   }, []);
+
+  const participants = item.participants ?? [];
+  const visibleParticipants = participants.slice(0, 4);
+  const overflowCount = participants.length - 4;
 
   return (
     <TouchableOpacity
@@ -242,33 +239,27 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
       onPress={() => router.push(`/memory/${item.id}`)}
       activeOpacity={0.85}
     >
-      {/* Animated background */}
-      <Animated.View
-        style={[
-          styles.cardBg,
-          { backgroundColor: palette[colorIndex], opacity: fadeAnim }
-        ]}
-      />
-
-      {/* Dark gradient overlay */}
+      <Animated.View style={[styles.cardBg, { backgroundColor: palette[colorIndex], opacity: fadeAnim }]} />
       <View style={styles.cardOverlay} />
 
       {/* Top row: avatars + new badge */}
       <View style={styles.cardTop}>
         <View style={styles.avatarRow}>
-          {item.participants?.slice(0, 4).map((p, i) => (
+          {visibleParticipants.map((p: any, i: number) => (
             <View
               key={p.id}
-              style={[
-                styles.avatar,
-                { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }
-              ]}
+              style={[styles.avatar, { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }]}
             >
               <Text style={styles.avatarText}>
                 {p.displayName.charAt(0).toUpperCase()}
               </Text>
             </View>
           ))}
+          {overflowCount > 0 && (
+            <View style={[styles.avatar, styles.avatarOverflow, { marginLeft: -8 }]}>
+              <Text style={styles.avatarOverflowText}>+{overflowCount}</Text>
+            </View>
+          )}
         </View>
         {hasNew && (
           <View style={styles.newBadge}>
@@ -277,15 +268,24 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
         )}
       </View>
 
-      {/* Bottom: title + meta */}
+      {/* Bottom: title + meta row */}
       <View style={styles.cardBottom}>
         <Text style={styles.cardTitle}>{item.title}</Text>
-        <Text style={styles.cardMeta}>
-          {item.location
-            ? `${item.location} · ${new Date(item.date).getFullYear()}`
-            : new Date(item.date).getFullYear().toString()
-          }
-        </Text>
+        <View style={styles.cardMetaRow}>
+          <Text style={styles.cardMeta}>
+            {item.location
+              ? `${item.location} · ${new Date(item.date).getFullYear()}`
+              : new Date(item.date).getFullYear().toString()
+            }
+          </Text>
+          {entryCount > 0 && (
+            <View style={styles.perspectiveCount}>
+              <Text style={styles.perspectiveCountText}>
+                {entryCount} {entryCount === 1 ? 'perspective' : 'perspectives'}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -440,9 +440,35 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
     color: Colors.white,
     fontWeight: '700',
-    marginBottom: 2,
+    marginBottom: 4,
   },
-  cardMeta: { fontSize: 12, color: 'rgba(255,255,255,0.8)' },
+  cardMeta: { fontSize: 12, color: 'rgba(255,255,255,0.8)', fontFamily: Typography.fontFamily },
+  avatarOverflow: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  avatarOverflowText: {
+    fontSize: 10,
+    color: Colors.white,
+    fontWeight: '700',
+  },
+  cardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  perspectiveCount: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: BorderRadius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  perspectiveCountText: {
+    fontSize: 10,
+    color: Colors.white,
+    fontWeight: '600',
+    fontFamily: Typography.fontFamily,
+  },
 
   empty: { alignItems: 'center', marginTop: 80 },
   emptyText: {
