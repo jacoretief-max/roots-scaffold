@@ -1,24 +1,55 @@
 import { Tabs } from 'expo-router';
-import { View, Text, StyleSheet } from 'react-native';
-import { Colors, Typography } from '@/constants/theme';
+import { View, StyleSheet } from 'react-native';
+import { Colors } from '@/constants/theme';
+import Svg, { Path, Circle, Line } from 'react-native-svg';
 
-// Simple SVG-style tab icons using Text (replace with icon library later)
+// ── Icon components ────────────────────────────────────
+const IconBook = ({ color }: { color: string }) => (
+  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z"/>
+    <Path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z"/>
+  </Svg>
+);
+
+const IconGlobe = ({ color }: { color: string }) => (
+  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Circle cx={12} cy={12} r={10}/>
+    <Line x1={2} y1={12} x2={22} y2={12}/>
+    <Path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
+  </Svg>
+);
+
+const IconHeart = ({ color }: { color: string }) => (
+  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
+  </Svg>
+);
+
+const IconSearch = ({ color }: { color: string }) => (
+  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Circle cx={11} cy={11} r={8}/>
+    <Line x1={21} y1={21} x2={16.65} y2={16.65}/>
+  </Svg>
+);
+
+const IconProfile = ({ color }: { color: string }) => (
+  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+    <Circle cx={12} cy={7} r={4}/>
+  </Svg>
+);
+
+// ── Tab icon with active dot ───────────────────────────
 const TabIcon = ({
-  symbol,
-  label,
+  Icon,
   focused,
 }: {
-  symbol: string;
-  label: string;
+  Icon: ({ color }: { color: string }) => JSX.Element;
   focused: boolean;
 }) => (
   <View style={styles.tabItem}>
-    <Text style={[styles.tabSymbol, focused && styles.tabSymbolActive]}>
-      {symbol}
-    </Text>
-    <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
-      {label}
-    </Text>
+    <Icon color={focused ? Colors.terracotta : Colors.textLight} />
+    <View style={[styles.dot, focused && styles.dotActive]} />
   </View>
 );
 
@@ -32,10 +63,10 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"         // Memories — home screen
+        name="index"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon symbol="⌂" label="Memories" focused={focused} />
+            <TabIcon Icon={IconBook} focused={focused} />
           ),
         }}
       />
@@ -43,7 +74,7 @@ export default function TabLayout() {
         name="globe"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon symbol="◎" label="Globe" focused={focused} />
+            <TabIcon Icon={IconGlobe} focused={focused} />
           ),
         }}
       />
@@ -51,7 +82,7 @@ export default function TabLayout() {
         name="circle"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon symbol="♡" label="Circle" focused={focused} />
+            <TabIcon Icon={IconHeart} focused={focused} />
           ),
         }}
       />
@@ -59,7 +90,7 @@ export default function TabLayout() {
         name="connect"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon symbol="+" label="Connect" focused={focused} />
+            <TabIcon Icon={IconSearch} focused={focused} />
           ),
         }}
       />
@@ -67,7 +98,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon symbol="◈" label="Profile" focused={focused} />
+            <TabIcon Icon={IconProfile} focused={focused} />
           ),
         }}
       />
@@ -77,30 +108,25 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    height: 72,
+    height: 64,
     backgroundColor: Colors.card,
     borderTopWidth: 0.5,
     borderTopColor: Colors.tan,
     paddingTop: 8,
+    paddingBottom: 8,
   },
   tabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3,
+    gap: 4,
   },
-  tabSymbol: {
-    fontSize: 20,
-    color: Colors.textLight,
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'transparent',
   },
-  tabSymbolActive: {
-    color: Colors.terracotta,
-  },
-  tabLabel: {
-    fontSize: Typography.nav,
-    fontFamily: Typography.fontFamily,
-    color: Colors.textLight,
-  },
-  tabLabelActive: {
-    color: Colors.terracotta,
+  dotActive: {
+    backgroundColor: Colors.terracotta,
   },
 });
