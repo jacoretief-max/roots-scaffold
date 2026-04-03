@@ -442,6 +442,63 @@ app.patch('/api/connections/:id', requireAuth, async (req, res) => {
   res.json({ data: connection });
 });
 
+// POST /api/connections/sync-contacts
+// Receives array of { name, phoneNumber } from device
+// Matches against connections and updates phone numbers
+app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
+  const { contacts } = req.body;
+  if (!Array.isArray(contacts)) {
+    return res.status(400).json({ error: 'contacts array required' });
+  }
+
+  // Get all connections with their connected user's display name
+  const { rows: connections } = await db.query(
+    `SELECT c.id, c.connected_user_id, u.display_name, u.phone_number
+     FROM connections c
+     JOIN users u ON u.id = c.connected_user_id
+     WHERE c.user_id = $1`,
+    [req.userId]
+  );
+
+  const matched = [];
+
+  for (const connection of connections) {
+    // Normalise name for comparison
+    const connectionName = connection.display_name.toLowerCase().trim();
+
+    // Find matching contact by name or phone
+    const match = contacts.find(c => {
+      const contactName = c.name?.toLowerCase().trim();
+      const nameMatch = contactName === connectionName ||
+        connectionName.includes(contactName) ||
+        contactName?.includes(connectionName);
+
+      const phoneMatch = c.phoneNumber &&
+        connection.phone_number &&
+        c.phoneNumber.replace(/\D/g, '').endsWith(
+          connection.phone_number.replace(/\D/g, '').slice(-9)
+        );
+
+      return nameMatch || phoneMatch;
+    });
+
+    if (match && match.phoneNumber) {
+      // Update the connected user's phone number
+      await db.query(
+        'UPDATE users SET phone_number = $1 WHERE id = $2 AND phone_number IS NULL',
+        [match.phoneNumber, connection.connected_user_id]
+      );
+      matched.push({
+        connectionId: connection.id,
+        name: connection.display_name,
+        phoneNumber: match.phoneNumber,
+      });
+    }
+  }
+
+  res.json({ data: { matched, total: contacts.length } });
+});
+
 // POST /api/connections/:id/log-contact
 app.post('/api/connections/:id/log-contact', requireAuth, async (req, res) => {
   const { rows: [connection] } = await db.query(

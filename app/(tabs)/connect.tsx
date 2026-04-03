@@ -5,7 +5,8 @@ import {
   Modal, Linking, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useUserSearch, useAddConnection } from '@/api/hooks';
+import * as Contacts from 'expo-contacts';
+import { useUserSearch, useAddConnection, useSyncContacts } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
 
@@ -231,8 +232,51 @@ export default function ConnectScreen() {
   const [query, setQuery] = useState('');
   const [selectedPerson, setSelectedPerson] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ matched: any[]; total: number } | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   const { data: results = [], isLoading } = useUserSearch(query);
   const { mutate: addConnection } = useAddConnection();
+  const { mutate: syncContacts } = useSyncContacts();
+
+  const handleSyncContacts = async () => {
+    const { status } = await Contacts.requestPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission needed',
+        'Please allow access to your contacts to use this feature.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return;
+    }
+
+    setIsSyncing(true);
+    setSyncResult(null);
+
+    const { data } = await Contacts.getContactsAsync({
+      fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
+    });
+
+    const contacts = data
+      .filter(c => c.name)
+      .map(c => ({
+        name: c.name!,
+        phoneNumber: c.phoneNumbers?.[0]?.number,
+      }));
+
+    syncContacts(contacts, {
+      onSuccess: (result) => {
+        setIsSyncing(false);
+        setSyncResult(result);
+      },
+      onError: () => {
+        setIsSyncing(false);
+        Alert.alert('Error', 'Failed to sync contacts. Please try again.');
+      },
+    });
+  };
 
   const handleAdd = (person: any) => {
     setSelectedPerson(person);
@@ -359,6 +403,45 @@ export default function ConnectScreen() {
             <Text style={styles.emptyDesc}>
               Search for friends and family who are already on Roots and add them to your circle.
             </Text>
+
+            {/* Sync contacts card */}
+            <View style={styles.syncCard}>
+              <Text style={styles.syncTitle}>Sync your contacts</Text>
+              <Text style={styles.syncDesc}>
+                Match your phone contacts to the people in your circle and fill in missing phone numbers automatically.
+              </Text>
+
+              {syncResult ? (
+                <View style={styles.syncResult}>
+                  <Text style={styles.syncResultText}>
+                    {syncResult.matched.length > 0
+                      ? `Matched ${syncResult.matched.length} of ${syncResult.total} contacts`
+                      : `No new matches found in ${syncResult.total} contacts`
+                    }
+                  </Text>
+                  {syncResult.matched.length > 0 && syncResult.matched.map((m: any) => (
+                    <Text key={m.connectionId} style={styles.syncMatchRow}>
+                      · {m.name}
+                    </Text>
+                  ))}
+                  <TouchableOpacity onPress={() => setSyncResult(null)} style={styles.syncAgainBtn}>
+                    <Text style={styles.syncAgainText}>Sync again</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.syncBtn}
+                  onPress={handleSyncContacts}
+                  disabled={isSyncing}
+                  activeOpacity={0.85}
+                >
+                  {isSyncing
+                    ? <ActivityIndicator color={Colors.white} />
+                    : <Text style={styles.syncBtnText}>Sync contacts</Text>
+                  }
+                </TouchableOpacity>
+              )}
+            </View>
 
             {/* Find My 150 stub */}
             <TouchableOpacity style={styles.find150Btn}>
@@ -546,6 +629,63 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: Spacing.xl,
   },
+  // Sync contacts
+  syncCard: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    marginBottom: Spacing.md,
+  },
+  syncTitle: {
+    fontSize: Typography.heading.sm,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+    marginBottom: Spacing.xs,
+  },
+  syncDesc: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 19,
+    marginBottom: Spacing.lg,
+  },
+  syncBtn: {
+    backgroundColor: Colors.terracotta,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    alignItems: 'center',
+  },
+  syncBtnText: {
+    fontSize: Typography.body,
+    color: Colors.white,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamily,
+  },
+  syncResult: { gap: Spacing.xs },
+  syncResultText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+    marginBottom: Spacing.xs,
+  },
+  syncMatchRow: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    paddingLeft: Spacing.sm,
+  },
+  syncAgainBtn: { marginTop: Spacing.md },
+  syncAgainText: {
+    fontSize: 13,
+    color: Colors.terracotta,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+  },
+
   find150Btn: {
     backgroundColor: Colors.card,
     borderRadius: BorderRadius.lg,

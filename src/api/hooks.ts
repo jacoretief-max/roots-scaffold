@@ -177,6 +177,15 @@ export const useUpdateConnection = () => {
   });
 };
 
+// Sync device contacts
+export const useSyncContacts = () =>
+  useMutation({
+    mutationFn: async (contacts: Array<{ name: string; phoneNumber?: string }>) => {
+      const { data } = await api.post('/connections/sync-contacts', { contacts });
+      return data.data;
+    },
+  });
+
 // Log contact
 export const useLogContact = () => {
   const qc = useQueryClient();
