@@ -470,23 +470,18 @@ app.get('/api/memories', requireAuth, async (req, res) => {
        e.participant_ids as "participantIds",
        e.photo_urls as "photoUrls",
        to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
-       COUNT(me.id) as "entryCount",
-       COUNT(me.id) FILTER (WHERE me.is_new = true) AS "newEntryCount",
-       COALESCE(
-         json_agg(
-           json_build_object(
-             'id', u.id,
-             'displayName', u.display_name,
-             'avatarColour', u.avatar_colour
-           )
-         ) FILTER (WHERE u.id IS NOT NULL),
-         '[]'
+       (SELECT COUNT(*) FROM memory_entries me WHERE me.event_id = e.id) as "entryCount",
+       (SELECT COUNT(*) FROM memory_entries me WHERE me.event_id = e.id AND me.is_new = true) AS "newEntryCount",
+       (SELECT COALESCE(json_agg(json_build_object(
+           'id', u.id,
+           'displayName', u.display_name,
+           'avatarColour', u.avatar_colour
+         )), '[]'::json)
+        FROM users u
+        WHERE u.id = ANY(e.participant_ids)
        ) as participants
      FROM events e
-     LEFT JOIN memory_entries me ON me.event_id = e.id
-     LEFT JOIN users u ON u.id = ANY(e.participant_ids)
      WHERE $1 = ANY(e.participant_ids)
-     GROUP BY e.id
      ORDER BY e.created_at DESC`,
     [req.userId]
   );

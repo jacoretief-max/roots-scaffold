@@ -247,7 +247,7 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
         <View style={styles.avatarRow}>
           {visibleParticipants.map((p: any, i: number) => (
             <View
-              key={p.id}
+              key={`${p.id}-${i}`}
               style={[styles.avatar, { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }]}
             >
               <Text style={styles.avatarText}>
