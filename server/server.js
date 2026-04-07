@@ -19,6 +19,28 @@ const upload = multer({
   },
 });
 
+// Levenshtein distance for fuzzy name matching
+const levenshtein = (a, b) => {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n];
+};
+
+const nameSimilarity = (a, b) => {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  return (maxLen - levenshtein(a, b)) / maxLen;
+};
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
@@ -451,7 +473,6 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'contacts array required' });
   }
 
-  // Get all connections with their connected user's display name
   const { rows: connections } = await db.query(
     `SELECT c.id, c.connected_user_id, u.display_name, u.phone_number
      FROM connections c
@@ -461,52 +482,76 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
   );
 
   const matched = [];
+  const suggestions = [];
 
   for (const connection of connections) {
-    // Normalise name for comparison
     const connectionName = connection.display_name.toLowerCase().trim();
+    let bestMatch = null;
+    let bestScore = 0;
 
-    // Find matching contact by name or phone
-    const match = contacts.find(c => {
-      const contactName = c.name?.toLowerCase().trim();
-      if (!contactName || contactName.length < 3) return false;
+    for (const contact of contacts) {
+      const contactName = contact.name?.toLowerCase().trim();
+      if (!contactName || contactName.length < 3) continue;
 
-      // Try both "first last" and "last, first" formats
+      // Try normal and reversed name formats
       const nameParts = connectionName.split(' ');
       const reversedName = nameParts.length === 2
         ? `${nameParts[1]}, ${nameParts[0]}`
         : connectionName;
 
-      const nameMatch =
-        contactName === connectionName ||
-        contactName === reversedName ||
-        contactName.replace(',', '').split(' ').reverse().join(' ') === connectionName;
+      const score = Math.max(
+        nameSimilarity(contactName, connectionName),
+        nameSimilarity(contactName, reversedName),
+        nameSimilarity(
+          contactName.replace(',', '').split(' ').reverse().join(' '),
+          connectionName
+        )
+      );
 
-      // Phone match — last 9 digits
-      const phoneMatch = c.phoneNumber &&
-        connection.phone_number &&
-        c.phoneNumber.replace(/\D/g, '').endsWith(
-          connection.phone_number.replace(/\D/g, '').slice(-9)
-        );
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = { contact, score };
+      }
+    }
 
-      return nameMatch || phoneMatch;
-    });
+    if (!bestMatch) continue;
 
-    if (match && match.phoneNumber) {
-      // Update the connected user's phone number
+    if (bestMatch.score === 1.0) {
+      // Perfect match — sync automatically
       await db.query(
         'UPDATE users SET phone_number = $1 WHERE id = $2',
-        [match.phoneNumber, connection.connected_user_id]
+        [bestMatch.contact.phoneNumber ?? connection.phone_number, connection.connected_user_id]
       );
       matched.push({
         connectionId: connection.id,
         name: connection.display_name,
-        phoneNumber: match.phoneNumber,
+        phoneNumber: bestMatch.contact.phoneNumber,
+        score: bestMatch.score,
+      });
+    } else if (bestMatch.score >= 0.75) {
+      // Fuzzy match — suggest to user
+      suggestions.push({
+        connectionId: connection.id,
+        connectedUserId: connection.connected_user_id,
+        rootsName: connection.display_name,
+        contactName: bestMatch.contact.name,
+        phoneNumber: bestMatch.contact.phoneNumber,
+        score: Math.round(bestMatch.score * 100),
       });
     }
   }
 
-  res.json({ data: { matched, total: contacts.length } });
+  res.json({ data: { matched, suggestions, total: contacts.length } });
+});
+
+// POST /api/connections/confirm-contact-match
+app.post('/api/connections/confirm-contact-match', requireAuth, async (req, res) => {
+  const { connectedUserId, phoneNumber } = req.body;
+  await db.query(
+    'UPDATE users SET phone_number = $1 WHERE id = $2',
+    [phoneNumber, connectedUserId]
+  );
+  res.json({ data: { ok: true } });
 });
 
 // POST /api/connections/:id/log-contact
