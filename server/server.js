@@ -572,6 +572,8 @@ app.post('/api/connections/confirm-contact-match', requireAuth, async (req, res)
 
 // POST /api/connections/:id/log-contact
 app.post('/api/connections/:id/log-contact', requireAuth, async (req, res) => {
+  const { note } = req.body;
+
   const { rows: [connection] } = await db.query(
     `UPDATE connections
      SET last_contact_at = NOW(),
@@ -581,7 +583,81 @@ app.post('/api/connections/:id/log-contact', requireAuth, async (req, res) => {
     [req.params.id, req.userId]
   );
   if (!connection) return res.status(404).json({ error: 'Connection not found' });
+
+  await db.query(
+    `INSERT INTO contact_events
+       (user_id, connection_id, type, title, date, note)
+     VALUES ($1, $2, 'manual', 'Contact logged', NOW(), $3)`,
+    [req.userId, req.params.id, note ?? null]
+  );
+
   res.json({ data: connection });
+});
+
+// POST /api/connections/confirm-calendar-match
+app.post('/api/connections/confirm-calendar-match', requireAuth, async (req, res) => {
+  const { connectionId, eventDate, eventTitle, note } = req.body;
+
+  const { rows: [conn] } = await db.query(
+    `UPDATE connections
+     SET last_contact_at = GREATEST(COALESCE(last_contact_at, $1), $1),
+         score = LEAST(100, score + 5)
+     WHERE id = $2 AND user_id = $3
+     RETURNING id`,
+    [eventDate, connectionId, req.userId]
+  );
+  if (!conn) return res.status(404).json({ error: 'Connection not found' });
+
+  await db.query(
+    `INSERT INTO contact_events
+       (user_id, connection_id, type, title, date, note)
+     VALUES ($1, $2, 'calendar', $3, $4, $5)`,
+    [req.userId, connectionId, eventTitle ?? 'Calendar event', eventDate, note ?? null]
+  );
+
+  res.json({ data: { ok: true } });
+});
+
+// GET /api/connections/:id/events
+app.get('/api/connections/:id/events', requireAuth, async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT id, type, title, date, note,
+            memory_event_id as "memoryEventId",
+            created_at as "createdAt"
+     FROM contact_events
+     WHERE connection_id = $1 AND user_id = $2
+     ORDER BY date DESC
+     LIMIT 50`,
+    [req.params.id, req.userId]
+  );
+  res.json({ data: rows });
+});
+
+// POST /api/connections/:id/events
+app.post('/api/connections/:id/events', requireAuth, async (req, res) => {
+  const { type, title, date, note, memoryEventId } = req.body;
+  if (!type || !date) return res.status(400).json({ error: 'type and date required' });
+
+  // Update last_contact_at and score on the connection
+  await db.query(
+    `UPDATE connections
+     SET last_contact_at = GREATEST(COALESCE(last_contact_at, $1), $1),
+         score = LEAST(100, score + 5)
+     WHERE id = $2 AND user_id = $3`,
+    [date, req.params.id, req.userId]
+  );
+
+  const { rows: [event] } = await db.query(
+    `INSERT INTO contact_events
+       (user_id, connection_id, type, title, date, note, memory_event_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, type, title, date, note,
+               memory_event_id as "memoryEventId",
+               created_at as "createdAt"`,
+    [req.userId, req.params.id, type, title ?? null, date, note ?? null, memoryEventId ?? null]
+  );
+
+  res.json({ data: event });
 });
 
 // ── Memory routes ──────────────────────────────────────

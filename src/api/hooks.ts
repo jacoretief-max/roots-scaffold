@@ -270,3 +270,43 @@ export const useRegisterPushToken = () =>
     },
   });
 
+export const useContactEvents = (connectionId: string) =>
+  useQuery({
+    queryKey: ['contact_events', connectionId],
+    queryFn: async () => {
+      const { data } = await api.get(`/connections/${connectionId}/events`);
+      return data.data as Array<{
+        id: string;
+        type: 'calendar' | 'call' | 'whatsapp' | 'memory' | 'manual';
+        title: string;
+        date: string;
+        note?: string;
+        memoryEventId?: string;
+        createdAt: string;
+      }>;
+    },
+  });
+
+export const useCreateContactEvent = (connectionId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      type: string;
+      title?: string;
+      date: string;
+      note?: string;
+      memoryEventId?: string;
+    }) => {
+      const { data } = await api.post(
+        `/connections/${connectionId}/events`,
+        payload
+      );
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['contact_events', connectionId] });
+      qc.invalidateQueries({ queryKey: QueryKeys.connections });
+    },
+  });
+};
+

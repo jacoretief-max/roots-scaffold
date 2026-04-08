@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, Modal, Switch,
+  ScrollView, Alert, ActivityIndicator, Modal, Switch, TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useConnection, useLogContact, useRemoveConnection, useUpdateConnection } from '@/api/hooks';
+import { useConnection, useLogContact, useRemoveConnection, useUpdateConnection, useContactEvents, useCreateContactEvent } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers, Shadows } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
 import dayjs from 'dayjs';
@@ -100,6 +100,29 @@ const EditModal = ({
   );
 };
 
+// ── Event helpers ───────────────────────────────────────
+const getEventColor = (type: string) => {
+  switch (type) {
+    case 'calendar':  return '#534AB7';
+    case 'call':      return Colors.sage;
+    case 'whatsapp':  return '#25D366';
+    case 'memory':    return Colors.terracotta;
+    case 'manual':    return Colors.textLight;
+    default:          return Colors.tan;
+  }
+};
+
+const getEventEmoji = (type: string) => {
+  switch (type) {
+    case 'calendar':  return '📅';
+    case 'call':      return '📞';
+    case 'whatsapp':  return '💬';
+    case 'memory':    return '📖';
+    case 'manual':    return '✓';
+    default:          return '·';
+  }
+};
+
 // ── Person screen ──────────────────────────────────────
 export default function PersonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -107,7 +130,12 @@ export default function PersonScreen() {
   const { mutate: logContact, isPending: isLogging } = useLogContact();
   const { mutate: removeConnection, isPending: isRemoving } = useRemoveConnection();
   const { mutate: updateConnection, isPending: isUpdating } = useUpdateConnection();
+  const { data: contactEvents = [], isLoading: eventsLoading } = useContactEvents(id);
+  const { mutate: createContactEvent } = useCreateContactEvent(id);
   const [editVisible, setEditVisible] = useState(false);
+  const [showNoteInput, setShowNoteInput] = useState(false);
+  const [noteText, setNoteText] = useState('');
+  const [pendingEventType, setPendingEventType] = useState<string>('manual');
 
   if (isLoading) {
     return (
@@ -145,10 +173,26 @@ export default function PersonScreen() {
   };
 
   const handleLogContact = () => {
-    logContact(id, {
-      onSuccess: () => Alert.alert('Logged', `Contact with ${displayName} logged today.`),
-      onError: () => Alert.alert('Error', 'Failed to log contact.'),
-    });
+    setPendingEventType('manual');
+    setShowNoteInput(true);
+  };
+
+  const handleSaveContactEvent = () => {
+    createContactEvent(
+      {
+        type: pendingEventType,
+        title: pendingEventType === 'manual' ? 'Contact logged' : 'Calendar event',
+        date: new Date().toISOString(),
+        note: noteText.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          setShowNoteInput(false);
+          setNoteText('');
+          Alert.alert('Logged', `Contact with ${displayName} logged.`);
+        },
+      }
+    );
   };
 
   const handleRemove = () => {
@@ -279,73 +323,132 @@ export default function PersonScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Actions</Text>
 
-          {/* Always in touch toggle */}
-          <View style={styles.alwaysInTouchRow}>
-            <View style={styles.alwaysInTouchInfo}>
-              <Text style={styles.alwaysInTouchLabel}>Always in touch</Text>
-              <Text style={styles.alwaysInTouchDesc}>
-                We live together or speak daily — skip contact tracking
-              </Text>
+          {showNoteInput ? (
+            <View style={styles.noteCapture}>
+              <Text style={styles.noteCaptureTitle}>Add a note (optional)</Text>
+              <TextInput
+                style={styles.noteInput}
+                value={noteText}
+                onChangeText={setNoteText}
+                placeholder="What did you talk about? How are they doing?"
+                placeholderTextColor={Colors.textLight}
+                multiline
+                autoFocus
+                maxLength={500}
+              />
+              <View style={styles.noteActions}>
+                <TouchableOpacity
+                  style={styles.noteSaveBtn}
+                  onPress={handleSaveContactEvent}
+                >
+                  <Text style={styles.noteSaveBtnText}>Save</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.noteSkipBtn}
+                  onPress={() => {
+                    setNoteText('');
+                    handleSaveContactEvent();
+                  }}
+                >
+                  <Text style={styles.noteSkipBtnText}>Skip note</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.notePhaseHint}>Voice notes coming in Phase 4</Text>
             </View>
-            <Switch
-              value={(connection as any).alwaysInTouch ?? false}
-              onValueChange={(value) => {
-                updateConnection({ id, alwaysInTouch: value } as any, {
-                  onSuccess: () => {},
-                });
-              }}
-              trackColor={{ false: Colors.tan, true: Colors.terracotta }}
-              thumbColor={Colors.white}
-            />
-          </View>
+          ) : (
+            <>
+              {/* Always in touch toggle */}
+              <View style={styles.alwaysInTouchRow}>
+                <View style={styles.alwaysInTouchInfo}>
+                  <Text style={styles.alwaysInTouchLabel}>Always in touch</Text>
+                  <Text style={styles.alwaysInTouchDesc}>
+                    We live together or speak daily — skip contact tracking
+                  </Text>
+                </View>
+                <Switch
+                  value={(connection as any).alwaysInTouch ?? false}
+                  onValueChange={(value) => {
+                    updateConnection({ id, alwaysInTouch: value } as any, {
+                      onSuccess: () => {},
+                    });
+                  }}
+                  trackColor={{ false: Colors.tan, true: Colors.terracotta }}
+                  thumbColor={Colors.white}
+                />
+              </View>
 
-          {/* Log contact */}
-          <TouchableOpacity
-            style={styles.actionBtn}
-            onPress={handleLogContact}
-            disabled={isLogging}
-            activeOpacity={0.85}
-          >
-            {isLogging
-              ? <ActivityIndicator color={Colors.white} />
-              : <Text style={styles.actionBtnText}>Log contact today</Text>
-            }
-          </TouchableOpacity>
+              {/* Log contact */}
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={handleLogContact}
+                disabled={isLogging}
+                activeOpacity={0.85}
+              >
+                {isLogging
+                  ? <ActivityIndicator color={Colors.white} />
+                  : <Text style={styles.actionBtnText}>Log contact</Text>
+                }
+              </TouchableOpacity>
 
-          {/* Edit connection */}
-          <TouchableOpacity
-            style={styles.actionBtnSecondary}
-            onPress={() => setEditVisible(true)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.actionBtnSecondaryText}>Edit layer & frequency</Text>
-          </TouchableOpacity>
+              {/* Edit connection */}
+              <TouchableOpacity
+                style={styles.actionBtnSecondary}
+                onPress={() => setEditVisible(true)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.actionBtnSecondaryText}>Edit layer & frequency</Text>
+              </TouchableOpacity>
 
-          {/* Remove */}
-          <TouchableOpacity
-            style={styles.actionBtnDestructive}
-            onPress={handleRemove}
-            disabled={isRemoving}
-            activeOpacity={0.85}
-          >
-            {isRemoving
-              ? <ActivityIndicator color={Colors.scoreLow} />
-              : <Text style={styles.actionBtnDestructiveText}>Remove from circle</Text>
-            }
-          </TouchableOpacity>
+              {/* Remove */}
+              <TouchableOpacity
+                style={styles.actionBtnDestructive}
+                onPress={handleRemove}
+                disabled={isRemoving}
+                activeOpacity={0.85}
+              >
+                {isRemoving
+                  ? <ActivityIndicator color={Colors.scoreLow} />
+                  : <Text style={styles.actionBtnDestructiveText}>Remove from circle</Text>
+                }
+              </TouchableOpacity>
+            </>
+          )}
         </View>
 
-        {/* Shared memories — Phase 2 stub */}
+        {/* Contact timeline */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Shared memories</Text>
-          <View style={styles.comingSoonCard}>
-            <Text style={styles.comingSoonText}>
-              Memories you share with {displayName} will appear here.
-            </Text>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonBadgeText}>Coming soon</Text>
+          <Text style={styles.sectionTitle}>Recent touchpoints</Text>
+          {eventsLoading && (
+            <ActivityIndicator color={Colors.terracotta} />
+          )}
+          {!eventsLoading && contactEvents.length === 0 && (
+            <View style={styles.timelineEmpty}>
+              <Text style={styles.timelineEmptyText}>
+                No interactions logged yet. Use "Log contact" after calls, or sync your calendar.
+              </Text>
             </View>
-          </View>
+          )}
+          {contactEvents.slice(0, 5).map((event, index) => (
+            <View key={event.id} style={styles.timelineItem}>
+              {index < Math.min(contactEvents.length, 5) - 1 && (
+                <View style={styles.timelineLine} />
+              )}
+              <View style={[styles.timelineIcon, { backgroundColor: getEventColor(event.type) }]}>
+                <Text style={styles.timelineIconText}>{getEventEmoji(event.type)}</Text>
+              </View>
+              <View style={styles.timelineContent}>
+                <Text style={styles.timelineTitle}>{event.title}</Text>
+                <Text style={styles.timelineDate}>
+                  {new Date(event.date).toLocaleDateString('en-GB', {
+                    day: 'numeric', month: 'short', year: 'numeric'
+                  })}
+                </Text>
+                {event.note && (
+                  <Text style={styles.timelineNote}>{event.note}</Text>
+                )}
+              </View>
+            </View>
+          ))}
         </View>
 
         <View style={{ height: 100 }} />
@@ -749,6 +852,126 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
   },
   chipTextActive: { color: Colors.white, fontWeight: '600' },
+  noteCapture: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+  },
+  noteCaptureTitle: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+    color: Colors.textDark,
+    marginBottom: Spacing.sm,
+  },
+  noteInput: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.xs,
+    padding: Spacing.sm,
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    marginBottom: Spacing.sm,
+  },
+  noteActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  noteSaveBtn: {
+    flex: 1,
+    backgroundColor: Colors.terracotta,
+    borderRadius: BorderRadius.xs,
+    padding: Spacing.sm,
+    alignItems: 'center',
+  },
+  noteSaveBtnText: {
+    color: Colors.white,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+    fontSize: Typography.body,
+  },
+  noteSkipBtn: {
+    flex: 1,
+    backgroundColor: Colors.tan,
+    borderRadius: BorderRadius.xs,
+    padding: Spacing.sm,
+    alignItems: 'center',
+  },
+  noteSkipBtnText: {
+    color: Colors.textMid,
+    fontFamily: Typography.fontFamily,
+    fontSize: Typography.body,
+  },
+  notePhaseHint: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'center',
+  },
+  timelineEmpty: {
+    paddingVertical: Spacing.sm,
+  },
+  timelineEmptyText: {
+    fontSize: Typography.small,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 20,
+  },
+  timelineItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: Spacing.sm,
+    position: 'relative',
+  },
+  timelineLine: {
+    position: 'absolute',
+    left: 15,
+    top: 30,
+    width: 1,
+    bottom: -Spacing.sm,
+    backgroundColor: Colors.tan,
+  },
+  timelineIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+    flexShrink: 0,
+  },
+  timelineIconText: {
+    fontSize: 13,
+  },
+  timelineContent: {
+    flex: 1,
+    paddingTop: 4,
+  },
+  timelineTitle: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+    color: Colors.textDark,
+  },
+  timelineDate: {
+    fontSize: Typography.small,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    marginTop: 1,
+  },
+  timelineNote: {
+    fontSize: Typography.small,
+    color: Colors.textMid,
+    fontFamily: Typography.fontFamily,
+    marginTop: 4,
+    lineHeight: 18,
+  },
   alwaysInTouchRow: {
     flexDirection: 'row',
     alignItems: 'center',
