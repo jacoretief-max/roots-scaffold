@@ -273,7 +273,6 @@ export default function ConnectScreen() {
 
     syncContacts(contacts, {
       onSuccess: (result) => {
-        console.log('SYNC RESULT:', JSON.stringify(result));
         setSyncResult(result);
         setIsSyncing(false);
       },
