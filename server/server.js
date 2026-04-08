@@ -720,6 +720,13 @@ app.post('/api/media/presign', requireAuth, async (req, res) => {
 
 app.post('/api/media/confirm', requireAuth, (_, res) => res.json({ data: { ok: true } }));
 
+// ── Admin / test endpoints ─────────────────────────────
+// GET /api/admin/run-nudges — test only, remove before launch
+app.get('/api/admin/run-nudges', async (req, res) => {
+  runNudgeEngine(db);
+  res.json({ data: { ok: true, message: 'Nudge engine triggered' } });
+});
+
 // ── Push tokens ────────────────────────────────────────
 app.post('/api/push-tokens', requireAuth, async (req, res) => {
   const { token, platform } = req.body;
