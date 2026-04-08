@@ -7,6 +7,8 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View, AppState } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '@/store/authStore';
+import { Colors } from '@/constants/theme';
+import { useRegisterPushToken } from '@/api/hooks';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -15,8 +17,6 @@ Notifications.setNotificationHandler({
     shouldSetBadge: false,
   }),
 });
-import { Colors } from '@/constants/theme';
-import { useRegisterPushToken } from '@/api/hooks';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,6 +29,25 @@ const queryClient = new QueryClient({
 
 function RootNavigator() {
   const { isAuthenticated, isLoading } = useAuthStore();
+  const { mutate: registerPushToken } = useRegisterPushToken();
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const registerForPush = async () => {
+      try {
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== 'granted') return;
+        const token = await Notifications.getExpoPushTokenAsync({
+          projectId: 'YOUR_EAS_PROJECT_ID',
+        });
+        if (token.data) registerPushToken(token.data);
+      } catch {
+        // Push notifications not available in Expo Go — works in TestFlight build
+        console.log('Push registration skipped — Expo Go limitation');
+      }
+    };
+    registerForPush();
+  }, [isAuthenticated]);
 
   useEffect(() => {
     if (!isLoading) {
@@ -70,22 +89,9 @@ export default function RootLayout() {
   const loadTokensFromStorage = useAuthStore((s) => s.loadTokensFromStorage);
   const ensureFreshToken = useAuthStore((s) => s.ensureFreshToken);
   const appState = useRef(AppState.currentState);
-  const { mutate: registerPushToken } = useRegisterPushToken();
 
   useEffect(() => {
     loadTokensFromStorage();
-  }, []);
-
-  useEffect(() => {
-    const registerForPush = async () => {
-      const { status } = await Notifications.requestPermissionsAsync();
-      if (status !== 'granted') return;
-      const token = await Notifications.getExpoPushTokenAsync({
-        projectId: 'YOUR_EAS_PROJECT_ID', // from app.json extra.eas.projectId
-      });
-      if (token.data) registerPushToken(token.data);
-    };
-    registerForPush();
   }, []);
 
   useEffect(() => {
