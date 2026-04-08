@@ -38,7 +38,7 @@ function RootNavigator() {
         const { status } = await Notifications.requestPermissionsAsync();
         if (status !== 'granted') return;
         const token = await Notifications.getExpoPushTokenAsync({
-          projectId: 'YOUR_EAS_PROJECT_ID',
+          projectId: '5864b3fe-1869-4837-a321-2d9290e9537b',
         });
         if (token.data) registerPushToken(token.data);
       } catch {

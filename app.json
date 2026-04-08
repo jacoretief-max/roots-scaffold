@@ -48,7 +48,8 @@
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_CALENDAR",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE"
+        "android.permission.VIBRATE",
+        "android.permission.WRITE_CONTACTS"
       ]
     },
     "plugins": [
@@ -82,8 +83,10 @@
     },
     "extra": {
       "eas": {
-        "projectId": "YOUR_EAS_PROJECT_ID"
-      }
-    }
+        "projectId": "5864b3fe-1869-4837-a321-2d9290e9537b"
+      },
+      "router": {}
+    },
+    "owner": "jacoretief"
   }
 }
