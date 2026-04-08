@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Contacts from 'expo-contacts';
-import { useUserSearch, useAddConnection, useSyncContacts, useConfirmContactMatch } from '@/api/hooks';
+import { useUserSearch, useAddConnection, useSyncContacts, useConfirmContactMatch, useConfirmCalendarMatch } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
 
@@ -227,6 +227,150 @@ const SearchResult = ({
   </View>
 );
 
+// ── Calendar match card ────────────────────────────────
+const CalendarMatchCard = ({
+  match,
+  onConfirm,
+  onDismiss,
+}: {
+  match: any;
+  onConfirm: (match: any, note?: string) => void;
+  onDismiss: (connectionId: string) => void;
+}) => {
+  const [noteVisible, setNoteVisible] = useState(false);
+  const [eventNote, setEventNote] = useState('');
+
+  return (
+    <View style={calStyles.card}>
+      <Text style={calStyles.name}>{match.connectionName}</Text>
+      <Text style={calStyles.meta}>
+        {match.eventTitle} · {new Date(match.eventDate).toLocaleDateString('en-GB', {
+          day: 'numeric', month: 'short', year: 'numeric'
+        })}
+      </Text>
+
+      {noteVisible ? (
+        <View style={{ gap: Spacing.sm, marginTop: Spacing.sm }}>
+          <TextInput
+            style={calStyles.noteInput}
+            value={eventNote}
+            onChangeText={setEventNote}
+            placeholder="Add a note about this meeting…"
+            placeholderTextColor={Colors.textLight}
+            multiline
+            autoFocus
+            maxLength={500}
+          />
+          <View style={calStyles.actions}>
+            <TouchableOpacity
+              style={calStyles.confirmBtn}
+              onPress={() => onConfirm(match, eventNote || undefined)}
+            >
+              <Text style={calStyles.confirmBtnText}>Save</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={calStyles.dismissBtn}
+              onPress={() => onConfirm(match)}
+            >
+              <Text style={calStyles.dismissBtnText}>Skip note</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={calStyles.hint}>Voice notes coming in Phase 4</Text>
+        </View>
+      ) : (
+        <View style={calStyles.actions}>
+          <TouchableOpacity
+            style={calStyles.confirmBtn}
+            onPress={() => setNoteVisible(true)}
+          >
+            <Text style={calStyles.confirmBtnText}>Yes, we met</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={calStyles.dismissBtn}
+            onPress={() => onDismiss(match.connectionId)}
+          >
+            <Text style={calStyles.dismissBtnText}>Not relevant</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+};
+
+const calStyles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    borderWidth: 0.5,
+    borderColor: Colors.terracotta + '44',
+    marginBottom: Spacing.sm,
+  },
+  name: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+  },
+  meta: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    marginTop: 2,
+    marginBottom: Spacing.sm,
+  },
+  noteInput: {
+    backgroundColor: Colors.card,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+    minHeight: 70,
+    textAlignVertical: 'top',
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  confirmBtn: {
+    flex: 1,
+    backgroundColor: Colors.terracotta,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    alignItems: 'center',
+  },
+  confirmBtnText: {
+    fontSize: 13,
+    color: Colors.white,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamily,
+  },
+  dismissBtn: {
+    flex: 1,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    alignItems: 'center',
+  },
+  dismissBtnText: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  hint: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+});
+
 // ── Connect screen ─────────────────────────────────────
 export default function ConnectScreen() {
   const [query, setQuery] = useState('');
@@ -238,10 +382,15 @@ export default function ConnectScreen() {
     total: number;
   } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [calendarResult, setCalendarResult] = useState<{
+    matches: any[];
+    dismissedIds: string[];
+  } | null>(null);
   const { data: results = [], isLoading } = useUserSearch(query);
   const { mutate: addConnection } = useAddConnection();
   const { mutate: syncContacts } = useSyncContacts();
   const { mutate: confirmMatch } = useConfirmContactMatch();
+  const { mutate: confirmCalendarMatch } = useConfirmCalendarMatch();
 
   const handleSyncContacts = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
@@ -315,6 +464,34 @@ export default function ConnectScreen() {
       suggestions: prev.suggestions?.filter(
         (s: any) => s.connectionId !== connectionId
       ),
+    } : prev);
+  };
+
+  const handleConfirmCalendar = (match: any, note?: string) => {
+    confirmCalendarMatch(
+      {
+        connectionId: match.connectionId,
+        eventDate: match.eventDate,
+        eventTitle: match.eventTitle,
+        note,
+      },
+      {
+        onSuccess: () => {
+          setCalendarResult(prev => prev ? {
+            ...prev,
+            matches: prev.matches.filter(m => m.connectionId !== match.connectionId),
+            dismissedIds: [...prev.dismissedIds],
+          } : prev);
+        },
+      }
+    );
+  };
+
+  const handleDismissCalendar = (connectionId: string) => {
+    setCalendarResult(prev => prev ? {
+      ...prev,
+      matches: prev.matches.filter(m => m.connectionId !== connectionId),
+      dismissedIds: [...prev.dismissedIds, connectionId],
     } : prev);
   };
 
@@ -530,6 +707,24 @@ export default function ConnectScreen() {
                 </TouchableOpacity>
               )}
             </View>
+
+            {/* Calendar matches */}
+            {calendarResult && calendarResult.matches.length > 0 && (
+              <View style={styles.syncCard}>
+                <Text style={styles.syncTitle}>Calendar matches</Text>
+                <Text style={styles.syncDesc}>
+                  We found calendar events that match people in your circle. Did you meet with them?
+                </Text>
+                {calendarResult.matches.map((m: any) => (
+                  <CalendarMatchCard
+                    key={m.connectionId}
+                    match={m}
+                    onConfirm={handleConfirmCalendar}
+                    onDismiss={handleDismissCalendar}
+                  />
+                ))}
+              </View>
+            )}
 
             {/* Find My 150 stub */}
             <TouchableOpacity style={styles.find150Btn}>

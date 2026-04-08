@@ -310,3 +310,21 @@ export const useCreateContactEvent = (connectionId: string) => {
   });
 };
 
+export const useConfirmCalendarMatch = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: {
+      connectionId: string;
+      eventDate: string;
+      eventTitle?: string;
+      note?: string;
+    }) => {
+      const { data } = await api.post('/connections/confirm-calendar-match', payload);
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QueryKeys.connections });
+    },
+  });
+};
+
