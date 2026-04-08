@@ -620,7 +620,7 @@ app.post('/api/connections/sync-calendar', requireAuth, async (req, res) => {
 
       const nameMatch =
         attendees.some(a => nameSimilarity(a, name) >= 0.85) ||
-        nameParts.some((part: string) => title.includes(part) && part.length > 2);
+        nameParts.some(part => title.includes(part) && part.length > 2);
 
       if (nameMatch) {
         matches.push({
