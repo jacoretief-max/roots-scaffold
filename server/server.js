@@ -611,7 +611,7 @@ app.post('/api/connections/sync-calendar', requireAuth, async (req, res) => {
   const matches = [];
 
   for (const event of events) {
-    const attendees = (event.attendees ?? []).map((a: string) => a.toLowerCase().trim());
+    const attendees = (event.attendees ?? []).map(a => a.toLowerCase().trim());
     const title = (event.title ?? '').toLowerCase();
 
     for (const conn of connections) {
@@ -619,7 +619,7 @@ app.post('/api/connections/sync-calendar', requireAuth, async (req, res) => {
       const nameParts = name.split(' ');
 
       const nameMatch =
-        attendees.some((a: string) => nameSimilarity(a, name) >= 0.85) ||
+        attendees.some(a => nameSimilarity(a, name) >= 0.85) ||
         nameParts.some((part: string) => title.includes(part) && part.length > 2);
 
       if (nameMatch) {
