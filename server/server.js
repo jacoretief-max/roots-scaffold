@@ -727,6 +727,23 @@ app.get('/api/admin/run-nudges', async (req, res) => {
   res.json({ data: { ok: true, message: 'Nudge engine triggered' } });
 });
 
+// GET /api/admin/test-nudge — force a nudge on first connection
+app.get('/api/admin/test-nudge', requireAuth, async (req, res) => {
+  const { rows: [conn] } = await db.query(
+    `UPDATE connections
+     SET last_contact_at = NOW() - INTERVAL '30 days',
+         score = 60
+     WHERE user_id = $1
+     AND connected_user_id = (
+       SELECT connected_user_id FROM connections
+       WHERE user_id = $1 LIMIT 1
+     )
+     RETURNING *`,
+    [req.userId]
+  );
+  res.json({ data: conn });
+});
+
 // ── Push tokens ────────────────────────────────────────
 app.post('/api/push-tokens', requireAuth, async (req, res) => {
   const { token, platform } = req.body;
