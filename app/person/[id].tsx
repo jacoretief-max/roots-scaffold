@@ -417,7 +417,7 @@ export default function PersonScreen() {
 
         {/* Contact timeline */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent touchpoints</Text>
+          <Text style={styles.sectionTitle}>Recent moments</Text>
           {eventsLoading && (
             <ActivityIndicator color={Colors.terracotta} />
           )}
