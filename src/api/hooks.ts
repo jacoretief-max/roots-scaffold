@@ -310,6 +310,14 @@ export const useCreateContactEvent = (connectionId: string) => {
   });
 };
 
+export const useSyncCalendar = () =>
+  useMutation({
+    mutationFn: async (events: Array<{ title: string; date: string; attendees?: string[] }>) => {
+      const { data } = await api.post('/connections/sync-calendar', { events });
+      return data.data as { matches: any[]; total: number };
+    },
+  });
+
 export const useConfirmCalendarMatch = () => {
   const qc = useQueryClient();
   return useMutation({

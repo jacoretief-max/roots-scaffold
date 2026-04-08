@@ -594,6 +594,49 @@ app.post('/api/connections/:id/log-contact', requireAuth, async (req, res) => {
   res.json({ data: connection });
 });
 
+// POST /api/connections/sync-calendar
+// Receives recent calendar events, matches to connections by attendee name
+app.post('/api/connections/sync-calendar', requireAuth, async (req, res) => {
+  const { events } = req.body;
+  if (!Array.isArray(events)) return res.status(400).json({ error: 'events array required' });
+
+  const { rows: connections } = await db.query(
+    `SELECT c.id, c.connected_user_id, u.display_name, u.phone_number
+     FROM connections c
+     JOIN users u ON u.id = c.connected_user_id
+     WHERE c.user_id = $1`,
+    [req.userId]
+  );
+
+  const matches = [];
+
+  for (const event of events) {
+    const attendees = (event.attendees ?? []).map((a: string) => a.toLowerCase().trim());
+    const title = (event.title ?? '').toLowerCase();
+
+    for (const conn of connections) {
+      const name = conn.display_name.toLowerCase().trim();
+      const nameParts = name.split(' ');
+
+      const nameMatch =
+        attendees.some((a: string) => nameSimilarity(a, name) >= 0.85) ||
+        nameParts.some((part: string) => title.includes(part) && part.length > 2);
+
+      if (nameMatch) {
+        matches.push({
+          connectionId: conn.id,
+          connectionName: conn.display_name,
+          eventTitle: event.title,
+          eventDate: event.date,
+        });
+        break;
+      }
+    }
+  }
+
+  res.json({ data: { matches, total: events.length } });
+});
+
 // POST /api/connections/confirm-calendar-match
 app.post('/api/connections/confirm-calendar-match', requireAuth, async (req, res) => {
   const { connectionId, eventDate, eventTitle, note } = req.body;

@@ -6,7 +6,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Contacts from 'expo-contacts';
-import { useUserSearch, useAddConnection, useSyncContacts, useConfirmContactMatch, useConfirmCalendarMatch } from '@/api/hooks';
+import * as Calendar from 'expo-calendar';
+import { useUserSearch, useAddConnection, useSyncContacts, useConfirmContactMatch, useConfirmCalendarMatch, useSyncCalendar } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
 
@@ -382,6 +383,7 @@ export default function ConnectScreen() {
     total: number;
   } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isCalendarSyncing, setIsCalendarSyncing] = useState(false);
   const [calendarResult, setCalendarResult] = useState<{
     matches: any[];
     dismissedIds: string[];
@@ -391,6 +393,7 @@ export default function ConnectScreen() {
   const { mutate: syncContacts } = useSyncContacts();
   const { mutate: confirmMatch } = useConfirmContactMatch();
   const { mutate: confirmCalendarMatch } = useConfirmCalendarMatch();
+  const { mutate: syncCalendar } = useSyncCalendar();
 
   const handleSyncContacts = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
@@ -465,6 +468,54 @@ export default function ConnectScreen() {
         (s: any) => s.connectionId !== connectionId
       ),
     } : prev);
+  };
+
+  const handleSyncCalendar = async () => {
+    const { status } = await Calendar.requestCalendarPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission needed',
+        'Please allow access to your calendar to use this feature.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() },
+        ]
+      );
+      return;
+    }
+
+    setIsCalendarSyncing(true);
+    setCalendarResult(null);
+
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+    const calendarIds = calendars.map(c => c.id);
+
+    const calEvents = await Calendar.getEventsAsync(calendarIds, thirtyDaysAgo, now);
+
+    const events = calEvents
+      .filter(e => e.title)
+      .map(e => ({
+        title: e.title,
+        date: e.startDate,
+        attendees: (e.attendees ?? []).map((a: any) => a.name ?? a.email ?? ''),
+      }));
+
+    syncCalendar(events, {
+      onSuccess: (result) => {
+        setCalendarResult({ matches: result.matches, dismissedIds: [] });
+        setIsCalendarSyncing(false);
+        if (result.matches.length === 0) {
+          Alert.alert('No matches', `Checked ${result.total} events — no circle members found.`);
+        }
+      },
+      onError: () => {
+        Alert.alert('Sync failed', 'Could not sync calendar. Please try again.');
+        setIsCalendarSyncing(false);
+      },
+    });
   };
 
   const handleConfirmCalendar = (match: any, note?: string) => {
@@ -706,6 +757,25 @@ export default function ConnectScreen() {
                   }
                 </TouchableOpacity>
               )}
+            </View>
+
+            {/* Sync calendar card */}
+            <View style={styles.syncCard}>
+              <Text style={styles.syncTitle}>Sync your calendar</Text>
+              <Text style={styles.syncDesc}>
+                Match recent calendar events to people in your circle and log interactions automatically.
+              </Text>
+              <TouchableOpacity
+                style={styles.syncBtn}
+                onPress={handleSyncCalendar}
+                disabled={isCalendarSyncing}
+                activeOpacity={0.85}
+              >
+                {isCalendarSyncing
+                  ? <ActivityIndicator color={Colors.white} />
+                  : <Text style={styles.syncBtnText}>Sync calendar</Text>
+                }
+              </TouchableOpacity>
             </View>
 
             {/* Calendar matches */}
