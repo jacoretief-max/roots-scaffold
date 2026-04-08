@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Platform } from 'react-native';
 import api from './client';
 import {
   MemoryEvent, MemoryEntry, Connection,
@@ -257,6 +258,14 @@ export const useChangePassword = () =>
       newPassword: string;
     }) => {
       const { data } = await api.patch('/users/me/password', { currentPassword, newPassword });
+      return data.data;
+    },
+  });
+
+export const useRegisterPushToken = () =>
+  useMutation({
+    mutationFn: async (token: string) => {
+      const { data } = await api.post('/push-tokens', { token, platform: Platform.OS });
       return data.data;
     },
   });

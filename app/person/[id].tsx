@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, Modal,
+  ScrollView, Alert, ActivityIndicator, Modal, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
@@ -278,6 +278,26 @@ export default function PersonScreen() {
         {/* Actions */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Actions</Text>
+
+          {/* Always in touch toggle */}
+          <View style={styles.alwaysInTouchRow}>
+            <View style={styles.alwaysInTouchInfo}>
+              <Text style={styles.alwaysInTouchLabel}>Always in touch</Text>
+              <Text style={styles.alwaysInTouchDesc}>
+                We live together or speak daily — skip contact tracking
+              </Text>
+            </View>
+            <Switch
+              value={(connection as any).alwaysInTouch ?? false}
+              onValueChange={(value) => {
+                updateConnection({ id, alwaysInTouch: value } as any, {
+                  onSuccess: () => {},
+                });
+              }}
+              trackColor={{ false: Colors.tan, true: Colors.terracotta }}
+              thumbColor={Colors.white}
+            />
+          </View>
 
           {/* Log contact */}
           <TouchableOpacity
@@ -729,4 +749,30 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
   },
   chipTextActive: { color: Colors.white, fontWeight: '600' },
+  alwaysInTouchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    gap: Spacing.md,
+  },
+  alwaysInTouchInfo: { flex: 1 },
+  alwaysInTouchLabel: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+    color: Colors.textDark,
+  },
+  alwaysInTouchDesc: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    marginTop: 2,
+    lineHeight: 17,
+  },
 });

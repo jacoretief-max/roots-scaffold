@@ -10,6 +10,7 @@ const redis = require('redis');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
+const { runNudgeEngine } = require('./nudgeEngine');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -363,6 +364,7 @@ app.get('/api/connections/:id', requireAuth, async (req, res) => {
        c.score,
        c.last_contact_at as "lastContactAt",
        c.nudge,
+       c.always_in_touch as "alwaysInTouch",
        to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
        json_build_object(
          'id', u.id,
@@ -449,16 +451,17 @@ app.delete('/api/connections/:id', requireAuth, async (req, res) => {
 // PATCH /api/connections/:id
 // Update layer, relation, contact frequency
 app.patch('/api/connections/:id', requireAuth, async (req, res) => {
-  const { layer, relation, contactFrequency } = req.body;
+  const { layer, relation, contactFrequency, alwaysInTouch } = req.body;
   const { rows: [connection] } = await db.query(
     `UPDATE connections
      SET
        layer = COALESCE($1, layer),
        relation = COALESCE($2, relation),
-       contact_frequency = COALESCE($3, contact_frequency)
-     WHERE id = $4 AND user_id = $5
+       contact_frequency = COALESCE($3, contact_frequency),
+       always_in_touch = COALESCE($4, always_in_touch)
+     WHERE id = $5 AND user_id = $6
      RETURNING *`,
-    [layer, relation, contactFrequency, req.params.id, req.userId]
+    [layer, relation, contactFrequency, alwaysInTouch ?? null, req.params.id, req.userId]
   );
   if (!connection) return res.status(404).json({ error: 'Connection not found' });
   res.json({ data: connection });
@@ -717,6 +720,28 @@ app.post('/api/media/presign', requireAuth, async (req, res) => {
 
 app.post('/api/media/confirm', requireAuth, (_, res) => res.json({ data: { ok: true } }));
 
+// ── Push tokens ────────────────────────────────────────
+app.post('/api/push-tokens', requireAuth, async (req, res) => {
+  const { token, platform } = req.body;
+  if (!token || !platform) return res.status(400).json({ error: 'token and platform required' });
+  if (!['ios', 'android'].includes(platform)) return res.status(400).json({ error: 'platform must be ios or android' });
+
+  await db.query(
+    `INSERT INTO push_tokens (user_id, token, platform)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (token) DO UPDATE SET user_id = $1, platform = $3`,
+    [req.userId, token, platform]
+  );
+  res.json({ data: { ok: true } });
+});
+
 // ── Start ──────────────────────────────────────────────
 const PORT = process.env.PORT ?? 3000;
+// ── Nudge engine — runs every 6 hours ──────────────────
+const SIX_HOURS = 6 * 60 * 60 * 1000;
+setTimeout(() => {
+  runNudgeEngine(db);
+  setInterval(() => runNudgeEngine(db), SIX_HOURS);
+}, 30000); // Wait 30s after startup before first run
+
 app.listen(PORT, () => console.log(`Roots API running on http://localhost:${PORT}`));

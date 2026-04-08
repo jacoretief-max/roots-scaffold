@@ -5,8 +5,18 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, View, AppState } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { useAuthStore } from '@/store/authStore';
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 import { Colors } from '@/constants/theme';
+import { useRegisterPushToken } from '@/api/hooks';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -60,9 +70,22 @@ export default function RootLayout() {
   const loadTokensFromStorage = useAuthStore((s) => s.loadTokensFromStorage);
   const ensureFreshToken = useAuthStore((s) => s.ensureFreshToken);
   const appState = useRef(AppState.currentState);
+  const { mutate: registerPushToken } = useRegisterPushToken();
 
   useEffect(() => {
     loadTokensFromStorage();
+  }, []);
+
+  useEffect(() => {
+    const registerForPush = async () => {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') return;
+      const token = await Notifications.getExpoPushTokenAsync({
+        projectId: 'YOUR_EAS_PROJECT_ID', // from app.json extra.eas.projectId
+      });
+      if (token.data) registerPushToken(token.data);
+    };
+    registerForPush();
   }, []);
 
   useEffect(() => {
