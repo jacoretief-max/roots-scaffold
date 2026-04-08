@@ -182,6 +182,25 @@ export const useSyncContacts = () =>
   useMutation({
     mutationFn: async (contacts: Array<{ name: string; phoneNumber?: string }>) => {
       const { data } = await api.post('/connections/sync-contacts', { contacts });
+      return data.data as {
+        matched: any[];
+        suggestions: any[];
+        total: number;
+      };
+    },
+  });
+
+// Confirm a fuzzy contact match
+export const useConfirmContactMatch = () =>
+  useMutation({
+    mutationFn: async ({ connectedUserId, phoneNumber }: {
+      connectedUserId: string;
+      phoneNumber: string;
+    }) => {
+      const { data } = await api.post('/connections/confirm-contact-match', {
+        connectedUserId,
+        phoneNumber,
+      });
       return data.data;
     },
   });

@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Contacts from 'expo-contacts';
-import { useUserSearch, useAddConnection, useSyncContacts } from '@/api/hooks';
+import { useUserSearch, useAddConnection, useSyncContacts, useConfirmContactMatch } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
 
@@ -232,11 +232,16 @@ export default function ConnectScreen() {
   const [query, setQuery] = useState('');
   const [selectedPerson, setSelectedPerson] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ matched: any[]; total: number } | null>(null);
+  const [syncResult, setSyncResult] = useState<{
+    matched: any[];
+    suggestions: any[];
+    total: number;
+  } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const { data: results = [], isLoading } = useUserSearch(query);
   const { mutate: addConnection } = useAddConnection();
   const { mutate: syncContacts } = useSyncContacts();
+  const { mutate: confirmMatch } = useConfirmContactMatch();
 
   const handleSyncContacts = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
@@ -268,14 +273,50 @@ export default function ConnectScreen() {
 
     syncContacts(contacts, {
       onSuccess: (result) => {
-        setIsSyncing(false);
+        console.log('SYNC RESULT:', JSON.stringify(result));
         setSyncResult(result);
+        setIsSyncing(false);
       },
       onError: () => {
+        Alert.alert('Sync failed', 'Could not sync contacts. Please try again.');
         setIsSyncing(false);
-        Alert.alert('Error', 'Failed to sync contacts. Please try again.');
       },
     });
+  };
+
+  const handleConfirmMatch = (suggestion: any) => {
+    console.log('CONFIRMING:', suggestion.connectedUserId, suggestion.phoneNumber);
+    confirmMatch(
+      { connectedUserId: suggestion.connectedUserId, phoneNumber: suggestion.phoneNumber },
+      {
+        onSuccess: (result) => {
+          console.log('CONFIRM SUCCESS:', JSON.stringify(result));
+          setSyncResult(prev => prev ? {
+            ...prev,
+            matched: [...prev.matched, {
+              connectionId: suggestion.connectionId,
+              name: suggestion.rootsName,
+              phoneNumber: suggestion.phoneNumber,
+            }],
+            suggestions: prev.suggestions?.filter(
+              (s: any) => s.connectionId !== suggestion.connectionId
+            ),
+          } : prev);
+        },
+        onError: (err: any) => {
+          console.log('CONFIRM ERROR:', err?.message, err?.response?.status, err?.response?.data);
+        },
+      }
+    );
+  };
+
+  const handleDismissMatch = (connectionId: string) => {
+    setSyncResult(prev => prev ? {
+      ...prev,
+      suggestions: prev.suggestions?.filter(
+        (s: any) => s.connectionId !== connectionId
+      ),
+    } : prev);
   };
 
   const handleAdd = (person: any) => {
@@ -412,18 +453,66 @@ export default function ConnectScreen() {
               </Text>
 
               {syncResult ? (
-                <View style={styles.syncResult}>
-                  <Text style={styles.syncResultText}>
-                    {syncResult.matched.length > 0
-                      ? `Matched ${syncResult.matched.length} of ${syncResult.total} contacts`
-                      : `No new matches found in ${syncResult.total} contacts`
-                    }
-                  </Text>
-                  {syncResult.matched.length > 0 && syncResult.matched.map((m: any) => (
-                    <Text key={m.connectionId} style={styles.syncMatchRow}>
-                      · {m.name}
+                <View style={styles.syncResultWrap}>
+                  {/* Auto-matched */}
+                  {syncResult.matched.length > 0 && (
+                    <View style={styles.syncResultSection}>
+                      <Text style={styles.syncResultTitle}>
+                        ✓  {syncResult.matched.length} matched automatically
+                      </Text>
+                      {syncResult.matched.map((m: any) => (
+                        <View key={m.connectionId} style={styles.syncMatchRow}>
+                          <Text style={styles.syncMatchName}>{m.name}</Text>
+                          <Text style={styles.syncMatchPhone}>{m.phoneNumber}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {/* Suggestions needing confirmation */}
+                  {syncResult.suggestions?.length > 0 && (
+                    <View style={styles.syncResultSection}>
+                      <Text style={styles.syncSuggestTitle}>
+                        Possible matches — please confirm
+                      </Text>
+                      {syncResult.suggestions.map((s: any) => (
+                        <View key={s.connectionId} style={styles.suggestionCard}>
+                          <View style={styles.suggestionNames}>
+                            <Text style={styles.suggestionRootsName}>{s.rootsName}</Text>
+                            <Text style={styles.suggestionArrow}>→</Text>
+                            <Text style={styles.suggestionContactName}>{s.contactName}</Text>
+                            <View style={styles.suggestionScore}>
+                              <Text style={styles.suggestionScoreText}>{s.score}%</Text>
+                            </View>
+                          </View>
+                          {s.phoneNumber && (
+                            <Text style={styles.suggestionPhone}>{s.phoneNumber}</Text>
+                          )}
+                          <View style={styles.suggestionActions}>
+                            <TouchableOpacity
+                              style={styles.confirmBtn}
+                              onPress={() => handleConfirmMatch(s)}
+                            >
+                              <Text style={styles.confirmBtnText}>Yes, that's them</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.dismissBtn}
+                              onPress={() => handleDismissMatch(s.connectionId)}
+                            >
+                              <Text style={styles.dismissBtnText}>Not the same</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+
+                  {syncResult.matched.length === 0 && !syncResult.suggestions?.length && (
+                    <Text style={styles.syncNoMatch}>
+                      No matches found from {syncResult.total} contacts
                     </Text>
-                  ))}
+                  )}
+
                   <TouchableOpacity onPress={() => setSyncResult(null)} style={styles.syncAgainBtn}>
                     <Text style={styles.syncAgainText}>Sync again</Text>
                   </TouchableOpacity>
@@ -664,21 +753,122 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: Typography.fontFamily,
   },
-  syncResult: { gap: Spacing.xs },
-  syncResultText: {
-    fontSize: Typography.body,
+  syncResultWrap: { gap: Spacing.md },
+  syncResultSection: { gap: Spacing.xs },
+  syncResultTitle: {
+    fontSize: 13,
+    color: Colors.sage,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    marginBottom: Spacing.xs,
+  },
+  syncSuggestTitle: {
+    fontSize: 13,
+    color: Colors.terracotta,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    marginBottom: Spacing.xs,
+  },
+  suggestionCard: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    borderWidth: 0.5,
+    borderColor: Colors.terracotta + '44',
+    gap: Spacing.sm,
+  },
+  suggestionNames: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flexWrap: 'wrap',
+  },
+  suggestionRootsName: {
+    fontSize: 13,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
     color: Colors.textDark,
-    marginBottom: Spacing.xs,
   },
-  syncMatchRow: {
+  suggestionArrow: {
+    fontSize: 13,
+    color: Colors.textLight,
+  },
+  suggestionContactName: {
+    fontSize: 13,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+  },
+  suggestionScore: {
+    backgroundColor: Colors.terracotta + '18',
+    borderRadius: BorderRadius.pill,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  suggestionScoreText: {
+    fontSize: 10,
+    color: Colors.terracotta,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamily,
+  },
+  suggestionPhone: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  suggestionActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  confirmBtn: {
+    flex: 1,
+    backgroundColor: Colors.terracotta,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    alignItems: 'center',
+  },
+  confirmBtnText: {
+    fontSize: 12,
+    color: Colors.white,
+    fontWeight: '700',
+    fontFamily: Typography.fontFamily,
+  },
+  dismissBtn: {
+    flex: 1,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    alignItems: 'center',
+  },
+  dismissBtnText: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  syncNoMatch: {
     fontSize: 13,
     color: Colors.textLight,
     fontFamily: Typography.fontFamily,
-    paddingLeft: Spacing.sm,
+    fontStyle: 'italic',
   },
-  syncAgainBtn: { marginTop: Spacing.md },
+  syncMatchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  syncMatchName: {
+    fontSize: 13,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+    fontWeight: '600',
+  },
+  syncMatchPhone: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  syncAgainBtn: { marginTop: Spacing.sm },
   syncAgainText: {
     fontSize: 13,
     color: Colors.terracotta,

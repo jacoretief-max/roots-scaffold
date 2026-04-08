@@ -493,7 +493,20 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
       const contactName = contact.name?.toLowerCase().trim();
       if (!contactName || contactName.length < 3) continue;
 
-      // Try normal and reversed name formats
+      // Phone match takes priority — treated as exact
+      const phoneMatch = contact.phoneNumber &&
+        connection.phone_number &&
+        contact.phoneNumber.replace(/\D/g, '').endsWith(
+          connection.phone_number.replace(/\D/g, '').slice(-9)
+        );
+
+      if (phoneMatch) {
+        bestScore = 1.0;
+        bestMatch = { contact, score: 1.0 };
+        break; // Phone match is definitive — stop looking
+      }
+
+      // Fall back to name similarity
       const nameParts = connectionName.split(' ');
       const reversedName = nameParts.length === 2
         ? `${nameParts[1]}, ${nameParts[0]}`
