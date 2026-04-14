@@ -19,15 +19,18 @@ const EditModal = ({
   connection,
   onClose,
   onSave,
+  onRemove,
 }: {
   visible: boolean;
   connection: any;
   onClose: () => void;
-  onSave: (payload: { layer: DunbarLayer; relation: string; contactFrequency: number }) => void;
+  onSave: (payload: { layer: DunbarLayer; relation: string; contactFrequency: number; alwaysInTouch: boolean }) => void;
+  onRemove: () => void;
 }) => {
   const [layer, setLayer] = useState<DunbarLayer>(connection?.layer ?? 'active');
   const [relation, setRelation] = useState(connection?.relation ?? '');
   const [contactFrequency, setContactFrequency] = useState(connection?.contactFrequency ?? 14);
+  const [alwaysInTouch, setAlwaysInTouch] = useState((connection as any)?.alwaysInTouch ?? false);
 
   const FREQUENCY_OPTIONS = [
     { label: 'Every few days', days: 3 },
@@ -50,12 +53,30 @@ const EditModal = ({
             <Text style={styles.modalCancel}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.modalTitle}>Edit connection</Text>
-          <TouchableOpacity onPress={() => onSave({ layer, relation, contactFrequency })}>
+          <TouchableOpacity onPress={() => onSave({ layer, relation, contactFrequency, alwaysInTouch })}>
             <Text style={styles.modalSave}>Save</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.modalContent} keyboardShouldPersistTaps="handled">
+
+          {/* Always in touch */}
+          <Text style={styles.sectionLabel}>Settings</Text>
+          <View style={styles.modalToggleRow}>
+            <View style={styles.modalToggleInfo}>
+              <Text style={styles.modalToggleLabel}>Always in touch</Text>
+              <Text style={styles.modalToggleDesc}>
+                We live together or speak daily — skip contact tracking
+              </Text>
+            </View>
+            <Switch
+              value={alwaysInTouch}
+              onValueChange={setAlwaysInTouch}
+              trackColor={{ false: Colors.tan, true: Colors.terracotta }}
+              thumbColor={Colors.white}
+            />
+          </View>
+
           {/* Layer */}
           <Text style={styles.sectionLabel}>Circle layer</Text>
           {DunbarLayers.map(l => (
@@ -92,6 +113,19 @@ const EditModal = ({
               </TouchableOpacity>
             ))}
           </View>
+
+          {/* Remove from circle */}
+          <Text style={styles.sectionLabel}>Danger zone</Text>
+          <TouchableOpacity
+            style={styles.modalRemoveBtn}
+            onPress={() => {
+              onClose();
+              onRemove();
+            }}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.modalRemoveBtnText}>Remove from circle</Text>
+          </TouchableOpacity>
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -215,9 +249,9 @@ export default function PersonScreen() {
     );
   };
 
-  const handleSaveEdit = (payload: { layer: DunbarLayer; relation: string; contactFrequency: number }) => {
+  const handleSaveEdit = (payload: { layer: DunbarLayer; relation: string; contactFrequency: number; alwaysInTouch: boolean }) => {
     updateConnection(
-      { id, ...payload },
+      { id, ...payload } as any,
       {
         onSuccess: () => {
           setEditVisible(false);
@@ -356,62 +390,17 @@ export default function PersonScreen() {
               <Text style={styles.notePhaseHint}>Voice notes coming in Phase 4</Text>
             </View>
           ) : (
-            <>
-              {/* Always in touch toggle */}
-              <View style={styles.alwaysInTouchRow}>
-                <View style={styles.alwaysInTouchInfo}>
-                  <Text style={styles.alwaysInTouchLabel}>Always in touch</Text>
-                  <Text style={styles.alwaysInTouchDesc}>
-                    We live together or speak daily — skip contact tracking
-                  </Text>
-                </View>
-                <Switch
-                  value={(connection as any).alwaysInTouch ?? false}
-                  onValueChange={(value) => {
-                    updateConnection({ id, alwaysInTouch: value } as any, {
-                      onSuccess: () => {},
-                    });
-                  }}
-                  trackColor={{ false: Colors.tan, true: Colors.terracotta }}
-                  thumbColor={Colors.white}
-                />
-              </View>
-
-              {/* Log contact */}
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={handleLogContact}
-                disabled={isLogging}
-                activeOpacity={0.85}
-              >
-                {isLogging
-                  ? <ActivityIndicator color={Colors.white} />
-                  : <Text style={styles.actionBtnText}>Log contact</Text>
-                }
-              </TouchableOpacity>
-
-              {/* Edit connection */}
-              <TouchableOpacity
-                style={styles.actionBtnSecondary}
-                onPress={() => setEditVisible(true)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.actionBtnSecondaryText}>Edit layer & frequency</Text>
-              </TouchableOpacity>
-
-              {/* Remove */}
-              <TouchableOpacity
-                style={styles.actionBtnDestructive}
-                onPress={handleRemove}
-                disabled={isRemoving}
-                activeOpacity={0.85}
-              >
-                {isRemoving
-                  ? <ActivityIndicator color={Colors.scoreLow} />
-                  : <Text style={styles.actionBtnDestructiveText}>Remove from circle</Text>
-                }
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={handleLogContact}
+              disabled={isLogging}
+              activeOpacity={0.85}
+            >
+              {isLogging
+                ? <ActivityIndicator color={Colors.white} />
+                : <Text style={styles.actionBtnText}>Log contact</Text>
+              }
+            </TouchableOpacity>
           )}
         </View>
 
@@ -460,6 +449,7 @@ export default function PersonScreen() {
         connection={connection}
         onClose={() => setEditVisible(false)}
         onSave={handleSaveEdit}
+        onRemove={handleRemove}
       />
     </SafeAreaView>
   );
@@ -671,39 +661,11 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     padding: Spacing.md,
     alignItems: 'center',
-    marginBottom: Spacing.sm,
   },
   actionBtnText: {
     fontSize: Typography.body,
     color: Colors.white,
     fontWeight: '700',
-    fontFamily: Typography.fontFamily,
-  },
-  actionBtnSecondary: {
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.sm,
-    padding: Spacing.md,
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-    borderWidth: 0.5,
-    borderColor: Colors.tan,
-  },
-  actionBtnSecondaryText: {
-    fontSize: Typography.body,
-    color: Colors.textDark,
-    fontFamily: Typography.fontFamily,
-    fontWeight: '600',
-  },
-  actionBtnDestructive: {
-    borderRadius: BorderRadius.sm,
-    padding: Spacing.md,
-    alignItems: 'center',
-    borderWidth: 0.5,
-    borderColor: Colors.scoreLow + '66',
-  },
-  actionBtnDestructiveText: {
-    fontSize: Typography.body,
-    color: Colors.scoreLow,
     fontFamily: Typography.fontFamily,
   },
 
@@ -974,7 +936,8 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     fontStyle: 'italic',
   },
-  alwaysInTouchRow: {
+  // Modal toggle (Always in touch)
+  modalToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -986,18 +949,33 @@ const styles = StyleSheet.create({
     borderColor: Colors.tan,
     gap: Spacing.md,
   },
-  alwaysInTouchInfo: { flex: 1 },
-  alwaysInTouchLabel: {
+  modalToggleInfo: { flex: 1 },
+  modalToggleLabel: {
     fontSize: Typography.body,
     fontFamily: Typography.fontFamily,
     fontWeight: '600',
     color: Colors.textDark,
   },
-  alwaysInTouchDesc: {
+  modalToggleDesc: {
     fontSize: 12,
     color: Colors.textLight,
     fontFamily: Typography.fontFamily,
     marginTop: 2,
     lineHeight: 17,
+  },
+
+  // Modal remove button
+  modalRemoveBtn: {
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    alignItems: 'center',
+    borderWidth: 0.5,
+    borderColor: Colors.scoreLow + '66',
+    marginBottom: Spacing.sm,
+  },
+  modalRemoveBtnText: {
+    fontSize: Typography.body,
+    color: Colors.scoreLow,
+    fontFamily: Typography.fontFamily,
   },
 });
