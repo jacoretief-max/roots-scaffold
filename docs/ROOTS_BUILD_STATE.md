@@ -141,9 +141,14 @@
 - ⬜ **Find My 150** — on-device AI analysis using contacts/WhatsApp/photos; needs WhatsApp API
 
 ### Phase 4 (not started)
-- ⬜ **S3 photo storage** — presigned URL upload flow (architecture ready, credentials not set up)
+- ⬜ **S3 photo/video storage** — presigned URL upload flow (architecture ready, credentials not set up)
   - Profile photo upload UI removed, "Coming Phase 4" badge shown
   - base64 approach was tested and proved unreliable — proper S3 is required
+  - Supports both photos and short videos
+- ⬜ **Media display in Story view** — interleaved layout: two media items side by side, then a perspective block, repeating down the feed
+  - Any participant (not just the creator) can add photos and videos to a shared memory
+  - Tap any photo or video → full-screen lightbox with swipe-through navigation and × top-right to close
+  - Deferred until S3 is in place so layout can be built and tested against real content
 - ⬜ **Voice notes** — record audio for contact events and memories
 - ⬜ **ID verification** — upload driver's licence/passport, extract DOB only
 - ⬜ **2FA** — TOTP authenticator app setup
@@ -182,15 +187,16 @@
 
 ## Phase 4 Priorities (in order)
 
-1. **S3 setup** — AWS bucket, presigned URL endpoint, profile photo upload
-2. **Voice notes** — expo-av recording, S3 storage, playback in timeline
-3. **TestFlight** — EAS build, upload to App Store Connect, internal testing
-4. **App Store assets** — icon, screenshots, description, privacy policy URL
-5. **App Store submission** — iOS and Google Play
-6. **3D Globe** — react-native-maps with dark tile layer, connection dots at lat/lng
-7. **2FA + phone verification**
-8. **ID verification**
-9. **WhatsApp message frequency** — once Meta approval received
+1. **S3 setup** — AWS bucket, presigned URL endpoint, profile photo + video upload (all participants can add media)
+2. **Media display in Story view** — interleaved photo/video grid + full-screen lightbox viewer
+3. **Voice notes** — expo-av recording, S3 storage, playback in timeline
+4. **TestFlight** — EAS build, upload to App Store Connect, internal testing
+5. **App Store assets** — icon, screenshots, description, privacy policy URL
+6. **App Store submission** — iOS and Google Play
+7. **3D Globe** — react-native-maps with dark tile layer, connection dots at lat/lng
+8. **2FA + phone verification**
+9. **ID verification**
+10. **WhatsApp message frequency** — once Meta approval received
 
 ---
 
