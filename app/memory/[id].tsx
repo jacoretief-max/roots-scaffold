@@ -3,13 +3,16 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Animated,
-  Dimensions, Modal, Image,
+  Dimensions, Modal, Image, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useMemory, useAddMemoryEntry, useUpdateMemoryEntry } from '@/api/hooks';
+import {
+  useMemory, useAddMemoryEntry, useUpdateMemoryEntry,
+  useDeleteMemoryEntry, useUpdateMemory, useConnectionSearch,
+} from '@/api/hooks';
 import { useAuthStore } from '@/store/authStore';
-import { MemoryEntry } from '@/types';
+import { MemoryEntry, MemoryEvent, VisibilityLevel } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 
 const { width, height } = Dimensions.get('window');
@@ -46,9 +49,13 @@ const useColorRotation = (colors: string[], interval = 2200) => {
 const StructuredView = ({
   entries,
   currentUserId,
+  isCreator,
+  onDeleteEntry,
 }: {
   entries: MemoryEntry[];
   currentUserId: string;
+  isCreator: boolean;
+  onDeleteEntry: (entryId: string, authorName: string) => void;
 }) => (
   <ScrollView
     style={styles.structuredScroll}
@@ -63,6 +70,7 @@ const StructuredView = ({
     )}
     {entries.map((entry) => {
       const isMe = entry.authorId === currentUserId;
+      const canDelete = isCreator || isMe;
       return (
         <View key={entry.id} style={[styles.entryCard, isMe && styles.entryCardMe]}>
           {/* Author row */}
@@ -79,7 +87,7 @@ const StructuredView = ({
                 </Text>
               </View>
             )}
-            <View>
+            <View style={{ flex: 1 }}>
               <Text style={styles.entryAuthor}>
                 {isMe ? 'You' : entry.author?.displayName}
               </Text>
@@ -93,6 +101,15 @@ const StructuredView = ({
               <View style={styles.newBadge}>
                 <Text style={styles.newBadgeText}>NEW</Text>
               </View>
+            )}
+            {canDelete && (
+              <TouchableOpacity
+                onPress={() => onDeleteEntry(entry.id, isMe ? 'your' : entry.author?.displayName ?? '')}
+                style={styles.entryDeleteBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.entryDeleteBtnText}>×</Text>
+              </TouchableOpacity>
             )}
           </View>
           {/* Memory text */}
@@ -219,6 +236,191 @@ const AddPerspective = ({ eventId }: { eventId: string }) => {
   );
 };
 
+// ── Edit memory modal (creator only) ──────────────────
+const VISIBILITY_OPTIONS: { key: VisibilityLevel; label: string; desc: string }[] = [
+  { key: 'onlyUs',      label: 'Only us',              desc: 'Tagged people only' },
+  { key: 'intimate',    label: 'Intimate',              desc: 'Tagged + your intimate circle (up to 5)' },
+  { key: 'close',       label: 'Close',                 desc: 'Tagged + intimate and close (up to 15)' },
+  { key: 'active',      label: 'Active',                desc: 'Tagged + first 50 connections' },
+  { key: 'meaningful',  label: 'Everyone meaningful',   desc: 'Your full meaningful network (up to 150)' },
+];
+
+const EditMemoryModal = ({
+  visible,
+  event,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  event: MemoryEvent;
+  onClose: () => void;
+  onSave: (payload: {
+    title: string;
+    date: string;
+    location: string;
+    visibility: VisibilityLevel;
+    participantIds: string[];
+  }) => void;
+}) => {
+  const [title, setTitle] = useState(event.title ?? '');
+  const [date, setDate] = useState(event.date ?? '');
+  const [location, setLocation] = useState(event.location ?? '');
+  const [visibility, setVisibility] = useState<VisibilityLevel>(event.visibility ?? 'intimate');
+  const [participants, setParticipants] = useState<{ id: string; displayName: string; avatarColour: string }[]>(
+    event.participants ?? []
+  );
+  const [searchQuery, setSearchQuery] = useState('');
+  const { data: searchResults = [] } = useConnectionSearch(searchQuery);
+
+  const creatorId = event.createdByUserId;
+
+  const addParticipant = (person: { id: string; displayName: string; avatarColour: string }) => {
+    if (participants.find(p => p.id === person.id)) return;
+    setParticipants(prev => [...prev, person]);
+    setSearchQuery('');
+  };
+
+  const removeParticipant = (personId: string) => {
+    setParticipants(prev => prev.filter(p => p.id !== personId));
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={styles.editModal} edges={['top', 'bottom']}>
+        <View style={styles.editHeader}>
+          <TouchableOpacity onPress={onClose}>
+            <Text style={styles.editCancel}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={styles.editTitle}>Edit memory</Text>
+          <TouchableOpacity
+            onPress={() => onSave({
+              title: title.trim(),
+              date,
+              location: location.trim(),
+              visibility,
+              participantIds: participants.map(p => p.id),
+            })}
+            disabled={!title.trim()}
+          >
+            <Text style={[styles.editSave, !title.trim() && styles.editSaveDisabled]}>Save</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.editScroll} keyboardShouldPersistTaps="handled">
+          {/* Title */}
+          <Text style={styles.editSectionLabel}>Title</Text>
+          <TextInput
+            style={styles.editTextInput}
+            value={title}
+            onChangeText={setTitle}
+            placeholder="Memory title"
+            placeholderTextColor={Colors.textLight}
+            maxLength={120}
+          />
+
+          {/* Date */}
+          <Text style={styles.editSectionLabel}>Date</Text>
+          <TextInput
+            style={styles.editTextInput}
+            value={date}
+            onChangeText={setDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={Colors.textLight}
+            keyboardType="numbers-and-punctuation"
+            maxLength={10}
+          />
+
+          {/* Location */}
+          <Text style={styles.editSectionLabel}>Location</Text>
+          <TextInput
+            style={styles.editTextInput}
+            value={location}
+            onChangeText={setLocation}
+            placeholder="City, country or venue"
+            placeholderTextColor={Colors.textLight}
+            maxLength={120}
+          />
+
+          {/* Visibility */}
+          <Text style={styles.editSectionLabel}>Visibility</Text>
+          {VISIBILITY_OPTIONS.map(opt => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.visibilityOption, visibility === opt.key && styles.visibilityOptionActive]}
+              onPress={() => setVisibility(opt.key)}
+            >
+              <View style={styles.visibilityRadio}>
+                {visibility === opt.key && <View style={styles.visibilityRadioInner} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.visibilityLabel, visibility === opt.key && styles.visibilityLabelActive]}>
+                  {opt.label}
+                </Text>
+                <Text style={styles.visibilityDesc}>{opt.desc}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+
+          {/* Participants */}
+          <Text style={styles.editSectionLabel}>People in this memory</Text>
+
+          {/* Current participants */}
+          {participants.map(p => (
+            <View key={p.id} style={styles.participantRow}>
+              <View style={[styles.participantRowAvatar, { backgroundColor: p.avatarColour }]}>
+                <Text style={styles.participantRowAvatarText}>
+                  {p.displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <Text style={styles.participantRowName}>{p.displayName}</Text>
+              {p.id !== creatorId && (
+                <TouchableOpacity onPress={() => removeParticipant(p.id)} style={styles.participantRemoveBtn}>
+                  <Text style={styles.participantRemoveBtnText}>×</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+
+          {/* Search to add */}
+          <TextInput
+            style={[styles.editTextInput, { marginTop: Spacing.sm }]}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search your connections to add…"
+            placeholderTextColor={Colors.textLight}
+          />
+          {searchResults.map((result: any) => {
+            const cu = result.connectedUser ?? result;
+            if (participants.find(p => p.id === cu.id)) return null;
+            return (
+              <TouchableOpacity
+                key={cu.id}
+                style={styles.searchResultRow}
+                onPress={() => addParticipant({ id: cu.id, displayName: cu.displayName, avatarColour: cu.avatarColour })}
+              >
+                <View style={[styles.participantRowAvatar, { backgroundColor: cu.avatarColour }]}>
+                  <Text style={styles.participantRowAvatarText}>
+                    {cu.displayName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <Text style={styles.participantRowName}>{cu.displayName}</Text>
+                <Text style={styles.searchResultAdd}>+ Add</Text>
+              </TouchableOpacity>
+            );
+          })}
+
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+};
+
 // ── Event screen ───────────────────────────────────────
 export default function MemoryEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -228,7 +430,10 @@ export default function MemoryEventScreen() {
   const [editVisible, setEditVisible] = useState(false);
   const [editText, setEditText] = useState('');
   const [editEntryId, setEditEntryId] = useState('');
+  const [editMemoryVisible, setEditMemoryVisible] = useState(false);
   const { mutate: updateEntry, isPending: isUpdating } = useUpdateMemoryEntry(id);
+  const { mutate: deleteEntry } = useDeleteMemoryEntry(id);
+  const { mutate: updateMemory, isPending: isSavingMemory } = useUpdateMemory();
 
   if (isLoading) {
     return (
@@ -250,13 +455,45 @@ export default function MemoryEventScreen() {
   }
 
   const bgColors = FALLBACK_COLORS;
+  const isCreator = event.createdByUserId === user?.id;
 
-  const openEdit = () => {
+  const openEditPerspective = () => {
     const myEntry = event.entries?.find(e => e.authorId === user?.id);
     if (!myEntry) return;
     setEditEntryId(myEntry.id);
     setEditText(myEntry.text);
     setEditVisible(true);
+  };
+
+  const handleDeleteEntry = (entryId: string, authorLabel: string) => {
+    Alert.alert(
+      'Delete perspective?',
+      `Remove ${authorLabel} perspective? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => deleteEntry(entryId),
+        },
+      ]
+    );
+  };
+
+  const handleSaveMemory = (payload: {
+    title: string; date: string; location: string;
+    visibility: VisibilityLevel; participantIds: string[];
+  }) => {
+    updateMemory(
+      { id, ...payload },
+      {
+        onSuccess: () => {
+          setEditMemoryVisible(false);
+          Alert.alert('Saved', 'Memory updated.');
+        },
+        onError: () => Alert.alert('Error', 'Failed to update memory.'),
+      }
+    );
   };
 
   return (
@@ -286,6 +523,15 @@ export default function MemoryEventScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Creator edit button — balanced with back btn width */}
+        {isCreator ? (
+          <TouchableOpacity onPress={() => setEditMemoryVisible(true)} style={styles.headerEditBtn}>
+            <Text style={styles.headerEditBtnText}>Edit</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.headerEditPlaceholder} />
+        )}
       </View>
 
       {/* Event title block */}
@@ -335,6 +581,8 @@ export default function MemoryEventScreen() {
           <StructuredView
             entries={event.entries ?? []}
             currentUserId={user?.id ?? ''}
+            isCreator={isCreator}
+            onDeleteEntry={handleDeleteEntry}
           />
         ) : (
           <ImmersiveView
@@ -344,14 +592,14 @@ export default function MemoryEventScreen() {
         )}
       </View>
 
-      {/* Add perspective — only in structured view */}
+      {/* Add / edit perspective — only in Story view */}
       {view === 'structured' && (() => {
         const myEntry = event.entries?.find(e => e.authorId === user?.id);
         return myEntry
           ? (
             <View style={styles.alreadyAdded}>
-              <Text style={styles.alreadyAddedText}>Thanks for adding your perspective!</Text>
-              <TouchableOpacity onPress={openEdit}>
+              <Text style={styles.alreadyAddedText}>You've added your perspective</Text>
+              <TouchableOpacity onPress={openEditPerspective}>
                 <Text style={styles.editLink}>Edit</Text>
               </TouchableOpacity>
             </View>
@@ -367,7 +615,6 @@ export default function MemoryEventScreen() {
         onRequestClose={() => setEditVisible(false)}
       >
         <SafeAreaView style={styles.editModal} edges={['top', 'bottom']}>
-          {/* Header */}
           <View style={styles.editHeader}>
             <TouchableOpacity onPress={() => setEditVisible(false)}>
               <Text style={styles.editCancel}>Cancel</Text>
@@ -389,7 +636,6 @@ export default function MemoryEventScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Text input */}
           <KeyboardAvoidingView
             style={{ flex: 1 }}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -409,6 +655,16 @@ export default function MemoryEventScreen() {
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {/* Edit memory modal (creator only) */}
+      {isCreator && editMemoryVisible && (
+        <EditMemoryModal
+          visible={editMemoryVisible}
+          event={event}
+          onClose={() => setEditMemoryVisible(false)}
+          onSave={handleSaveMemory}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -441,7 +697,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: Colors.tan,
   },
-  backBtn: { paddingVertical: Spacing.sm },
+  backBtn: { paddingVertical: Spacing.sm, minWidth: 80 },
   backBtnText: {
     fontSize: Typography.body,
     color: Colors.terracotta,
@@ -465,6 +721,14 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
   },
   toggleBtnTextActive: { color: Colors.terracotta, fontWeight: '700' },
+  headerEditBtn: { paddingVertical: Spacing.sm, minWidth: 80, alignItems: 'flex-end' },
+  headerEditBtnText: {
+    fontSize: Typography.body,
+    color: Colors.terracotta,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+  },
+  headerEditPlaceholder: { minWidth: 80 },
 
   // Event meta
   eventMeta: {
@@ -564,13 +828,21 @@ const styles = StyleSheet.create({
   },
   entryTime: { fontSize: 11, color: Colors.textLight },
   newBadge: {
-    marginLeft: 'auto',
     backgroundColor: Colors.terracotta,
     borderRadius: BorderRadius.pill,
     paddingHorizontal: 7,
     paddingVertical: 2,
   },
   newBadgeText: { fontSize: 9, color: Colors.white, fontWeight: '700', letterSpacing: 0.8 },
+  entryDeleteBtn: {
+    marginLeft: 'auto' as any,
+    padding: 2,
+  },
+  entryDeleteBtnText: {
+    fontSize: 20,
+    color: Colors.textLight,
+    lineHeight: 22,
+  },
   entryText: {
     fontSize: Typography.body,
     fontFamily: Typography.fontFamily,
@@ -698,7 +970,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Edit modal
+  // Edit modal (shared by perspective + memory edit)
   editModal: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -729,9 +1001,8 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
   },
-  editSaveDisabled: {
-    opacity: 0.4,
-  },
+  editSaveDisabled: { opacity: 0.4 },
+  editScroll: { flex: 1, padding: Spacing.lg },
   editInput: {
     flex: 1,
     padding: Spacing.lg,
@@ -747,5 +1018,117 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.md,
+  },
+
+  // Edit memory modal fields
+  editSectionLabel: {
+    fontSize: Typography.label,
+    color: Colors.terracotta,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontFamily: Typography.fontFamily,
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.lg,
+  },
+  editTextInput: {
+    backgroundColor: Colors.card,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+  },
+
+  // Visibility selector
+  visibilityOption: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.md,
+    padding: Spacing.md,
+    backgroundColor: Colors.card,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
+  },
+  visibilityOptionActive: {
+    borderColor: Colors.terracotta,
+    backgroundColor: Colors.terracotta + '08',
+  },
+  visibilityRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: Colors.tan,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    flexShrink: 0,
+  },
+  visibilityRadioInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.terracotta,
+  },
+  visibilityLabel: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+    marginBottom: 2,
+  },
+  visibilityLabelActive: { color: Colors.terracotta },
+  visibilityDesc: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+
+  // Participant management
+  participantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  participantRowAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  participantRowAvatarText: { fontSize: 13, color: Colors.white, fontWeight: '600' },
+  participantRowName: {
+    flex: 1,
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+  },
+  participantRemoveBtn: { padding: Spacing.xs },
+  participantRemoveBtnText: {
+    fontSize: 20,
+    color: Colors.textLight,
+    lineHeight: 22,
+  },
+  searchResultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  searchResultAdd: {
+    fontSize: 13,
+    color: Colors.terracotta,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
   },
 });

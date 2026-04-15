@@ -82,6 +82,47 @@ export const useUpdateMemoryEntry = (eventId: string) => {
   });
 };
 
+export const useDeleteMemoryEntry = (eventId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (entryId: string) => {
+      const { data } = await api.delete(`/memories/${eventId}/entries/${entryId}`);
+      return data.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.memory(eventId) }),
+  });
+};
+
+export const useUpdateMemory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      title,
+      date,
+      location,
+      visibility,
+      participantIds,
+    }: {
+      id: string;
+      title?: string;
+      date?: string;
+      location?: string;
+      visibility?: string;
+      participantIds?: string[];
+    }) => {
+      const { data } = await api.patch(`/memories/${id}`, {
+        title, date, location, visibility, participantIds,
+      });
+      return data.data;
+    },
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: QueryKeys.memory(vars.id) });
+      qc.invalidateQueries({ queryKey: QueryKeys.memories });
+    },
+  });
+};
+
 // ── Connections ────────────────────────────────────────
 export const useConnections = (layer?: string) =>
   useQuery({

@@ -738,7 +738,17 @@ app.get('/api/memories', requireAuth, async (req, res) => {
 // GET /api/memories/:id
 app.get('/api/memories/:id', requireAuth, async (req, res) => {
   const { rows: [event] } = await db.query(
-    'SELECT * FROM events WHERE id = $1 AND $2 = ANY(participant_ids)',
+    `SELECT
+       id,
+       title,
+       to_char(date, 'YYYY-MM-DD') as date,
+       location, lat, lng, music, visibility,
+       participant_ids      as "participantIds",
+       photo_urls           as "photoUrls",
+       created_by_user_id   as "createdByUserId",
+       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"
+     FROM events
+     WHERE id = $1 AND $2 = ANY(participant_ids)`,
     [req.params.id, req.userId]
   );
   if (!event) return res.status(404).json({ error: 'Not found' });
@@ -746,17 +756,17 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
   const { rows: entries } = await db.query(
     `SELECT
        me.id,
-       me.event_id as "eventId",
+       me.event_id  as "eventId",
        me.author_id as "authorId",
        me.text,
        me.time,
-       me.is_new as "isNew",
+       me.is_new    as "isNew",
        to_char(me.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
        json_build_object(
-         'id', u.id,
-         'displayName', u.display_name,
+         'id',           u.id,
+         'displayName',  u.display_name,
          'avatarColour', u.avatar_colour,
-         'avatarUrl', u.avatar_url
+         'avatarUrl',    u.avatar_url
        ) as author
      FROM memory_entries me
      JOIN users u ON u.id = me.author_id
@@ -764,7 +774,50 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
      ORDER BY me.created_at ASC`,
     [req.params.id]
   );
-  res.json({ data: { ...event, entries } });
+
+  // Hydrate participants
+  const { rows: participants } = await db.query(
+    `SELECT id,
+            display_name  as "displayName",
+            avatar_colour as "avatarColour",
+            city
+     FROM users
+     WHERE id = ANY($1::uuid[])`,
+    [event.participantIds]
+  );
+
+  res.json({ data: { ...event, entries, participants } });
+});
+
+// PATCH /api/memories/:id — creator only: update event details
+app.patch('/api/memories/:id', requireAuth, async (req, res) => {
+  const { title, date, location, visibility, participantIds } = req.body;
+  const { rows: [event] } = await db.query(
+    `UPDATE events SET
+       title          = COALESCE($1, title),
+       date           = COALESCE($2::date, date),
+       location       = COALESCE($3, location),
+       visibility     = COALESCE($4, visibility),
+       participant_ids = COALESCE($5::uuid[], participant_ids)
+     WHERE id = $6 AND created_by_user_id = $7
+     RETURNING
+       id, title,
+       to_char(date, 'YYYY-MM-DD') as date,
+       location, visibility,
+       participant_ids    as "participantIds",
+       created_by_user_id as "createdByUserId"`,
+    [
+      title   ?? null,
+      date    ?? null,
+      location ?? null,
+      visibility ?? null,
+      participantIds ?? null,
+      req.params.id,
+      req.userId,
+    ]
+  );
+  if (!event) return res.status(403).json({ error: 'Not found or not the creator' });
+  res.json({ data: event });
 });
 
 // POST /api/memories
@@ -784,6 +837,13 @@ app.post('/api/memories', requireAuth, async (req, res) => {
 // POST /api/memories/:id/entries
 app.post('/api/memories/:id/entries', requireAuth, async (req, res) => {
   const { text } = req.body;
+  // Verify the caller is a participant
+  const { rows: [event] } = await db.query(
+    'SELECT id FROM events WHERE id = $1 AND $2 = ANY(participant_ids)',
+    [req.params.id, req.userId]
+  );
+  if (!event) return res.status(403).json({ error: 'Not a participant in this memory' });
+
   const { rows: [entry] } = await db.query(
     `INSERT INTO memory_entries (event_id, author_id, text)
      VALUES ($1, $2, $3) RETURNING *`,
@@ -792,7 +852,7 @@ app.post('/api/memories/:id/entries', requireAuth, async (req, res) => {
   res.status(201).json({ data: entry });
 });
 
-// PATCH /api/memories/:eventId/entries/:entryId
+// PATCH /api/memories/:eventId/entries/:entryId — author only: edit own perspective
 app.patch('/api/memories/:eventId/entries/:entryId', requireAuth, async (req, res) => {
   const { text } = req.body;
   if (!text?.trim()) return res.status(400).json({ error: 'Text required' });
@@ -807,6 +867,26 @@ app.patch('/api/memories/:eventId/entries/:entryId', requireAuth, async (req, re
 
   if (!entry) return res.status(404).json({ error: 'Entry not found or not yours' });
   res.json({ data: entry });
+});
+
+// DELETE /api/memories/:eventId/entries/:entryId
+// Creator can delete any entry; authors can delete their own
+app.delete('/api/memories/:eventId/entries/:entryId', requireAuth, async (req, res) => {
+  const { rows: [ev] } = await db.query(
+    'SELECT created_by_user_id FROM events WHERE id = $1',
+    [req.params.eventId]
+  );
+  if (!ev) return res.status(404).json({ error: 'Memory not found' });
+
+  const isCreator = ev.created_by_user_id === req.userId;
+  const { rows: [entry] } = await db.query(
+    `DELETE FROM memory_entries
+     WHERE id = $1 AND event_id = $2 AND ($3 OR author_id = $4)
+     RETURNING id`,
+    [req.params.entryId, req.params.eventId, isCreator, req.userId]
+  );
+  if (!entry) return res.status(403).json({ error: 'Not found or not authorised' });
+  res.json({ data: { ok: true } });
 });
 
 // POST /api/media/upload — base64 image upload (dev only)
