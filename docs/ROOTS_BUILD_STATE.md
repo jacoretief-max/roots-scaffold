@@ -65,11 +65,8 @@
 - ✅ Tapping a card → Person screen
 
 ### Globe Screen
-- ✅ Timezone list grouped by region (Africa, Europe, Americas, Middle East & Asia, Oceania)
-- ✅ Each connection shows local time, status, time-of-day progress bar
-- ✅ Collapsible region groups
-- ✅ Refreshes every 60 seconds
-- ✅ Your current local time in header
+- ~~Removed from navigation — see Navigation Redesign below~~
+- Timezone intelligence (CITY_TIMEZONES map, availability status logic) retained and will move to the Person screen
 
 ### Connect Screen
 - ✅ Search all Roots users by name
@@ -100,6 +97,7 @@
 - ✅ Remove from circle
 - ✅ Recent moments timeline — last 5 contact events with type icon, date, note
 - ✅ Shared memories stub
+- ⬜ Timezone availability card — shows connection's local time and soft availability signal ("late night for them", "should be a reasonable time"), with Call / WhatsApp / Set reminder actions. Replaces Globe tab. Reminder uses expo-notifications to schedule a local push at a mutually reasonable time.
 
 ### Nudge Engine (backend)
 - ✅ Runs every 6 hours on Railway
@@ -133,6 +131,27 @@
 
 ## What's Stubbed / Coming Later
 
+### Navigation Redesign (planned — before Phase 4 ships)
+
+Tab bar reduces from 5 tabs to 3:
+
+| Old | New |
+|---|---|
+| Memories | Memories (redesigned — see below) |
+| Globe | ~~Removed~~ |
+| Circle | Circle (absorbs Connect) |
+| Connect | ~~Merged into Circle~~ |
+| Profile | Profile |
+
+**Memories tab** — home state leads with social urgency, not personal archive:
+- "Your turn" section at top — memories you're tagged in where others have added but you haven't yet
+- Recent memory activity below
+- All Memories (month grid) accessible from the header
+
+**Circle tab** — search bar pinned to top replaces the Connect tab; Globe timezone intelligence moves to the Person screen
+
+**Globe tab** — removed entirely. Not returning. Timezone/availability insight lives on the Person screen instead (see Person screen above).
+
 ### Phase 3 (pending)
 - ⏳ **WhatsApp Business API** — Meta business account created, application pending approval
   - Invite flow via deep link works already
@@ -153,8 +172,6 @@
 - ⬜ **ID verification** — upload driver's licence/passport, extract DOB only
 - ⬜ **2FA** — TOTP authenticator app setup
 - ⬜ **Phone number verification** — SMS OTP
-- ⬜ **GPS on Globe** — live position dot using expo-location
-- ⬜ **3D globe** — replace timezone list with react-native-maps dark tile layer + connection dots
 - ⬜ **Shared memories on Person screen** — show memories tagged with this person
 - ⬜ **Memory anniversary notifications**
 - ⬜ **TestFlight distribution**
@@ -166,7 +183,6 @@
 
 | Issue | Severity | Notes |
 |---|---|---|
-| Globe 3D rendering | Parked | expo-gl + three.js has SDK 54 compatibility issues; replaced with timezone list |
 | Push notification foreground display | Low | Notifications work on locked screen; foreground banner needs testing |
 | Contact sync: single-letter contact names | Fixed | Minimum 3-char guard added |
 | Token persistence in Expo Go | Fixed | AsyncStorage fallback added alongside SecureStore |
@@ -193,10 +209,9 @@
 4. **TestFlight** — EAS build, upload to App Store Connect, internal testing
 5. **App Store assets** — icon, screenshots, description, privacy policy URL
 6. **App Store submission** — iOS and Google Play
-7. **3D Globe** — react-native-maps with dark tile layer, connection dots at lat/lng
-8. **2FA + phone verification**
-9. **ID verification**
-10. **WhatsApp message frequency** — once Meta approval received
+7. **2FA + phone verification**
+8. **ID verification**
+9. **WhatsApp message frequency** — once Meta approval received
 
 ---
 
