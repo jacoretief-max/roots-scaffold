@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator, Modal, Switch, TextInput,
+  ScrollView, Alert, ActivityIndicator, Modal, Switch, TextInput, Linking,
 } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useConnection, useLogContact, useRemoveConnection, useUpdateConnection, useContactEvents, useCreateContactEvent } from '@/api/hooks';
@@ -12,6 +13,221 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 
 dayjs.extend(relativeTime);
+
+// ── Timezone intelligence (retained from Globe) ────────
+const CITY_TIMEZONES: Record<string, { tz: string }> = {
+  'johannesburg': { tz: 'Africa/Johannesburg' },
+  'cape town':    { tz: 'Africa/Johannesburg' },
+  'durban':       { tz: 'Africa/Johannesburg' },
+  'nairobi':      { tz: 'Africa/Nairobi' },
+  'lagos':        { tz: 'Africa/Lagos' },
+  'cairo':        { tz: 'Africa/Cairo' },
+  'london':       { tz: 'Europe/London' },
+  'paris':        { tz: 'Europe/Paris' },
+  'berlin':       { tz: 'Europe/Berlin' },
+  'amsterdam':    { tz: 'Europe/Amsterdam' },
+  'madrid':       { tz: 'Europe/Madrid' },
+  'rome':         { tz: 'Europe/Rome' },
+  'zurich':       { tz: 'Europe/Zurich' },
+  'stockholm':    { tz: 'Europe/Stockholm' },
+  'new york':     { tz: 'America/New_York' },
+  'los angeles':  { tz: 'America/Los_Angeles' },
+  'chicago':      { tz: 'America/Chicago' },
+  'toronto':      { tz: 'America/Toronto' },
+  'denver':       { tz: 'America/Denver' },
+  'miami':        { tz: 'America/New_York' },
+  'vancouver':    { tz: 'America/Vancouver' },
+  'sao paulo':    { tz: 'America/Sao_Paulo' },
+  'mexico city':  { tz: 'America/Mexico_City' },
+  'dubai':        { tz: 'Asia/Dubai' },
+  'singapore':    { tz: 'Asia/Singapore' },
+  'tokyo':        { tz: 'Asia/Tokyo' },
+  'mumbai':       { tz: 'Asia/Kolkata' },
+  'delhi':        { tz: 'Asia/Kolkata' },
+  'hong kong':    { tz: 'Asia/Hong_Kong' },
+  'shanghai':     { tz: 'Asia/Shanghai' },
+  'seoul':        { tz: 'Asia/Seoul' },
+  'istanbul':     { tz: 'Europe/Istanbul' },
+  'sydney':       { tz: 'Australia/Sydney' },
+  'melbourne':    { tz: 'Australia/Melbourne' },
+  'auckland':     { tz: 'Pacific/Auckland' },
+};
+
+const getTimezoneForCity = (city?: string): string | null => {
+  if (!city) return null;
+  return CITY_TIMEZONES[city.toLowerCase().trim()]?.tz ?? null;
+};
+
+const getLocalTime = (tz: string) => {
+  const now = new Date();
+  const time = now.toLocaleTimeString('en-GB', {
+    timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const hourStr = now.toLocaleString('en-GB', {
+    timeZone: tz, hour: '2-digit', hour12: false,
+  });
+  const hour = parseInt(hourStr, 10);
+  const status =
+    hour >= 22 || hour < 7  ? 'sleeping'
+    : hour >= 9 && hour < 18 ? 'available'
+    : 'busy';
+  return { time, hour, status };
+};
+
+const getAvailabilitySignal = (hour: number, status: string) => {
+  if (status === 'sleeping') {
+    return {
+      text:  hour >= 22 ? 'Late night for them' : 'Early morning for them',
+      sub:   'Set a reminder for a better time',
+      color: Colors.statusSleeping,
+    };
+  }
+  if (status === 'available') {
+    const sub =
+      hour < 12  ? 'Morning — a good time to reach out' :
+      hour < 14  ? 'Around lunch time for them' :
+                   'During their work hours';
+    return { text: 'Good time to reach out', sub, color: Colors.statusAvailable };
+  }
+  // busy (7–9 or 18–22)
+  return {
+    text:  hour < 9 ? 'Just starting their day' : 'Winding down for the evening',
+    sub:   'They might be a bit busy right now',
+    color: Colors.statusBusy,
+  };
+};
+
+// ── Timezone availability card ─────────────────────────
+const TimezoneCard = ({
+  city,
+  displayName,
+  phoneNumber,
+}: {
+  city?: string;
+  displayName: string;
+  phoneNumber?: string;
+}) => {
+  const tz = getTimezoneForCity(city);
+  if (!tz) return null;
+
+  const { time, hour, status } = getLocalTime(tz);
+  const signal = getAvailabilitySignal(hour, status);
+  const hasPhone = !!phoneNumber;
+
+  const handleCall = () => {
+    if (!hasPhone) { Alert.alert('No phone number', `No phone number stored for ${displayName}. Sync your contacts to add one.`); return; }
+    Linking.openURL(`tel:${phoneNumber}`);
+  };
+
+  const handleWhatsApp = () => {
+    if (!hasPhone) { Alert.alert('No phone number', `No phone number stored for ${displayName}. Sync your contacts to add one.`); return; }
+    const clean = phoneNumber!.replace(/\D/g, '');
+    Linking.canOpenURL('whatsapp://').then(supported => {
+      if (supported) Linking.openURL(`whatsapp://send?phone=${clean}`);
+      else Alert.alert('WhatsApp not installed', 'WhatsApp does not appear to be installed on this device.');
+    });
+  };
+
+  const handleReminder = async () => {
+    const { status: permStatus } = await Notifications.requestPermissionsAsync();
+    if (permStatus !== 'granted') {
+      Alert.alert('Notifications disabled', 'Enable notifications in Settings to use reminders.');
+      return;
+    }
+
+    Alert.alert(
+      `Remind me to contact ${displayName}`,
+      'When would you like to be reminded?',
+      [
+        {
+          text: 'In 1 hour',
+          onPress: async () => {
+            const trigger = new Date(Date.now() + 60 * 60 * 1000);
+            await Notifications.scheduleNotificationAsync({
+              content: { title: `Time to reach out to ${displayName}`, body: `You set a reminder to get in touch with ${displayName}.` },
+              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: trigger },
+            });
+            Alert.alert('Reminder set', `You'll be notified in 1 hour.`);
+          },
+        },
+        {
+          text: 'Tomorrow morning',
+          onPress: async () => {
+            const trigger = new Date();
+            trigger.setDate(trigger.getDate() + 1);
+            trigger.setHours(9, 0, 0, 0);
+            await Notifications.scheduleNotificationAsync({
+              content: { title: `Time to reach out to ${displayName}`, body: `Good morning — ${displayName} is likely awake now.` },
+              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: trigger },
+            });
+            Alert.alert('Reminder set', `You'll be notified tomorrow at 9 AM.`);
+          },
+        },
+        {
+          text: 'This weekend',
+          onPress: async () => {
+            const now = new Date();
+            const daysUntilSat = (6 - now.getDay() + 7) % 7 || 7;
+            const trigger = new Date(now);
+            trigger.setDate(trigger.getDate() + daysUntilSat);
+            trigger.setHours(10, 0, 0, 0);
+            await Notifications.scheduleNotificationAsync({
+              content: { title: `Time to reach out to ${displayName}`, body: `It's the weekend — a great time to catch up with ${displayName}.` },
+              trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: trigger },
+            });
+            Alert.alert('Reminder set', `You'll be notified this Saturday at 10 AM.`);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  return (
+    <View style={styles.tzCard}>
+      {/* Time + city */}
+      <View style={styles.tzTopRow}>
+        <Text style={styles.tzCityTime}>
+          {city} · {time}
+        </Text>
+      </View>
+
+      {/* Signal */}
+      <View style={styles.tzSignalRow}>
+        <View style={[styles.tzDot, { backgroundColor: signal.color }]} />
+        <View>
+          <Text style={[styles.tzSignalText, { color: signal.color }]}>{signal.text}</Text>
+          <Text style={styles.tzSignalSub}>{signal.sub}</Text>
+        </View>
+      </View>
+
+      {/* Action buttons */}
+      <View style={styles.tzActions}>
+        <TouchableOpacity
+          style={[styles.tzActionBtn, !hasPhone && styles.tzActionBtnDim]}
+          onPress={handleCall}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.tzActionBtnText}>📞  Call</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tzActionBtn, !hasPhone && styles.tzActionBtnDim]}
+          onPress={handleWhatsApp}
+          activeOpacity={0.75}
+        >
+          <Text style={styles.tzActionBtnText}>💬  WhatsApp</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tzActionBtn, styles.tzActionBtnRemind]}
+          onPress={handleReminder}
+          activeOpacity={0.75}
+        >
+          <Text style={[styles.tzActionBtnText, styles.tzActionBtnRemindText]}>⏰  Remind me</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
 
 // ── Edit connection modal ──────────────────────────────
 const EditModal = ({
@@ -353,9 +569,19 @@ export default function PersonScreen() {
           </View>
         )}
 
+        {/* Timezone availability */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Reach out</Text>
+          <TimezoneCard
+            city={city}
+            displayName={displayName}
+            phoneNumber={connection.connectedUser?.phoneNumber}
+          />
+        </View>
+
         {/* Actions */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Actions</Text>
+          <Text style={styles.sectionTitle}>Log</Text>
 
           {showNoteInput ? (
             <View style={styles.noteCapture}>
@@ -977,5 +1203,77 @@ const styles = StyleSheet.create({
     fontSize: Typography.body,
     color: Colors.scoreLow,
     fontFamily: Typography.fontFamily,
+  },
+
+  // Timezone availability card
+  tzCard: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    ...Shadows.card,
+  },
+  tzTopRow: {
+    marginBottom: Spacing.sm,
+  },
+  tzCityTime: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+  },
+  tzSignalRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  tzDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginTop: 4,
+    flexShrink: 0,
+  },
+  tzSignalText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+  },
+  tzSignalSub: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    marginTop: 2,
+  },
+  tzActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  tzActionBtn: {
+    flex: 1,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+  },
+  tzActionBtnDim: {
+    opacity: 0.45,
+  },
+  tzActionBtnRemind: {
+    backgroundColor: Colors.terracotta + '12',
+    borderColor: Colors.terracotta + '44',
+  },
+  tzActionBtnText: {
+    fontSize: 12,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+    fontWeight: '600',
+  },
+  tzActionBtnRemindText: {
+    color: Colors.terracotta,
   },
 });
