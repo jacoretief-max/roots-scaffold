@@ -11,24 +11,9 @@ const IconBook = ({ color }: { color: string }) => (
   </Svg>
 );
 
-const IconGlobe = ({ color }: { color: string }) => (
-  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-    <Circle cx={12} cy={12} r={10}/>
-    <Line x1={2} y1={12} x2={22} y2={12}/>
-    <Path d="M12 2a15.3 15.3 0 010 20M12 2a15.3 15.3 0 000 20"/>
-  </Svg>
-);
-
 const IconHeart = ({ color }: { color: string }) => (
   <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
     <Path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>
-  </Svg>
-);
-
-const IconSearch = ({ color }: { color: string }) => (
-  <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-    <Circle cx={11} cy={11} r={8}/>
-    <Line x1={21} y1={21} x2={16.65} y2={16.65}/>
   </Svg>
 );
 
@@ -71,26 +56,10 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="globe"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon Icon={IconGlobe} focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="circle"
         options={{
           tabBarIcon: ({ focused }) => (
             <TabIcon Icon={IconHeart} focused={focused} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="connect"
-        options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon Icon={IconSearch} focused={focused} />
           ),
         }}
       />
@@ -102,6 +71,9 @@ export default function TabLayout() {
           ),
         }}
       />
+      {/* Hidden routes — functionality absorbed into Circle tab */}
+      <Tabs.Screen name="globe" options={{ href: null }} />
+      <Tabs.Screen name="connect" options={{ href: null }} />
     </Tabs>
   );
 }
