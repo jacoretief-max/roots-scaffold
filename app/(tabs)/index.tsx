@@ -11,7 +11,6 @@ import { MemoryEvent } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 
 // Generates a consistent warm palette from a string (title + id)
-// Same memory always gets same colours — not random
 const WARM_PALETTES = [
   ['#C45A3A', '#9A3A22', '#E8593C'],   // terracotta
   ['#4A7A52', '#2D5C38', '#6B9E74'],   // sage
@@ -84,7 +83,57 @@ const AllMemoriesGrid = ({ memories }: { memories: MemoryEvent[] }) => {
   );
 };
 
-// ── Memory card ────────────────────────────────────────
+// ── Your Turn card (compact, horizontal row) ────────────
+const YourTurnCard = ({ item }: { item: MemoryEvent }) => {
+  const palette = getPalette(item.id);
+  const participants = item.participants ?? [];
+  const visibleParticipants = participants.slice(0, 3);
+  const overflowCount = participants.length - 3;
+  const entryCount = (item as any).entryCount ?? 0;
+
+  return (
+    <TouchableOpacity
+      style={[styles.yourTurnCard, { backgroundColor: palette[0] }]}
+      onPress={() => router.push(`/memory/${item.id}`)}
+      activeOpacity={0.85}
+    >
+      <View style={styles.cardOverlay} />
+
+      {/* Participant avatars */}
+      <View style={styles.yourTurnAvatarRow}>
+        {visibleParticipants.map((p: any, i: number) => (
+          <View
+            key={`${p.id}-${i}`}
+            style={[styles.yourTurnAvatar, { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -6 : 0 }]}
+          >
+            <Text style={styles.yourTurnAvatarText}>
+              {p.displayName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+        ))}
+        {overflowCount > 0 && (
+          <View style={[styles.yourTurnAvatar, styles.yourTurnAvatarOverflow, { marginLeft: -6 }]}>
+            <Text style={styles.yourTurnAvatarOverflowText}>+{overflowCount}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Title */}
+      <Text style={styles.yourTurnCardTitle} numberOfLines={2}>
+        {item.title}
+      </Text>
+
+      {/* CTA */}
+      <View style={styles.yourTurnCta}>
+        <Text style={styles.yourTurnCtaText}>
+          {entryCount === 1 ? '1 perspective' : `${entryCount} perspectives`} · add yours →
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+// ── Memory card (full-width, recent feed) ───────────────
 const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   const hasNew = (item.newEntryCount ?? 0) > 0;
   const entryCount = (item as any).entryCount ?? 0;
@@ -136,7 +185,6 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
           onPress={(e) => { e.stopPropagation(); toggleExpanded(); }}
           activeOpacity={0.8}
         >
-          {/* Collapsed — stacked avatars */}
           {!expanded && (
             <View style={styles.avatarRow}>
               {visibleParticipants.map((p: any, i: number) => (
@@ -157,7 +205,6 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
             </View>
           )}
 
-          {/* Expanded — names list */}
           {expanded && (
             <Animated.View
               style={[
@@ -209,75 +256,103 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   );
 };
 
+// ── Home feed (Your turn + Recent) ──────────────────────
+const HomeFeed = ({ memories }: { memories: MemoryEvent[] }) => {
+  // "Your turn": participant memories where someone else has added a perspective but I haven't yet
+  const yourTurn = memories.filter(m =>
+    !m.hasMyEntry && ((m as any).entryCount ?? 0) > 0
+  );
+
+  const recent = memories;
+
+  return (
+    <FlatList
+      data={recent}
+      keyExtractor={(item) => item.id}
+      renderItem={({ item }) => <MemoryCard item={item} />}
+      contentContainerStyle={styles.list}
+      showsVerticalScrollIndicator={false}
+      ListHeaderComponent={
+        yourTurn.length > 0 ? (
+          <View style={styles.yourTurnSection}>
+            <Text style={styles.sectionLabel}>Your turn</Text>
+            <FlatList
+              data={yourTurn}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => <YourTurnCard item={item} />}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.yourTurnList}
+              ItemSeparatorComponent={() => <View style={{ width: Spacing.sm }} />}
+            />
+          </View>
+        ) : null
+      }
+      ListEmptyComponent={
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>No memories yet.</Text>
+          <Text style={styles.emptySubText}>
+            Tap the + button to create your first.
+          </Text>
+        </View>
+      }
+    />
+  );
+};
+
 // ── Memories screen ────────────────────────────────────
 export default function MemoriesScreen() {
-  const [tab, setTab] = useState<'recent' | 'all'>('recent');
+  const [showAll, setShowAll] = useState(false);
   const { data: memories, isLoading } = useMemories();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Memories</Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => router.push('/new-memory')}
-          activeOpacity={0.85}
-        >
-          <Text style={styles.addBtnText}>+</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabRow}>
-        {(['recent', 'all'] as const).map((t) => (
-          <TouchableOpacity key={t} onPress={() => setTab(t)} style={styles.tab}>
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === 'recent' ? 'Recent' : 'All Memories'}
-            </Text>
-            {tab === t && <View style={styles.tabUnderline} />}
+        {showAll ? (
+          <TouchableOpacity onPress={() => setShowAll(false)} style={styles.backBtn}>
+            <Text style={styles.backBtnText}>← Memories</Text>
           </TouchableOpacity>
-        ))}
+        ) : (
+          <Text style={styles.headerTitle}>Memories</Text>
+        )}
+
+        <View style={styles.headerRight}>
+          {!showAll && (
+            <TouchableOpacity
+              style={styles.allBtn}
+              onPress={() => setShowAll(true)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.allBtnText}>All</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => router.push('/new-memory')}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.addBtnText}>+</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* Feed */}
       {isLoading ? (
         <ActivityIndicator color={Colors.terracotta} style={{ marginTop: 40 }} />
-      ) : (
-        <>
-          {tab === 'recent' ? (
-            <FlatList
-              data={memories ?? []}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => <MemoryCard item={item} />}
-              contentContainerStyle={styles.list}
-              showsVerticalScrollIndicator={false}
-              ListEmptyComponent={
-                <View style={styles.empty}>
-                  <Text style={styles.emptyText}>No memories yet.</Text>
-                  <Text style={styles.emptySubText}>
-                    Tap the + button to create your first.
-                  </Text>
-                </View>
-              }
-            />
-          ) : (
-            <View style={{ flex: 1, paddingHorizontal: Spacing.lg }}>
-              {(memories ?? []).length === 0 ? (
-                <View style={styles.empty}>
-                  <Text style={styles.emptyText}>No memories yet.</Text>
-                  <Text style={styles.emptySubText}>
-                    Tap the + button to create your first.
-                  </Text>
-                </View>
-              ) : (
-                <AllMemoriesGrid memories={memories ?? []} />
-              )}
+      ) : showAll ? (
+        <View style={{ flex: 1, paddingHorizontal: Spacing.lg }}>
+          {(memories ?? []).length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyText}>No memories yet.</Text>
+              <Text style={styles.emptySubText}>Tap the + button to create your first.</Text>
             </View>
+          ) : (
+            <AllMemoriesGrid memories={memories ?? []} />
           )}
-        </>
+        </View>
+      ) : (
+        <HomeFeed memories={memories ?? []} />
       )}
-
     </SafeAreaView>
   );
 }
@@ -299,6 +374,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textDark,
   },
+  backBtn: {
+    paddingVertical: 4,
+  },
+  backBtnText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.terracotta,
+    fontWeight: '600',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  allBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: BorderRadius.pill,
+    borderWidth: 1,
+    borderColor: Colors.terracotta,
+  },
+  allBtnText: {
+    fontSize: 13,
+    fontFamily: Typography.fontFamily,
+    color: Colors.terracotta,
+    fontWeight: '600',
+  },
   addBtn: {
     width: 36,
     height: 36,
@@ -315,31 +417,80 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
-  tabRow: {
-    flexDirection: 'row',
-    gap: Spacing.xl,
-    paddingHorizontal: Spacing.lg,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 0.5,
-    borderBottomColor: Colors.tan,
-    marginBottom: Spacing.md,
-  },
-  tab: { paddingBottom: Spacing.sm },
-  tabText: {
-    fontSize: Typography.body,
-    fontFamily: Typography.fontFamily,
-    color: Colors.textLight,
-  },
-  tabTextActive: { color: Colors.terracotta },
-  tabUnderline: {
-    height: 2,
-    backgroundColor: Colors.terracotta,
-    borderRadius: 1,
-    marginTop: 2,
-  },
 
   list: { padding: Spacing.lg, gap: Spacing.md },
 
+  // ── Your turn section ─────────────────────────────────
+  yourTurnSection: {
+    marginBottom: Spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: Typography.label,
+    color: Colors.terracotta,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    marginBottom: Spacing.sm,
+  },
+  yourTurnList: {
+    paddingRight: Spacing.lg,
+  },
+  yourTurnCard: {
+    width: 180,
+    height: 140,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+    padding: Spacing.md,
+    justifyContent: 'space-between',
+    ...Shadows.card,
+  },
+  yourTurnAvatarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  yourTurnAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.white,
+  },
+  yourTurnAvatarText: { fontSize: 10, color: Colors.white, fontWeight: '700' },
+  yourTurnAvatarOverflow: {
+    backgroundColor: 'rgba(255,255,255,0.25)',
+  },
+  yourTurnAvatarOverflowText: {
+    fontSize: 9,
+    color: Colors.white,
+    fontWeight: '700',
+  },
+  yourTurnCardTitle: {
+    fontSize: 13,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.white,
+    lineHeight: 18,
+    flex: 1,
+    marginVertical: 4,
+  },
+  yourTurnCta: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: BorderRadius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+  },
+  yourTurnCtaText: {
+    fontSize: 10,
+    color: Colors.white,
+    fontWeight: '600',
+    fontFamily: Typography.fontFamily,
+  },
+
+  // ── Full-width memory card ────────────────────────────
   card: {
     height: 220,
     borderRadius: BorderRadius.md,
@@ -361,9 +512,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   avatarRow: { flexDirection: 'row' },
-  participantNames: {
-    gap: 4,
-  },
+  participantNames: { gap: 4 },
   participantNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -418,14 +567,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardMeta: { fontSize: 12, color: 'rgba(255,255,255,0.8)', fontFamily: Typography.fontFamily },
-  avatarOverflow: {
-    backgroundColor: 'rgba(255,255,255,0.25)',
-  },
-  avatarOverflowText: {
-    fontSize: 10,
-    color: Colors.white,
-    fontWeight: '700',
-  },
+  avatarOverflow: { backgroundColor: 'rgba(255,255,255,0.25)' },
+  avatarOverflowText: { fontSize: 10, color: Colors.white, fontWeight: '700' },
   cardMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -453,11 +596,8 @@ const styles = StyleSheet.create({
   },
   emptySubText: { fontSize: 13, color: Colors.textLight, marginTop: 4 },
 
-
-  // All Memories — month-grouped 2-column grid
-  monthGroup: {
-    marginBottom: Spacing.xl,
-  },
+  // ── All Memories — month-grouped 2-column grid ────────
+  monthGroup: { marginBottom: Spacing.xl },
   monthGroupHeader: {
     fontSize: Typography.label,
     color: Colors.terracotta,

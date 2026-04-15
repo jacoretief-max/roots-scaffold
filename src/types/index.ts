@@ -66,6 +66,7 @@ export interface MemoryEvent {
   entries?: MemoryEntry[];
   participants?: User[];
   newEntryCount?: number;     // unread perspectives since last visit
+  hasMyEntry?: boolean;       // current user has already added a perspective
 }
 
 // ── Memory Entries ────────────────────────────────────
