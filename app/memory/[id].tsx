@@ -224,7 +224,7 @@ export default function MemoryEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: event, isLoading } = useMemory(id);
   const { user } = useAuthStore();
-  const [view, setView] = useState<'structured' | 'immersive'>('structured');
+  const [view, setView] = useState<'structured' | 'immersive'>('immersive');
   const [editVisible, setEditVisible] = useState(false);
   const [editText, setEditText] = useState('');
   const [editEntryId, setEditEntryId] = useState('');
