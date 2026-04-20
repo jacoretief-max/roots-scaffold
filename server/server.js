@@ -959,6 +959,10 @@ app.post('/api/push-tokens', requireAuth, async (req, res) => {
   res.json({ data: { ok: true } });
 });
 
+// ── WhatsApp webhook ───────────────────────────────────
+const whatsappRoutes = require('./routes/whatsapp');
+app.use('/whatsapp', whatsappRoutes);
+
 // ── Start ──────────────────────────────────────────────
 const PORT = process.env.PORT ?? 3000;
 // ── Nudge engine — runs every 6 hours ──────────────────
