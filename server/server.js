@@ -192,7 +192,8 @@ app.post('/api/auth/refresh', async (req, res) => {
 app.get('/api/users/me', requireAuth, async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, display_name, email, phone_number, avatar_colour,
-            avatar_url, date_of_birth, city, lat, lng, settings, created_at
+            avatar_url, date_of_birth, city, lat, lng, settings,
+            whatsapp_number, whatsapp_opted_in, created_at
      FROM users WHERE id = $1`,
     [req.userId]
   );
@@ -210,6 +211,8 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
     lat: u.lat,
     lng: u.lng,
     settings: u.settings,
+    whatsappNumber: u.whatsapp_number,
+    whatsappOptedIn: u.whatsapp_opted_in,
     createdAt: u.created_at,
   }});
 });

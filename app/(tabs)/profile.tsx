@@ -133,13 +133,8 @@ export default function ProfileScreen() {
         <SectionHeader title="Security" />
         <View style={styles.sectionCard}>
           <SettingsRow
-            label="Two-factor authentication"
-            value="Off"
-            onPress={() => router.push('/profile/security')}
-          />
-          <SettingsRow
-            label="Phone number"
-            value={user?.phoneNumber ?? 'Not set'}
+            label="Authentication"
+            value={(user as any)?.whatsappOptedIn ? 'WhatsApp on' : 'Notifications & 2FA'}
             onPress={() => router.push('/profile/security')}
           />
         </View>
