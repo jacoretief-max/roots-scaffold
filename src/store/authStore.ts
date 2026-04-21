@@ -104,7 +104,36 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
       console.log('RAW TOKEN:', raw ? 'found' : 'not found');
       if (raw) {
-        const tokens: AuthTokens = JSON.parse(raw);
+        let tokens: AuthTokens = JSON.parse(raw);
+
+        // If access token is expired (or within 2 min of expiry), refresh it now
+        // before attempting /users/me — avoids forced re-login on every restart
+        const twoMinutes = 2 * 60 * 1000;
+        if (tokens.expiresAt - Date.now() < twoMinutes) {
+          try {
+            console.log('TOKEN EXPIRED — refreshing...');
+            const { data } = await axios.post(`${BASE_URL}/auth/refresh`, {
+              refreshToken: tokens.refreshToken,
+            });
+            tokens = {
+              accessToken: data.data.accessToken,
+              refreshToken: data.data.refreshToken,
+              expiresAt: Date.now() + 15 * 60 * 1000,
+            };
+            try {
+              await SecureStore.setItemAsync(TOKEN_KEY, JSON.stringify(tokens));
+            } catch {
+              await AsyncStorage.setItem(TOKEN_KEY, JSON.stringify(tokens));
+            }
+          } catch (err: any) {
+            console.log('REFRESH FAILED — requiring login:', err?.message);
+            try { await SecureStore.deleteItemAsync(TOKEN_KEY); } catch {}
+            try { await AsyncStorage.removeItem(TOKEN_KEY); } catch {}
+            set({ isLoading: false });
+            return;
+          }
+        }
+
         set({ tokens });
         try {
           const { data } = await api.get('/users/me');

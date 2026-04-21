@@ -160,6 +160,8 @@ app.post('/api/auth/login', async (req, res) => {
       lat: user.lat,
       lng: user.lng,
       settings: user.settings,
+      whatsappNumber: user.whatsapp_number,
+      whatsappOptedIn: user.whatsapp_opted_in,
       createdAt: user.created_at,
     };
     res.json({ data: { user: safeUser, tokens } });
