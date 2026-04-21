@@ -3,14 +3,16 @@ import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, TextInput,
   KeyboardAvoidingView, Platform, Animated,
-  Dimensions, Modal, Image, Alert,
+  Dimensions, Modal, Image, Alert, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, router } from 'expo-router';
 import {
   useMemory, useAddMemoryEntry, useUpdateMemoryEntry,
   useDeleteMemoryEntry, useUpdateMemory, useConnectionSearch,
 } from '@/api/hooks';
+import { consumePendingPhotos } from '@/devPhotoStore';
 import { useAuthStore } from '@/store/authStore';
 import { MemoryEntry, MemoryEvent, VisibilityLevel } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
@@ -45,80 +47,180 @@ const useColorRotation = (colors: string[], interval = 2200) => {
   return { color: colors[index] ?? FALLBACK_COLORS[0], fadeAnim };
 };
 
+// ── Photo pair row ─────────────────────────────────────
+const PHOTO_SIZE = (width - Spacing.lg * 2 - Spacing.sm) / 2;
+
+const PhotoPairRow = ({
+  photos,
+  startIndex,
+  onPress,
+}: {
+  photos: string[];
+  startIndex: number;
+  onPress: (index: number) => void;
+}) => (
+  <View style={styles.photoPairRow}>
+    {photos.map((uri, i) => (
+      <TouchableOpacity
+        key={uri}
+        onPress={() => onPress(startIndex + i)}
+        activeOpacity={0.9}
+        style={styles.photoThumbWrapper}
+      >
+        <Image source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
+      </TouchableOpacity>
+    ))}
+  </View>
+);
+
+// ── Lightbox ───────────────────────────────────────────
+const Lightbox = ({
+  photos,
+  startIndex,
+  visible,
+  onClose,
+}: {
+  photos: string[];
+  startIndex: number;
+  visible: boolean;
+  onClose: () => void;
+}) => {
+  const [current, setCurrent] = useState(startIndex);
+
+  useEffect(() => {
+    if (visible) setCurrent(startIndex);
+  }, [visible, startIndex]);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.lightboxBg}>
+        <TouchableOpacity style={styles.lightboxClose} onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={styles.lightboxCloseText}>×</Text>
+        </TouchableOpacity>
+
+        <FlatList
+          data={photos}
+          keyExtractor={(_, i) => String(i)}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          initialScrollIndex={current}
+          getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+          onMomentumScrollEnd={(e) => {
+            setCurrent(Math.round(e.nativeEvent.contentOffset.x / width));
+          }}
+          renderItem={({ item }) => (
+            <View style={{ width, height, justifyContent: 'center', alignItems: 'center' }}>
+              <Image source={{ uri: item }} style={styles.lightboxImage} resizeMode="contain" />
+            </View>
+          )}
+        />
+
+        {photos.length > 1 && (
+          <View style={styles.lightboxDots}>
+            {photos.map((_, i) => (
+              <View key={i} style={[styles.lightboxDot, i === current && styles.lightboxDotActive]} />
+            ))}
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+};
+
 // ── Structured view ────────────────────────────────────
 const StructuredView = ({
   entries,
   currentUserId,
   isCreator,
   onDeleteEntry,
+  localPhotos,
+  onPhotoPress,
 }: {
   entries: MemoryEntry[];
   currentUserId: string;
   isCreator: boolean;
   onDeleteEntry: (entryId: string, authorName: string) => void;
-}) => (
-  <ScrollView
-    style={styles.structuredScroll}
-    contentContainerStyle={styles.structuredContent}
-    showsVerticalScrollIndicator={false}
-  >
-    {entries.length === 0 && (
-      <View style={styles.noEntries}>
-        <Text style={styles.noEntriesText}>No perspectives yet.</Text>
-        <Text style={styles.noEntriesSub}>Be the first to write your memory.</Text>
-      </View>
-    )}
-    {entries.map((entry) => {
-      const isMe = entry.authorId === currentUserId;
-      const canDelete = isCreator || isMe;
-      return (
-        <View key={entry.id} style={[styles.entryCard, isMe && styles.entryCardMe]}>
-          {/* Author row */}
-          <View style={styles.entryHeader}>
-            {entry.author?.avatarUrl ? (
-              <Image
-                source={{ uri: entry.author.avatarUrl }}
-                style={styles.entryAvatar}
-              />
-            ) : (
-              <View style={[styles.entryAvatar, { backgroundColor: entry.author?.avatarColour ?? Colors.terracotta }]}>
-                <Text style={styles.entryAvatarText}>
-                  {entry.author?.displayName?.charAt(0).toUpperCase() ?? '?'}
-                </Text>
-              </View>
-            )}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.entryAuthor}>
-                {isMe ? 'You' : entry.author?.displayName}
-              </Text>
-              <Text style={styles.entryTime}>
-                {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('en-GB', {
-                  day: 'numeric', month: 'short', year: 'numeric'
-                }) : ''}
-              </Text>
-            </View>
-            {entry.isNew && !isMe && (
-              <View style={styles.newBadge}>
-                <Text style={styles.newBadgeText}>NEW</Text>
-              </View>
-            )}
-            {canDelete && (
-              <TouchableOpacity
-                onPress={() => onDeleteEntry(entry.id, isMe ? 'your' : entry.author?.displayName ?? '')}
-                style={styles.entryDeleteBtn}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={styles.entryDeleteBtnText}>×</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-          {/* Memory text */}
-          <Text style={styles.entryText}>{entry.text}</Text>
+  localPhotos: string[];
+  onPhotoPress: (index: number) => void;
+}) => {
+  // Build photo pairs for interleaving
+  const photoPairs: string[][] = [];
+  for (let i = 0; i < localPhotos.length; i += 2) {
+    photoPairs.push(localPhotos.slice(i, i + 2));
+  }
+  const maxRows = Math.max(photoPairs.length, entries.length);
+
+  return (
+    <ScrollView
+      style={styles.structuredScroll}
+      contentContainerStyle={styles.structuredContent}
+      showsVerticalScrollIndicator={false}
+    >
+      {entries.length === 0 && localPhotos.length === 0 && (
+        <View style={styles.noEntries}>
+          <Text style={styles.noEntriesText}>No perspectives yet.</Text>
+          <Text style={styles.noEntriesSub}>Be the first to write your memory.</Text>
         </View>
-      );
-    })}
-  </ScrollView>
-);
+      )}
+
+      {Array.from({ length: maxRows }).map((_, i) => (
+        <View key={i}>
+          {photoPairs[i] && (
+            <PhotoPairRow
+              photos={photoPairs[i]}
+              startIndex={i * 2}
+              onPress={onPhotoPress}
+            />
+          )}
+          {entries[i] && (() => {
+            const entry = entries[i];
+            const isMe = entry.authorId === currentUserId;
+            const canDelete = isCreator || isMe;
+            return (
+              <View key={entry.id} style={[styles.entryCard, isMe && styles.entryCardMe]}>
+                <View style={styles.entryHeader}>
+                  {entry.author?.avatarUrl ? (
+                    <Image source={{ uri: entry.author.avatarUrl }} style={styles.entryAvatar} />
+                  ) : (
+                    <View style={[styles.entryAvatar, { backgroundColor: entry.author?.avatarColour ?? Colors.terracotta }]}>
+                      <Text style={styles.entryAvatarText}>
+                        {entry.author?.displayName?.charAt(0).toUpperCase() ?? '?'}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.entryAuthor}>{isMe ? 'You' : entry.author?.displayName}</Text>
+                    <Text style={styles.entryTime}>
+                      {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('en-GB', {
+                        day: 'numeric', month: 'short', year: 'numeric'
+                      }) : ''}
+                    </Text>
+                  </View>
+                  {entry.isNew && !isMe && (
+                    <View style={styles.newBadge}>
+                      <Text style={styles.newBadgeText}>NEW</Text>
+                    </View>
+                  )}
+                  {canDelete && (
+                    <TouchableOpacity
+                      onPress={() => onDeleteEntry(entry.id, isMe ? 'your' : entry.author?.displayName ?? '')}
+                      style={styles.entryDeleteBtn}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.entryDeleteBtnText}>×</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <Text style={styles.entryText}>{entry.text}</Text>
+              </View>
+            );
+          })()}
+        </View>
+      ))}
+    </ScrollView>
+  );
+};
 
 // ── Immersive view ────────────────────────────────────
 const ImmersiveView = ({
@@ -195,7 +297,13 @@ const ImmersiveView = ({
 };
 
 // ── Add perspective input ──────────────────────────────
-const AddPerspective = ({ eventId }: { eventId: string }) => {
+const AddPerspective = ({
+  eventId,
+  onPickPhoto,
+}: {
+  eventId: string;
+  onPickPhoto: () => void;
+}) => {
   const [text, setText] = useState('');
   const [focused, setFocused] = useState(false);
   const { mutate: addEntry, isPending } = useAddMemoryEntry(eventId);
@@ -213,6 +321,9 @@ const AddPerspective = ({ eventId }: { eventId: string }) => {
       keyboardVerticalOffset={90}
     >
       <View style={[styles.addPerspective, focused && styles.addPerspectiveFocused]}>
+        <TouchableOpacity onPress={onPickPhoto} style={styles.photoPickerBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={styles.photoPickerBtnText}>📷</Text>
+        </TouchableOpacity>
         <TextInput
           style={styles.perspectiveInput}
           placeholder="Add your perspective…"
@@ -431,6 +542,31 @@ export default function MemoryEventScreen() {
   const [editText, setEditText] = useState('');
   const [editEntryId, setEditEntryId] = useState('');
   const [editMemoryVisible, setEditMemoryVisible] = useState(false);
+  const [localPhotos, setLocalPhotos] = useState<string[]>(() => consumePendingPhotos());
+  const [lightboxVisible, setLightboxVisible] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+
+  const pickPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access to add photos to this memory.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsEditing: false,
+      allowsMultipleSelection: true,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      setLocalPhotos(prev => [...prev, ...result.assets.map(a => a.uri)]);
+    }
+  };
+
+  const openLightbox = (index: number) => {
+    setLightboxIndex(index);
+    setLightboxVisible(true);
+  };
   const { mutate: updateEntry, isPending: isUpdating } = useUpdateMemoryEntry(id);
   const { mutate: deleteEntry } = useDeleteMemoryEntry(id);
   const { mutate: updateMemory, isPending: isSavingMemory } = useUpdateMemory();
@@ -583,6 +719,8 @@ export default function MemoryEventScreen() {
             currentUserId={user?.id ?? ''}
             isCreator={isCreator}
             onDeleteEntry={handleDeleteEntry}
+            localPhotos={localPhotos}
+            onPhotoPress={openLightbox}
           />
         ) : (
           <ImmersiveView
@@ -599,12 +737,17 @@ export default function MemoryEventScreen() {
           ? (
             <View style={styles.alreadyAdded}>
               <Text style={styles.alreadyAddedText}>You've added your perspective</Text>
-              <TouchableOpacity onPress={openEditPerspective}>
-                <Text style={styles.editLink}>Edit</Text>
-              </TouchableOpacity>
+              <View style={styles.alreadyAddedActions}>
+                <TouchableOpacity onPress={pickPhoto} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Text style={styles.photoPickerBtnText}>📷</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={openEditPerspective}>
+                  <Text style={styles.editLink}>Edit</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )
-          : <AddPerspective eventId={id} />;
+          : <AddPerspective eventId={id} onPickPhoto={pickPhoto} />;
       })()}
 
       {/* Edit perspective modal */}
@@ -652,6 +795,23 @@ export default function MemoryEventScreen() {
               placeholderTextColor={Colors.textLight}
             />
             <Text style={styles.editCharCount}>{editText.length} / 5000</Text>
+
+            {/* Photo strip */}
+            <View style={styles.editPhotoRow}>
+              <TouchableOpacity onPress={pickPhoto} style={styles.editPhotoPickerBtn}>
+                <Text style={styles.editPhotoPickerIcon}>📷</Text>
+                <Text style={styles.editPhotoPickerLabel}>Add photos</Text>
+              </TouchableOpacity>
+              {localPhotos.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.editPhotoStrip}>
+                  {localPhotos.map((uri, i) => (
+                    <TouchableOpacity key={uri} onPress={() => openLightbox(i)} activeOpacity={0.85}>
+                      <Image source={{ uri }} style={styles.editPhotoStripThumb} resizeMode="cover" />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
@@ -665,6 +825,14 @@ export default function MemoryEventScreen() {
           onSave={handleSaveMemory}
         />
       )}
+
+      {/* Lightbox */}
+      <Lightbox
+        photos={localPhotos}
+        startIndex={lightboxIndex}
+        visible={lightboxVisible}
+        onClose={() => setLightboxVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -906,6 +1074,74 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
   },
 
+  // Photo pair row
+  photoPairRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+  },
+  photoThumbWrapper: {
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+  },
+  photoThumb: {
+    width: PHOTO_SIZE,
+    height: PHOTO_SIZE,
+  },
+
+  // Lightbox
+  lightboxBg: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.95)',
+    justifyContent: 'center',
+  },
+  lightboxClose: {
+    position: 'absolute',
+    top: 56,
+    right: Spacing.lg,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxCloseText: {
+    fontSize: 32,
+    color: Colors.white,
+    lineHeight: 36,
+  },
+  lightboxImage: {
+    width: width,
+    height: height * 0.75,
+  },
+  lightboxDots: {
+    position: 'absolute',
+    bottom: 48,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  lightboxDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.4)',
+  },
+  lightboxDotActive: {
+    width: 20,
+    backgroundColor: Colors.white,
+  },
+
+  // Photo picker button
+  photoPickerBtn: {
+    paddingVertical: Spacing.sm,
+    paddingRight: Spacing.xs,
+  },
+  photoPickerBtnText: {
+    fontSize: 22,
+  },
+
   // Add perspective
   addPerspective: {
     flexDirection: 'row',
@@ -962,12 +1198,54 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     fontFamily: Typography.fontFamily,
     fontStyle: 'italic',
+    flex: 1,
+  },
+  alreadyAddedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
   },
   editLink: {
     fontSize: 13,
     color: Colors.terracotta,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
+  },
+
+  // Edit modal photo strip
+  editPhotoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+    gap: Spacing.md,
+  },
+  editPhotoPickerBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: Colors.tan,
+    borderStyle: 'dashed',
+    backgroundColor: Colors.card,
+    gap: 2,
+    flexShrink: 0,
+  },
+  editPhotoPickerIcon: { fontSize: 20 },
+  editPhotoPickerLabel: {
+    fontSize: 9,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'center',
+  },
+  editPhotoStrip: { flex: 1 },
+  editPhotoStripThumb: {
+    width: 64,
+    height: 64,
+    borderRadius: BorderRadius.md,
+    marginRight: Spacing.sm,
   },
 
   // Edit modal (shared by perspective + memory edit)

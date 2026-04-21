@@ -1,5 +1,5 @@
 # Roots — Current Build State
-*Version 1.0 · April 2026*
+*Version 1.1 · April 2026*
 
 ---
 
@@ -10,7 +10,7 @@
 | Phase 1 | ✅ Complete | Foundation — RN/Expo setup, backend, auth, Railway |
 | Phase 2 | ✅ Complete | All 5 screens built and polished |
 | Phase 3 | ✅ Complete | Contacts sync, nudge engine, calendar integration |
-| Phase 3 (partial) | ⏳ Pending | WhatsApp Business API — awaiting Meta approval |
+| Phase 3 (partial) | ✅ Complete | WhatsApp Business API — inbound/outbound nudges active |
 | Phase 4 | ⬜ Not started | S3 media, voice notes, TestFlight, App Store |
 
 ---
@@ -84,7 +84,7 @@
 - ✅ Avatar colour — 8 colour swatches
 - ✅ Privacy & Cookies — full policy text + account deletion flow
 - ✅ Verification — DOB display, age, compliance badges
-- ✅ Security — 2FA toggle (stub) + push notifications toggle
+- ✅ Security — WhatsApp nudges toggle + number input, push notifications toggle, 2FA toggle (stub)
 - ✅ Sign out
 
 ### Person Screen
@@ -108,6 +108,23 @@
 - ✅ Push notifications via Expo Push API
 - ✅ Push tokens registered on app launch
 - ✅ Confirmed working on locked screen (iOS)
+- ✅ WhatsApp nudges via approved `roots_nudge` template (Marketing category)
+
+### WhatsApp Integration
+- ✅ Meta WhatsApp Cloud API (Graph API v19.0)
+- ✅ Dedicated phone number registered and active on Meta
+- ✅ Webhook verified and receiving inbound messages
+- ✅ Permanent system user token stored in Railway env vars
+- ✅ Inbound message parsing — natural language contact logging
+  - Patterns: "just had lunch with Sarah", "spoke with James", "saw Priya yesterday", etc.
+  - Time prefix stripping: "last saturday had pool bbq with James" → resolves "James"
+  - Fuzzy name matching (Levenshtein) against user's circle
+- ✅ Ambiguous name resolution — if 2+ matches, bot replies asking "Did you mean…?"
+- ✅ Snooze command — user replies "snooze" to silence all nudges for 7 days
+- ✅ Outbound nudges sent as approved `roots_nudge` template (Marketing category)
+- ✅ Opt-in/out controlled from Security screen in app
+- ✅ Redis-backed conversation state for multi-step clarification (5-min TTL)
+- ✅ `whatsapp_number` and `whatsapp_opted_in` columns on users table
 
 ### Contacts Sync
 - ✅ iOS Contacts permission request
@@ -153,17 +170,15 @@ Tab bar reduces from 5 tabs to 3:
 **Globe tab** — removed entirely. Not returning. Timezone/availability insight lives on the Person screen instead (see Person screen above).
 
 ### Phase 3 (pending)
-- ⏳ **WhatsApp Business API** — Meta business account created, application pending approval
-  - Invite flow via deep link works already
-  - Message frequency sync needs API approval
 - ⬜ **Call log sync** — iOS doesn't expose call history to third-party apps; Android only via `READ_CALL_LOG` permission
-- ⬜ **Find My 150** — on-device AI analysis using contacts/WhatsApp/photos; needs WhatsApp API
+- ⬜ **Find My 150** — on-device AI analysis using contacts/WhatsApp/photos
 
 ### Phase 4 (not started)
 - ⬜ **S3 photo/video storage** — presigned URL upload flow (architecture ready, credentials not set up)
   - Profile photo upload UI removed, "Coming Phase 4" badge shown
   - base64 approach was tested and proved unreliable — proper S3 is required
   - Supports both photos and short videos
+  - **Photo testing before S3 is set up:** Using local device URI via `expo-image-picker` (no upload required). `<Image source={{ uri: localUri }}>` displays correctly in the app. Images do not persist across app restarts but this is sufficient to test and validate the full visual flow in Memories — photo layout, lightbox, interleaved story view. No backend changes needed for this approach.
 - ⬜ **Media display in Story view** — interleaved layout: two media items side by side, then a perspective block, repeating down the feed
   - Any participant (not just the creator) can add photos and videos to a shared memory
   - Tap any photo or video → full-screen lightbox with swipe-through navigation and × top-right to close

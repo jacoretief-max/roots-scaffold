@@ -3,9 +3,11 @@ import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Platform, Animated,
   KeyboardAvoidingView, ActivityIndicator, Keyboard,
+  Image, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import dayjs from 'dayjs';
 import { useCreateMemory } from '@/api/hooks';
@@ -13,8 +15,11 @@ import { useConnectionSearch } from '@/api/hooks';
 import { useAuthStore } from '@/store/authStore';
 import { Colors, Typography, Spacing, BorderRadius, VisibilityLevels } from '@/constants/theme';
 import { VisibilityLevel } from '@/types';
+import { setPendingPhotos } from '@/devPhotoStore';
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
+const { width } = Dimensions.get('window');
+const PHOTO_TILE = (width - Spacing.lg * 2 - Spacing.sm * 2) / 3;
 
 // ── Step indicator ─────────────────────────────────────
 const StepIndicator = ({ current }: { current: number }) => (
@@ -337,6 +342,64 @@ const Step3 = ({
   );
 };
 
+// ── Step 3b: Photos ────────────────────────────────────
+const Step3Photos = ({
+  photos,
+  onAdd,
+  onRemove,
+}: {
+  photos: string[];
+  onAdd: (uris: string[]) => void;
+  onRemove: (index: number) => void;
+}) => {
+  const pickPhotos = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsEditing: false,
+      allowsMultipleSelection: true,
+    });
+    if (!result.canceled && result.assets.length > 0) {
+      onAdd(result.assets.map(a => a.uri));
+    }
+  };
+
+  return (
+    <ScrollView style={styles.stepContent} showsVerticalScrollIndicator={false}>
+      <Text style={styles.stepTitle}>Add photos</Text>
+      <Text style={styles.stepSub}>
+        Pick photos from this moment. Others can add their own once the memory is saved.
+      </Text>
+
+      <View style={styles.photoGrid}>
+        {/* Add tile */}
+        <TouchableOpacity style={styles.photoAddTile} onPress={pickPhotos} activeOpacity={0.75}>
+          <Text style={styles.photoAddIcon}>📷</Text>
+          <Text style={styles.photoAddLabel}>Pick photos</Text>
+        </TouchableOpacity>
+
+        {/* Photo tiles */}
+        {photos.map((uri, i) => (
+          <View key={uri} style={styles.photoTileWrapper}>
+            <Image source={{ uri }} style={styles.photoTile} resizeMode="cover" />
+            <TouchableOpacity
+              style={styles.photoRemoveBtn}
+              onPress={() => onRemove(i)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={styles.photoRemoveBtnText}>×</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
+      </View>
+
+      <View style={{ height: 40 }} />
+    </ScrollView>
+  );
+};
+
 // ── Step 4: Visibility ─────────────────────────────────
 const Step4 = ({
   visibility, setVisibility,
@@ -395,6 +458,7 @@ export default function NewMemoryScreen() {
   const [location, setLocation] = useState('');
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [memoryText, setMemoryText] = useState('');
+  const [localPhotos, setLocalPhotos] = useState<string[]>([]);
   const [visibility, setVisibility] = useState<VisibilityLevel>('intimate');
   const { user } = useAuthStore();
   const { mutate: createMemory, isPending } = useCreateMemory();
@@ -402,8 +466,11 @@ export default function NewMemoryScreen() {
   const canProceed = () => {
     if (step === 0) return title.trim().length > 0;
     if (step === 2) return memoryText.trim().length > 0;
-    return true;
+    return true; // steps 1, 3 (photos), 4 (visibility) are always optional/valid
   };
+
+  const addPhotos = (uris: string[]) => setLocalPhotos(prev => [...prev, ...uris]);
+  const removePhoto = (index: number) => setLocalPhotos(prev => prev.filter((_, i) => i !== index));
 
   const handleNext = () => {
     if (step < TOTAL_STEPS - 1) {
@@ -430,6 +497,7 @@ export default function NewMemoryScreen() {
       },
       {
         onSuccess: (event) => {
+          if (localPhotos.length > 0) setPendingPhotos(localPhotos);
           router.replace(`/memory/${event.id}`);
         },
         onError: (err) => {
@@ -439,7 +507,7 @@ export default function NewMemoryScreen() {
     );
   };
 
-  const stepLabels = ['Details', 'People', 'Memory', 'Visibility'];
+  const stepLabels = ['Details', 'People', 'Memory', 'Photos', 'Visibility'];
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -490,6 +558,13 @@ export default function NewMemoryScreen() {
           <Step3 text={memoryText} setText={setMemoryText} />
         )}
         {step === 3 && (
+          <Step3Photos
+            photos={localPhotos}
+            onAdd={addPhotos}
+            onRemove={removePhoto}
+          />
+        )}
+        {step === 4 && (
           <Step4
             visibility={visibility}
             setVisibility={setVisibility}
@@ -520,6 +595,11 @@ export default function NewMemoryScreen() {
             {step === 1 && (
               <TouchableOpacity onPress={() => setStep(step + 1)} style={styles.skipBtn}>
                 <Text style={styles.skipBtnText}>Skip — just me</Text>
+              </TouchableOpacity>
+            )}
+            {step === 3 && (
+              <TouchableOpacity onPress={() => setStep(step + 1)} style={styles.skipBtn}>
+                <Text style={styles.skipBtnText}>Skip — add photos later</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -780,6 +860,59 @@ const styles = StyleSheet.create({
     textAlign: 'right',
     marginTop: Spacing.xs,
     fontFamily: Typography.fontFamily,
+  },
+
+  // Photo step
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  photoAddTile: {
+    width: PHOTO_TILE,
+    height: PHOTO_TILE,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+    borderColor: Colors.tan,
+    borderStyle: 'dashed',
+    backgroundColor: Colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  photoAddIcon: { fontSize: 24 },
+  photoAddLabel: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'center',
+  },
+  photoTileWrapper: {
+    width: PHOTO_TILE,
+    height: PHOTO_TILE,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+  },
+  photoTile: {
+    width: PHOTO_TILE,
+    height: PHOTO_TILE,
+  },
+  photoRemoveBtn: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoRemoveBtnText: {
+    fontSize: 16,
+    color: Colors.white,
+    lineHeight: 20,
+    fontWeight: '700',
   },
 
   // Visibility step

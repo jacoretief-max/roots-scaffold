@@ -1,5 +1,5 @@
 # Roots — Technical Architecture
-*Version 1.0 · April 2026*
+*Version 1.1 · April 2026*
 
 ---
 
@@ -81,9 +81,13 @@ roots-scaffold/
 │
 ├── server/
 │   ├── server.js                 # Express API — all routes
-│   ├── nudgeEngine.js            # Scheduled nudge computation + push sending
+│   ├── nudgeEngine.js            # Scheduled nudge computation + push/WhatsApp sending
 │   ├── schema.sql                # PostgreSQL schema (run once to create tables)
-│   └── package.json             # Server dependencies
+│   ├── package.json             # Server dependencies
+│   ├── lib/
+│   │   └── whatsapp.js           # WhatsApp Cloud API helpers (sendWhatsAppMessage, sendWhatsAppNudge)
+│   └── routes/
+│       └── whatsapp.js           # Inbound webhook handler — NLP contact log + snooze + clarification
 │
 ├── docs/                         # Project documentation (this folder)
 ├── assets/                       # App icons, splash screen
@@ -107,14 +111,16 @@ email           TEXT UNIQUE
 password_hash   TEXT
 phone_number    TEXT
 avatar_colour   TEXT DEFAULT '#C45A3A'
-avatar_url      TEXT                    -- Phase 4 (S3)
-date_of_birth   DATE NOT NULL           -- 18+ enforced server-side
-city            TEXT                    -- drives timezone on Globe screen
-lat             DOUBLE PRECISION
-lng             DOUBLE PRECISION
-birthday        DATE                    -- for nudge engine birthday detection
-settings        JSONB DEFAULT {...}     -- bgUrl, bgOpacity, bgBlur, twofa, notifs
-created_at      TIMESTAMPTZ
+avatar_url          TEXT                    -- Phase 4 (S3)
+date_of_birth       DATE NOT NULL           -- 18+ enforced server-side
+city                TEXT                    -- drives timezone on Globe screen
+lat                 DOUBLE PRECISION
+lng                 DOUBLE PRECISION
+birthday            DATE                    -- for nudge engine birthday detection
+settings            JSONB DEFAULT {...}     -- bgUrl, bgOpacity, bgBlur, twofa, notifs
+whatsapp_number     TEXT                    -- user's WhatsApp number, set from Security screen
+whatsapp_opted_in   BOOLEAN DEFAULT false   -- opt-in to WhatsApp nudges
+created_at          TIMESTAMPTZ
 ```
 
 ### connections
@@ -255,6 +261,13 @@ POST   /api/media/upload            { base64, contentType } — dev only, replac
 POST   /api/push-tokens             { token, platform }
 ```
 
+### WhatsApp
+```
+POST   /whatsapp/webhook            Meta webhook — inbound message handler (no /api prefix)
+GET    /whatsapp/webhook            Meta webhook verification handshake
+PATCH  /api/users/me/whatsapp       { whatsappNumber?, optedIn } — opt-in/out + save number
+```
+
 ### Admin (remove before launch)
 ```
 GET    /api/admin/run-nudges        Manually triggers nudge engine
@@ -355,6 +368,9 @@ JWT_SECRET=...
 JWT_REFRESH_SECRET=...
 PORT=8080
 NODE_ENV=production
+WHATSAPP_ACCESS_TOKEN=...        # Meta permanent system user token
+WHATSAPP_PHONE_NUMBER_ID=...     # Meta phone number ID for the registered number
+WHATSAPP_VERIFY_TOKEN=...        # Webhook verification token (set in Meta developer portal)
 ```
 
 ---

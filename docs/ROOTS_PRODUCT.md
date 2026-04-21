@@ -1,5 +1,5 @@
 # Roots — Product & Design Specification
-*Version 1.0 · April 2026 · Confidential*
+*Version 1.1 · April 2026 · Confidential*
 
 ---
 
@@ -197,6 +197,18 @@ Tagged people always have access. They cannot be excluded from their own memory.
 4. 75%+ fuzzy match → suggestion card with match % + "Yes that's them" / "Not the same"
 5. Phone number stored on matched user record
 
+**Contacts review flow — adding connections from phone:**
+
+This is the primary onboarding path for new users. After granting contacts permission, the user reviews their phone contacts to decide who belongs in their Roots circle. The flow is:
+
+1. User taps "Sync contacts" on the Connect screen
+2. Exact matches against existing Roots users are confirmed silently (phone number linked)
+3. Fuzzy matches (75%+) surface as suggestion cards — user confirms or dismisses each one
+4. After sync, user browses the Connect screen search to find matched Roots users and adds them to their circle via the Add to Circle modal (relation, layer, frequency, since when)
+5. For contacts not yet on Roots — user can invite via WhatsApp deep link or SMS directly from the no-results state
+
+The intent is a one-time deliberate review, not an auto-import. Every connection added to Roots is a conscious choice. The contact sync enriches the match quality (phone number as identifier) but the user always decides who enters their circle and at which Dunbar layer.
+
 **Sync calendar flow:**
 1. Request Calendar permission
 2. Read events from last 90 days with attendees
@@ -217,7 +229,7 @@ Tagged people always have access. They cannot be excluded from their own memory.
 - Personalise → personalise.tsx (8 avatar colour swatches; photo upload Phase 4)
 - Privacy → privacy.tsx (plain language policy + account deletion)
 - Verification → verification.tsx (DOB display + ID upload Phase 4)
-- Security → security.tsx (2FA toggle, push notifications toggle)
+- Security → security.tsx (WhatsApp nudges toggle + number input, push notifications toggle, 2FA toggle stub)
 - Sign out button
 
 ### 7.6 Memory Event Screen (memory/[id].tsx)
@@ -250,7 +262,7 @@ Tagged people always have access. They cannot be excluded from their own memory.
 **Contact event types and icons:**
 - calendar: 📅 purple
 - call: 📞 sage green
-- whatsapp: 💬 green
+- whatsapp: 💬 green — logged via inbound WhatsApp message to Roots number
 - memory: 📖 terracotta
 - manual: ✓ grey
 
@@ -278,7 +290,7 @@ Tagged people always have access. They cannot be excluded from their own memory.
 ## 8. Key Business Logic
 
 ### Score Decay (Nudge Engine)
-Runs every 6 hours on Railway.
+Runs every 6 hours on Railway. Nudges delivered via push notification and, if opted in, WhatsApp message using the approved `roots_nudge` template.
 
 | Layer | Nudge fires at | Decay per day overdue | Min score |
 |---|---|---|---|
@@ -301,8 +313,8 @@ Runs every 6 hours on Railway.
 All interactions logged to `contact_events` table:
 - `manual` — Log contact button
 - `calendar` — Calendar sync confirm
+- `whatsapp` — Inbound WhatsApp message parsed as contact log (e.g. "Just had coffee with Sarah")
 - `call` — Call log sync (Android, Phase 3)
-- `whatsapp` — WhatsApp sync (Phase 4)
 - `memory` — Tagged in a memory (Phase 3)
 
 Each creates a timeline entry on the Person screen.

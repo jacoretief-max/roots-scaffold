@@ -1,5 +1,5 @@
 # Roots — Infrastructure
-*Version 1.0 · April 2026*
+*Version 1.1 · April 2026*
 
 ---
 
@@ -202,19 +202,40 @@ curl -X POST https://exp.host/--/api/v2/push/send \
 
 ---
 
-## 8. WhatsApp Business API (Pending)
+## 8. WhatsApp Business API (Active)
 
-**Meta Business Account:** Created under new LLC
-**Status:** Application submitted, awaiting Meta approval (2–4 weeks typical)
+**Meta Business Account:** Active under RooikatLabs LLC
+**Status:** ✅ Live — inbound and outbound messaging operational
 
-### When approved, add these environment variables:
+### Meta App Configuration
+- **App:** Roots (Meta developer portal)
+- **WhatsApp Product:** Enabled
+- **Phone number:** Registered and active — users message this number to log contacts
+- **Webhook:** `https://roots-scaffold-production.up.railway.app/whatsapp/webhook` (verified ✅)
+- **Webhook fields subscribed:** `messages`
+
+### Message Template
+- **Template name:** `roots_nudge`
+- **Category:** Marketing (Meta classification)
+- **Status:** Approved ✅
+- **Body:** `Roots reminder: {{1}}`
+- **Usage:** Outbound nudge messages sent when score drops below threshold
+
+### Railway Environment Variables
 ```
-WHATSAPP_ACCESS_TOKEN=
-WHATSAPP_PHONE_NUMBER_ID=
-WHATSAPP_BUSINESS_ACCOUNT_ID=
+WHATSAPP_ACCESS_TOKEN        Permanent system user token from Meta Business Manager
+WHATSAPP_PHONE_NUMBER_ID     Phone number ID from Meta → WhatsApp → API Setup
+WHATSAPP_VERIFY_TOKEN        Custom string used during webhook verification handshake
 ```
 
-### Current invite flow (works without API approval)
+### Inbound message handling
+Users can WhatsApp the Roots number to log contacts naturally:
+- "Just had coffee with Sarah" → logs manual contact event for Sarah
+- "Spoke with James yesterday" → logs contact event for James
+- "snooze" → delays all nudges for 7 days
+- Ambiguous names trigger a clarification reply from the bot
+
+### Invite flow (no API required)
 - Deep link: `whatsapp://send?text=encoded_message`
 - SMS fallback: `sms:?body=encoded_message`
 - Located in `connect.tsx` → `handleInvite` function
@@ -272,7 +293,46 @@ curl https://roots-scaffold-production.up.railway.app/api/admin/run-nudges
 
 ---
 
-## 10. Migrating to a New Machine
+## 10. AWS Platform — Cost Analysis & Future Consideration
+
+Roots runs entirely on Railway. AWS was evaluated as an alternative platform. The decision is to keep Railway as primary and introduce AWS S3 for Phase 4 media storage only — not a full migration.
+
+### Cost at current scale (early users)
+
+| Service | Spec | Monthly Cost |
+|---|---|---|
+| Backend (App Runner / ECS) | ~0.25 vCPU / 0.5 GB | ~$18 |
+| PostgreSQL (RDS db.t3.small) | 2 GB RAM, 20 GB storage | ~$36 |
+| Redis (ElastiCache cache.t4g.micro) | | ~$12 |
+| S3 (Phase 4 media) | small scale | ~$2–5 |
+| Route 53 | | ~$1 |
+| **Total** | | **~$70–75/month** |
+
+### Cost at 100 users with 5 GB photos each
+
+Total S3 storage at this scale: 500 GB.
+
+| Service | Monthly Cost |
+|---|---|
+| Backend | ~$18 |
+| RDS PostgreSQL (db.t3.small) | ~$36 |
+| ElastiCache Redis | ~$12 |
+| S3 — 500 GB storage (100 × 5 GB) | ~$11.50 |
+| S3 — data egress (~50 GB, mobile-cached) | ~$4.50 |
+| S3 — requests (PUT/GET) | ~$0.15 |
+| Route 53 | ~$1 |
+| **Total** | **~$83–90/month (~$0.85–0.90 per user)** |
+
+The per-user cost drops significantly at scale. Fixed infrastructure (RDS, ElastiCache, backend) stays flat while S3 storage adds ~$0.023/GB per new user. The RDS instance — not photo storage — is the dominant cost driver at this scale.
+
+### Decision
+- **Railway stays as primary platform** — backend, PostgreSQL, Redis remain on Railway
+- **S3 added in Phase 4** — photo and voice note storage via presigned URLs only
+- Full AWS migration is not warranted at current scale
+
+---
+
+## 11. Migrating to a New Machine
 
 1. Install Node.js 18+ from nodejs.org
 2. `xcode-select --install` (Mac — installs Git)
@@ -292,3 +352,4 @@ curl https://roots-scaffold-production.up.railway.app/api/admin/run-nudges
 ---
 
 *End of Infrastructure*
+
