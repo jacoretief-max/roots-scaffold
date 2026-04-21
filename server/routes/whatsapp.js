@@ -80,7 +80,7 @@ const matchConnections = (nameQuery, connections) => {
 };
 
 // ── Log a contact event ────────────────────────────────────────────
-const logContact = async (db, userId, connectionId) => {
+const logContact = async (db, userId, connectionId, originalText) => {
   await db.query(
     `UPDATE connections
      SET last_contact_at = NOW(),
@@ -92,8 +92,8 @@ const logContact = async (db, userId, connectionId) => {
   await db.query(
     `INSERT INTO contact_events
        (user_id, connection_id, type, title, date, note)
-     VALUES ($1, $2, 'whatsapp', 'WhatsApp check-in', NOW(), NULL)`,
-    [userId, connectionId]
+     VALUES ($1, $2, 'whatsapp', 'Caught up', NOW(), $3)`,
+    [userId, connectionId, originalText ?? null]
   );
 };
 
@@ -186,15 +186,37 @@ async function handleInboundMessage(db, redisClient, from, text) {
       return;
     }
 
-    // 3. Handle "done", "snooze", "help" keywords
-    const lower = text.toLowerCase();
+    // 3. Handle keywords — snooze, done, help
+    const lower = text.toLowerCase().trim();
+
+    if (lower === 'snooze') {
+      // Silence nudges for this user for 24 hours by bumping nudge_sent_at
+      await db.query(
+        `UPDATE connections
+         SET nudge_sent_at = NOW()
+         WHERE user_id = $1
+         AND nudge IS NOT NULL`,
+        [user.id]
+      );
+      await sendWhatsAppMessage(from,
+        `Got it — I'll leave you alone for today. I'll check in again tomorrow.`
+      );
+      return;
+    }
+
+    if (lower === 'done') {
+      await sendWhatsAppMessage(from,
+        `Nice one! Who did you catch up with? Just send me their name and I'll log it.`
+      );
+      return;
+    }
 
     if (lower === 'help' || lower === '?') {
       await sendWhatsAppMessage(from,
         `*Roots commands*\n\n` +
         `• "Just had lunch with Sarah" — log a catch-up\n` +
         `• "Caught up with James" — same thing, different phrasing\n` +
-        `• Any name you spoke to — Roots will find them in your circle\n\n` +
+        `• "Snooze" — silence nudges for today\n\n` +
         `Roots will also send you nudges here when it's time to reach out to someone.`
       );
       return;
@@ -234,7 +256,7 @@ async function handleInboundMessage(db, redisClient, from, text) {
     if (matches[0].score >= 0.85 && (matches.length === 1 || matches[0].score - matches[1].score > 0.15)) {
       // Single clear match — log it
       const match = matches[0];
-      await logContact(db, user.id, match.connection_id);
+      await logContact(db, user.id, match.connection_id, text);
       await sendWhatsAppMessage(from,
         `Got it — logged your catch-up with *${match.display_name}* ✓`
       );
@@ -249,7 +271,7 @@ async function handleInboundMessage(db, redisClient, from, text) {
 
     await redisClient.set(
       pendingKey,
-      JSON.stringify({ userId: user.id, candidates }),
+      JSON.stringify({ userId: user.id, candidates, originalText: text }),
       { EX: 300 } // 5 minute TTL
     );
 
@@ -268,7 +290,7 @@ async function handleClarificationReply(db, from, user, text, pending) {
 
   if (!isNaN(choice) && choice >= 1 && choice <= pending.candidates.length) {
     const match = pending.candidates[choice - 1];
-    await logContact(db, user.id, match.connection_id);
+    await logContact(db, user.id, match.connection_id, pending.originalText);
     await sendWhatsAppMessage(from,
       `Got it — logged your catch-up with *${match.display_name}* ✓`
     );
