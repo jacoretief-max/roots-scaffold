@@ -318,7 +318,16 @@ export const useWhatsAppOptIn = () => {
       const { data } = await api.post('/users/me/whatsapp', payload);
       return data.data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Update the auth store immediately so the screen reflects the saved values
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser) {
+        useAuthStore.getState().setUser({
+          ...currentUser,
+          whatsappNumber: variables.whatsappNumber ?? (currentUser as any).whatsappNumber,
+          whatsappOptedIn: variables.optedIn,
+        } as any);
+      }
       qc.invalidateQueries({ queryKey: QueryKeys.me });
     },
   });
