@@ -31,27 +31,47 @@ const nameSimilarity = (a, b) => {
 
 // ── Extract a name from free-text ──────────────────────────────────
 const extractName = (text) => {
+  // Strip common time prefixes so they don't confuse the match
+  // e.g. "last saturday had lunch with James" → "had lunch with James"
+  const cleaned = text
+    .trim()
+    .replace(/^(last\s+\w+|yesterday|this morning|this afternoon|this evening|tonight|today|just now)\s+/i, '')
+    .trim();
+
   const patterns = [
-    /(?:just |finally )?(?:had (?:lunch|coffee|dinner|drinks|a catch-?up|a call|a meeting) with)\s+(.+)/i,
+    // "had [anything] with NAME"  — catches braai, bbq, pool day, beers, etc.
+    /(?:just |finally )?had\s+.+?\s+with\s+([A-Z][^,\.!?]+)/i,
+    // "spoke/chatted/talked with/to NAME"
     /(?:just |finally )?(?:spoke|chatted|talked) (?:with|to)\s+(.+)/i,
+    // "called/phoned/rang NAME"
     /(?:just |finally )?(?:called|phoned|rang)\s+(.+)/i,
+    // "caught up/connected with NAME"
     /(?:just |finally )?(?:caught up|connected) with\s+(.+)/i,
+    // "met/saw/visited NAME"
     /(?:just |finally )?(?:met|saw|visited)\s+(.+)/i,
-    /(?:just |finally )?(?:had a chat with)\s+(.+)/i,
+    // "had a chat/braai/bbq/drinks with NAME"
+    /(?:just |finally )?had (?:a )?(?:chat|braai|bbq|drinks|beers|coffee|lunch|dinner|breakfast|brunch|call|meeting|catch-?up) with\s+(.+)/i,
+    // "log/logged/noting NAME"
     /(?:logged|log|noting|note)(?: a catch-?up)? with\s+(.+)/i,
   ];
 
   for (const pattern of patterns) {
-    const match = text.trim().match(pattern);
+    const match = cleaned.match(pattern);
     if (match) {
-      return match[1].trim().replace(/[.!?]+$/, '');
+      // Trim trailing filler — stop at "it was", "and", comma, or end of name
+      const raw = match[1].trim();
+      const name = raw
+        .replace(/\s+(it was|and then|we |they |which|that|who|,).*/i, '')
+        .replace(/[.!?]+$/, '')
+        .trim();
+      if (name.length > 1) return name;
     }
   }
 
-  // Bare name fallback — short message, title-cased words
-  const words = text.trim().split(/\s+/);
-  if (words.length >= 1 && words.length <= 3 && words[0][0] === words[0][0].toUpperCase()) {
-    return text.trim().replace(/[.!?]+$/, '');
+  // Bare name fallback — short message of 1–3 words, looks like a name
+  const words = cleaned.trim().split(/\s+/);
+  if (words.length >= 1 && words.length <= 3 && /^[A-Z]/.test(words[0])) {
+    return cleaned.trim().replace(/[.!?]+$/, '');
   }
 
   return null;
