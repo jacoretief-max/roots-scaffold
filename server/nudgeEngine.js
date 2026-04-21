@@ -3,6 +3,7 @@
 // Computes connection scores, generates nudge text, sends push notifications
 
 const { Expo } = require('expo-server-sdk');
+const { sendWhatsAppMessage } = require('./lib/whatsapp');
 
 const expo = new Expo();
 
@@ -85,12 +86,16 @@ const runNudgeEngine = async (db) => {
         cu.display_name as connected_name,
         cu.date_of_birth,
         -- Get push tokens for the connection owner
-        array_agg(pt.token) FILTER (WHERE pt.token IS NOT NULL) as push_tokens
+        array_agg(pt.token) FILTER (WHERE pt.token IS NOT NULL) as push_tokens,
+        -- WhatsApp details for the connection owner
+        uo.whatsapp_number as owner_whatsapp,
+        uo.whatsapp_opted_in as owner_whatsapp_opted_in
       FROM connections c
       JOIN users cu ON cu.id = c.connected_user_id
+      JOIN users uo ON uo.id = c.user_id
       LEFT JOIN push_tokens pt ON pt.user_id = c.user_id
       WHERE c.always_in_touch = false
-      GROUP BY c.id, cu.display_name, cu.date_of_birth
+      GROUP BY c.id, cu.display_name, cu.date_of_birth, uo.whatsapp_number, uo.whatsapp_opted_in
     `);
 
     console.log(`[Nudge Engine] Processing ${connections.length} connections`);
@@ -193,6 +198,18 @@ const runNudgeEngine = async (db) => {
             nudgeText,
             { connectionId: conn.id }
           );
+        }
+      }
+
+      // ── Send WhatsApp nudge ─────────────────────────
+      if (shouldPush && nudgeText && conn.owner_whatsapp_opted_in && conn.owner_whatsapp) {
+        try {
+          const waMessage =
+            `${nudgeText}\n\n` +
+            `Reply "caught up with ${conn.connected_name}" to log it, or "snooze" to skip.`;
+          await sendWhatsAppMessage(conn.owner_whatsapp, waMessage);
+        } catch (err) {
+          console.error('[Nudge Engine] WhatsApp send error:', err.message);
         }
       }
     }

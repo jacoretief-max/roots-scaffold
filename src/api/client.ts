@@ -20,10 +20,14 @@ const api: AxiosInstance = axios.create({
 // ── Request interceptor — attach access token ──────────
 api.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
+    console.log(`[API] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
     const raw = await SecureStore.getItemAsync(TOKEN_KEY);
     if (raw) {
       const tokens: AuthTokens = JSON.parse(raw);
       config.headers.Authorization = `Bearer ${tokens.accessToken}`;
+      console.log('[API] Access token attached');
+    } else {
+      console.log('[API] No token in store');
     }
     return config;
   },
@@ -46,8 +50,12 @@ const processQueue = (error: unknown, token: string | null = null) => {
 };
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`[API] ${response.status} ${response.config.url}`);
+    return response;
+  },
   async (error) => {
+    console.log(`[API] ERROR ${error?.response?.status} ${error?.config?.url}:`, error?.message);
     const originalRequest = error.config;
 
     if (error.response?.status === 401 && !originalRequest._retry) {

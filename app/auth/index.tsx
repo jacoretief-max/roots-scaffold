@@ -52,16 +52,22 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
     }
     setLoading(true);
     try {
+      console.log('[LOGIN] Attempting login for:', email);
       const response = await api.post('/auth/login', {
         email,
         password,
       });
+      console.log('[LOGIN] Response status:', response.status);
+      console.log('[LOGIN] Response data:', JSON.stringify(response.data));
       const { user, tokens } = response.data.data;
       await setTokens(tokens);
       setUser(user);
+      console.log('[LOGIN] Success — navigating to tabs');
       router.replace('/(tabs)');
-    } catch (err) {
-      console.log('Login error:', err);
+    } catch (err: any) {
+      console.log('[LOGIN] Error:', err?.message);
+      console.log('[LOGIN] Status:', err?.response?.status);
+      console.log('[LOGIN] Response body:', JSON.stringify(err?.response?.data));
       Alert.alert('Login failed', 'Please check your email and password.');
     } finally {
       setLoading(false);

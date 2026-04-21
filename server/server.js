@@ -959,9 +959,26 @@ app.post('/api/push-tokens', requireAuth, async (req, res) => {
   res.json({ data: { ok: true } });
 });
 
+// ── WhatsApp opt-in ────────────────────────────────────
+// POST /api/users/me/whatsapp — save number + opt in/out
+app.post('/api/users/me/whatsapp', requireAuth, async (req, res) => {
+  const { whatsappNumber, optedIn } = req.body;
+  if (typeof optedIn !== 'boolean') {
+    return res.status(400).json({ error: 'optedIn (boolean) required' });
+  }
+  await db.query(
+    `UPDATE users
+     SET whatsapp_number = COALESCE($1, whatsapp_number),
+         whatsapp_opted_in = $2
+     WHERE id = $3`,
+    [whatsappNumber ?? null, optedIn, req.userId]
+  );
+  res.json({ data: { ok: true } });
+});
+
 // ── WhatsApp webhook ───────────────────────────────────
 const whatsappRoutes = require('./routes/whatsapp');
-app.use('/whatsapp', whatsappRoutes);
+app.use('/whatsapp', whatsappRoutes(db, redisClient));
 
 // ── Start ──────────────────────────────────────────────
 const PORT = process.env.PORT ?? 3000;
