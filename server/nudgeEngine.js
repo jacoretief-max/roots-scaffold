@@ -3,7 +3,7 @@
 // Computes connection scores, generates nudge text, sends push notifications
 
 const { Expo } = require('expo-server-sdk');
-const { sendWhatsAppMessage } = require('./lib/whatsapp');
+const { sendWhatsAppNudge } = require('./lib/whatsapp');
 
 const expo = new Expo();
 
@@ -201,13 +201,10 @@ const runNudgeEngine = async (db) => {
         }
       }
 
-      // ── Send WhatsApp nudge ─────────────────────────
+      // ── Send WhatsApp nudge via approved template ───
       if (shouldPush && nudgeText && conn.owner_whatsapp_opted_in && conn.owner_whatsapp) {
         try {
-          const waMessage =
-            `${nudgeText}\n\n` +
-            `Reply "caught up with ${conn.connected_name}" to log it, or "snooze" to skip.`;
-          await sendWhatsAppMessage(conn.owner_whatsapp, waMessage);
+          await sendWhatsAppNudge(conn.owner_whatsapp, nudgeText);
         } catch (err) {
           console.error('[Nudge Engine] WhatsApp send error:', err.message);
         }
