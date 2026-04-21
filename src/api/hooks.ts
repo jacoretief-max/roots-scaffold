@@ -311,6 +311,19 @@ export const useRegisterPushToken = () =>
     },
   });
 
+export const useWhatsAppOptIn = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { whatsappNumber?: string; optedIn: boolean }) => {
+      const { data } = await api.post('/users/me/whatsapp', payload);
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QueryKeys.me });
+    },
+  });
+};
+
 export const useContactEvents = (connectionId: string) =>
   useQuery({
     queryKey: ['contact_events', connectionId],
