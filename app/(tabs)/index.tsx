@@ -43,6 +43,59 @@ const groupByMonth = (memories: MemoryEvent[]) => {
   return groups;
 };
 
+// ── Grid card with Ken Burns effect ────────────────────
+const GridCard = ({ event, width }: { event: MemoryEvent; width: number }) => {
+  const palette = getPalette(event.id);
+  const photo = (event.media ?? [])[0] ?? null;
+  const hasNew = (event.newEntryCount ?? 0) > 0;
+
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const translateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!photo) return;
+    Animated.loop(
+      Animated.sequence([
+        Animated.parallel([
+          Animated.timing(scaleAnim, { toValue: 1.12, duration: 9000, useNativeDriver: true }),
+          Animated.timing(translateAnim, { toValue: -6, duration: 9000, useNativeDriver: true }),
+        ]),
+        Animated.parallel([
+          Animated.timing(scaleAnim, { toValue: 1, duration: 9000, useNativeDriver: true }),
+          Animated.timing(translateAnim, { toValue: 0, duration: 9000, useNativeDriver: true }),
+        ]),
+      ])
+    ).start();
+  }, [photo]);
+
+  return (
+    <View style={hasNew ? [styles.gridCardRing, { width }] : { width }}>
+      <TouchableOpacity
+        style={[styles.gridCard, !photo && { backgroundColor: palette[0] }]}
+        onPress={() => router.push(`/memory/${event.id}`)}
+        activeOpacity={0.85}
+      >
+        {photo && (
+          <Animated.Image
+            source={{ uri: photo }}
+            style={[
+              StyleSheet.absoluteFillObject,
+              { transform: [{ scale: scaleAnim }, { translateX: translateAnim }] },
+            ]}
+            resizeMode="cover"
+          />
+        )}
+        <View style={styles.cardOverlay} />
+        <View style={styles.gridCardContent}>
+          <Text style={styles.gridCardTitle} numberOfLines={3}>
+            {event.title}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 // ── All Memories grid ───────────────────────────────────
 const AllMemoriesGrid = ({ memories }: { memories: MemoryEvent[] }) => {
   const screenWidth = Dimensions.get('window').width;
@@ -57,24 +110,9 @@ const AllMemoriesGrid = ({ memories }: { memories: MemoryEvent[] }) => {
         <View key={label} style={styles.monthGroup}>
           <Text style={styles.monthGroupHeader}>{label}</Text>
           <View style={styles.twoColGrid}>
-            {events.map(event => {
-              const palette = getPalette(event.id);
-              return (
-                <TouchableOpacity
-                  key={event.id}
-                  style={[styles.gridCard, { width: colWidth, backgroundColor: palette[0] }]}
-                  onPress={() => router.push(`/memory/${event.id}`)}
-                  activeOpacity={0.85}
-                >
-                  <View style={styles.cardOverlay} />
-                  <View style={styles.gridCardContent}>
-                    <Text style={styles.gridCardTitle} numberOfLines={3}>
-                      {event.title}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
+            {events.map(event => (
+              <GridCard key={event.id} event={event} width={colWidth} />
+            ))}
           </View>
         </View>
       ))}
@@ -673,6 +711,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.sm,
+  },
+  gridCardRing: {
+    borderRadius: BorderRadius.md + 3,
+    borderWidth: 2.5,
+    borderColor: Colors.terracotta,
+    padding: 2,
   },
   gridCard: {
     height: 140,
