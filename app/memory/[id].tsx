@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, TextInput,
-  KeyboardAvoidingView, Platform, Animated,
+  KeyboardAvoidingView, Platform,
   Dimensions, Modal, Image, Alert, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,59 +19,40 @@ import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/
 
 const { width, height } = Dimensions.get('window');
 
-// ── Colour rotation hook ───────────────────────────────
-const FALLBACK_COLORS = [
-  Colors.terracotta,
-  '#7A5C3A',
-  Colors.sage,
-  '#4A6A7A',
-  '#7A4A5C',
-];
-
-const useColorRotation = (colors: string[], interval = 2200) => {
-  const [index, setIndex] = useState(0);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (colors.length <= 1) return;
-    const timer = setInterval(() => {
-      Animated.sequence([
-        Animated.timing(fadeAnim, { toValue: 0.6, duration: 400, useNativeDriver: true }),
-        Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ]).start();
-      setIndex((i) => (i + 1) % colors.length);
-    }, interval);
-    return () => clearInterval(timer);
-  }, [colors.length]);
-
-  return { color: colors[index] ?? FALLBACK_COLORS[0], fadeAnim };
-};
-
-// ── Photo pair row ─────────────────────────────────────
-const PHOTO_SIZE = (width - Spacing.lg * 2 - Spacing.sm) / 2;
-
-const PhotoPairRow = ({
+// ── Photo section (hero + strip) ──────────────────────
+const PhotoSection = ({
   photos,
-  startIndex,
   onPress,
 }: {
   photos: string[];
-  startIndex: number;
   onPress: (index: number) => void;
-}) => (
-  <View style={styles.photoPairRow}>
-    {photos.map((uri, i) => (
-      <TouchableOpacity
-        key={uri}
-        onPress={() => onPress(startIndex + i)}
-        activeOpacity={0.9}
-        style={styles.photoThumbWrapper}
-      >
-        <Image source={{ uri }} style={styles.photoThumb} resizeMode="cover" />
+}) => {
+  const stripPhotos = photos.slice(1);
+  return (
+    <View style={styles.photoSection}>
+      <TouchableOpacity onPress={() => onPress(0)} activeOpacity={0.92}>
+        <Image source={{ uri: photos[0] }} style={styles.photoHero} resizeMode="cover" />
       </TouchableOpacity>
-    ))}
-  </View>
-);
+      {stripPhotos.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.photoStrip}
+        >
+          {stripPhotos.map((uri, i) => (
+            <TouchableOpacity
+              key={uri}
+              onPress={() => onPress(i + 1)}
+              activeOpacity={0.9}
+            >
+              <Image source={{ uri }} style={styles.photoStripThumb} resizeMode="cover" />
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
+};
 
 // ── Lightbox ───────────────────────────────────────────
 const Lightbox = ({
@@ -128,171 +109,72 @@ const Lightbox = ({
   );
 };
 
-// ── Structured view ────────────────────────────────────
-const StructuredView = ({
+// ── Perspectives view ─────────────────────────────────
+const PerspectivesView = ({
   entries,
   currentUserId,
   isCreator,
   onDeleteEntry,
-  localPhotos,
-  onPhotoPress,
 }: {
   entries: MemoryEntry[];
   currentUserId: string;
   isCreator: boolean;
   onDeleteEntry: (entryId: string, authorName: string) => void;
-  localPhotos: string[];
-  onPhotoPress: (index: number) => void;
 }) => {
-  // Build photo pairs for interleaving
-  const photoPairs: string[][] = [];
-  for (let i = 0; i < localPhotos.length; i += 2) {
-    photoPairs.push(localPhotos.slice(i, i + 2));
+  if (entries.length === 0) {
+    return (
+      <View style={styles.noEntries}>
+        <Text style={styles.noEntriesText}>No perspectives yet.</Text>
+        <Text style={styles.noEntriesSub}>Be the first to write your memory.</Text>
+      </View>
+    );
   }
-  const maxRows = Math.max(photoPairs.length, entries.length);
 
   return (
-    <ScrollView
-      style={styles.structuredScroll}
-      contentContainerStyle={styles.structuredContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {entries.length === 0 && localPhotos.length === 0 && (
-        <View style={styles.noEntries}>
-          <Text style={styles.noEntriesText}>No perspectives yet.</Text>
-          <Text style={styles.noEntriesSub}>Be the first to write your memory.</Text>
-        </View>
-      )}
-
-      {Array.from({ length: maxRows }).map((_, i) => (
-        <View key={i}>
-          {photoPairs[i] && (
-            <PhotoPairRow
-              photos={photoPairs[i]}
-              startIndex={i * 2}
-              onPress={onPhotoPress}
-            />
-          )}
-          {entries[i] && (() => {
-            const entry = entries[i];
-            const isMe = entry.authorId === currentUserId;
-            const canDelete = isCreator || isMe;
-            return (
-              <View key={entry.id} style={[styles.entryCard, isMe && styles.entryCardMe]}>
-                <View style={styles.entryHeader}>
-                  {entry.author?.avatarUrl ? (
-                    <Image source={{ uri: entry.author.avatarUrl }} style={styles.entryAvatar} />
-                  ) : (
-                    <View style={[styles.entryAvatar, { backgroundColor: entry.author?.avatarColour ?? Colors.terracotta }]}>
-                      <Text style={styles.entryAvatarText}>
-                        {entry.author?.displayName?.charAt(0).toUpperCase() ?? '?'}
-                      </Text>
-                    </View>
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.entryAuthor}>{isMe ? 'You' : entry.author?.displayName}</Text>
-                    <Text style={styles.entryTime}>
-                      {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('en-GB', {
-                        day: 'numeric', month: 'short', year: 'numeric'
-                      }) : ''}
-                    </Text>
-                  </View>
-                  {entry.isNew && !isMe && (
-                    <View style={styles.newBadge}>
-                      <Text style={styles.newBadgeText}>NEW</Text>
-                    </View>
-                  )}
-                  {canDelete && (
-                    <TouchableOpacity
-                      onPress={() => onDeleteEntry(entry.id, isMe ? 'your' : entry.author?.displayName ?? '')}
-                      style={styles.entryDeleteBtn}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={styles.entryDeleteBtnText}>×</Text>
-                    </TouchableOpacity>
-                  )}
+    <View style={styles.perspectivesContainer}>
+      {entries.map((entry) => {
+        const isMe = entry.authorId === currentUserId;
+        const canDelete = isCreator || isMe;
+        return (
+          <View key={entry.id} style={[styles.entryCard, isMe && styles.entryCardMe]}>
+            <View style={styles.entryHeader}>
+              {entry.author?.avatarUrl ? (
+                <Image source={{ uri: entry.author.avatarUrl }} style={styles.entryAvatar} />
+              ) : (
+                <View style={[styles.entryAvatar, { backgroundColor: entry.author?.avatarColour ?? Colors.terracotta }]}>
+                  <Text style={styles.entryAvatarText}>
+                    {entry.author?.displayName?.charAt(0).toUpperCase() ?? '?'}
+                  </Text>
                 </View>
-                <Text style={styles.entryText}>{entry.text}</Text>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.entryAuthor}>{isMe ? 'You' : entry.author?.displayName}</Text>
+                <Text style={styles.entryTime}>
+                  {entry.createdAt ? new Date(entry.createdAt).toLocaleDateString('en-GB', {
+                    day: 'numeric', month: 'short', year: 'numeric'
+                  }) : ''}
+                </Text>
               </View>
-            );
-          })()}
-        </View>
-      ))}
-    </ScrollView>
-  );
-};
-
-// ── Immersive view ────────────────────────────────────
-const ImmersiveView = ({
-  entries,
-  colors,
-}: {
-  entries: MemoryEntry[];
-  colors: string[];
-}) => {
-  const [entryIndex, setEntryIndex] = useState(0);
-  const { color, fadeAnim } = useColorRotation(colors, 5200);
-  const driftAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    if (entries.length === 0) return;
-    const timer = setInterval(() => {
-      setEntryIndex((i) => (i + 1) % entries.length);
-      driftAnim.setValue(0);
-      Animated.timing(driftAnim, {
-        toValue: -20,
-        duration: 5000,
-        useNativeDriver: true,
-      }).start();
-    }, 5200);
-    return () => clearInterval(timer);
-  }, [entries.length]);
-
-  useEffect(() => {
-    Animated.timing(driftAnim, {
-      toValue: -20,
-      duration: 5000,
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-  const currentEntry = entries[entryIndex];
-
-  return (
-    <Animated.View style={[styles.immersive, { backgroundColor: color, opacity: fadeAnim }]}>
-      <View style={styles.immersiveOverlay} />
-
-      {currentEntry && (
-        <Animated.View style={[
-          styles.immersiveContent,
-          { transform: [{ translateY: driftAnim }] }
-        ]}>
-          <Text style={styles.immersiveAuthor}>
-            {currentEntry.author?.displayName ?? 'You'}
-          </Text>
-          <Text style={styles.immersiveText}>{currentEntry.text}</Text>
-        </Animated.View>
-      )}
-
-      {/* Entry selector dots */}
-      {entries.length > 1 && (
-        <View style={styles.immersiveDots}>
-          {entries.map((_, i) => (
-            <TouchableOpacity
-              key={i}
-              onPress={() => setEntryIndex(i)}
-              style={[styles.immersiveDot, i === entryIndex && styles.immersiveDotActive]}
-            />
-          ))}
-        </View>
-      )}
-
-      {entries.length === 0 && (
-        <View style={styles.immersiveEmpty}>
-          <Text style={styles.immersiveEmptyText}>No memories written yet.</Text>
-        </View>
-      )}
-    </Animated.View>
+              {entry.isNew && !isMe && (
+                <View style={styles.newBadge}>
+                  <Text style={styles.newBadgeText}>NEW</Text>
+                </View>
+              )}
+              {canDelete && (
+                <TouchableOpacity
+                  onPress={() => onDeleteEntry(entry.id, isMe ? 'your' : entry.author?.displayName ?? '')}
+                  style={styles.entryDeleteBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.entryDeleteBtnText}>×</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <Text style={styles.entryText}>{entry.text}</Text>
+          </View>
+        );
+      })}
+    </View>
   );
 };
 
@@ -537,7 +419,6 @@ export default function MemoryEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: event, isLoading } = useMemory(id);
   const { user } = useAuthStore();
-  const [view, setView] = useState<'structured' | 'immersive'>('immersive');
   const [editVisible, setEditVisible] = useState(false);
   const [editText, setEditText] = useState('');
   const [editEntryId, setEditEntryId] = useState('');
@@ -607,7 +488,6 @@ export default function MemoryEventScreen() {
     );
   }
 
-  const bgColors = FALLBACK_COLORS;
   const isCreator = event.createdByUserId === user?.id;
 
   // S3 photos from the API, plus any locally-picked photos not yet in the API response
@@ -653,6 +533,8 @@ export default function MemoryEventScreen() {
     );
   };
 
+  const myEntry = event.entries?.find(e => e.authorId === user?.id);
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
@@ -660,28 +542,6 @@ export default function MemoryEventScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>← Memories</Text>
         </TouchableOpacity>
-
-        {/* View toggle */}
-        <View style={styles.viewToggle}>
-          <TouchableOpacity
-            style={[styles.toggleBtn, view === 'structured' && styles.toggleBtnActive]}
-            onPress={() => setView('structured')}
-          >
-            <Text style={[styles.toggleBtnText, view === 'structured' && styles.toggleBtnTextActive]}>
-              Story
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.toggleBtn, view === 'immersive' && styles.toggleBtnActive]}
-            onPress={() => setView('immersive')}
-          >
-            <Text style={[styles.toggleBtnText, view === 'immersive' && styles.toggleBtnTextActive]}>
-              Immersive
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Creator edit button — balanced with back btn width */}
         {isCreator ? (
           <TouchableOpacity onPress={() => setEditMemoryVisible(true)} style={styles.headerEditBtn}>
             <Text style={styles.headerEditBtnText}>Edit</Text>
@@ -691,85 +551,83 @@ export default function MemoryEventScreen() {
         )}
       </View>
 
-      {/* Event title block */}
-      <View style={styles.eventMeta}>
-        <Text style={styles.eventTitle}>{event.title}</Text>
-        <Text style={styles.eventDetails}>
-          {new Date(event.date).toLocaleDateString('en-GB', {
-            day: 'numeric', month: 'long', year: 'numeric'
-          })}
-          {event.location ? `  ·  ${event.location}` : ''}
-        </Text>
-        {event.music && (
-          <View style={styles.musicChip}>
-            <Text style={styles.musicChipText}>
-              ♪  {event.music.title} — {event.music.artist}
-            </Text>
-          </View>
-        )}
-        {/* Participant avatars */}
-        <View style={styles.participants}>
-          {event.participants?.slice(0, 6).map((p, i) => (
-            <View
-              key={p.id}
-              style={[
-                styles.participantAvatar,
-                { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }
-              ]}
-            >
-              <Text style={styles.participantAvatarText}>
-                {p.displayName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-          ))}
-          {(event.participants?.length ?? 0) > 6 && (
-            <View style={[styles.participantAvatar, { backgroundColor: Colors.tan, marginLeft: -8 }]}>
-              <Text style={[styles.participantAvatarText, { color: Colors.textDark }]}>
-                +{(event.participants?.length ?? 0) - 6}
+      {/* Scrollable body: meta + photos + perspectives */}
+      <ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={styles.mainScrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Event meta */}
+        <View style={styles.eventMeta}>
+          <Text style={styles.eventTitle}>{event.title}</Text>
+          <Text style={styles.eventDetails}>
+            {new Date(event.date).toLocaleDateString('en-GB', {
+              day: 'numeric', month: 'long', year: 'numeric'
+            })}
+            {event.location ? `  ·  ${event.location}` : ''}
+          </Text>
+          {event.music && (
+            <View style={styles.musicChip}>
+              <Text style={styles.musicChipText}>
+                ♪  {event.music.title} — {event.music.artist}
               </Text>
             </View>
           )}
-        </View>
-      </View>
-
-      {/* Main content */}
-      <View style={styles.content}>
-        {view === 'structured' ? (
-          <StructuredView
-            entries={event.entries ?? []}
-            currentUserId={user?.id ?? ''}
-            isCreator={isCreator}
-            onDeleteEntry={handleDeleteEntry}
-            localPhotos={allPhotos}
-            onPhotoPress={openLightbox}
-          />
-        ) : (
-          <ImmersiveView
-            entries={event.entries ?? []}
-            colors={bgColors}
-          />
-        )}
-      </View>
-
-      {/* Add / edit perspective — only in Story view */}
-      {view === 'structured' && (() => {
-        const myEntry = event.entries?.find(e => e.authorId === user?.id);
-        return myEntry
-          ? (
-            <View style={styles.alreadyAdded}>
-              <Text style={styles.alreadyAddedText}>You've added your perspective</Text>
-              <View style={styles.alreadyAddedActions}>
-                <TouchableOpacity onPress={pickPhoto} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Text style={styles.photoPickerBtnText}>📷</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={openEditPerspective}>
-                  <Text style={styles.editLink}>Edit</Text>
-                </TouchableOpacity>
+          {/* Participant avatars */}
+          <View style={styles.participants}>
+            {event.participants?.slice(0, 6).map((p, i) => (
+              <View
+                key={p.id}
+                style={[
+                  styles.participantAvatar,
+                  { backgroundColor: p.avatarColour, marginLeft: i > 0 ? -8 : 0 }
+                ]}
+              >
+                <Text style={styles.participantAvatarText}>
+                  {p.displayName.charAt(0).toUpperCase()}
+                </Text>
               </View>
-            </View>
-          )
-          : <AddPerspective eventId={id} onPickPhoto={pickPhoto} />;
-      })()}
+            ))}
+            {(event.participants?.length ?? 0) > 6 && (
+              <View style={[styles.participantAvatar, { backgroundColor: Colors.tan, marginLeft: -8 }]}>
+                <Text style={[styles.participantAvatarText, { color: Colors.textDark }]}>
+                  +{(event.participants?.length ?? 0) - 6}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Photos */}
+        {allPhotos.length > 0 && (
+          <PhotoSection photos={allPhotos} onPress={openLightbox} />
+        )}
+
+        {/* Perspectives */}
+        <PerspectivesView
+          entries={event.entries ?? []}
+          currentUserId={user?.id ?? ''}
+          isCreator={isCreator}
+          onDeleteEntry={handleDeleteEntry}
+        />
+      </ScrollView>
+
+      {/* Bottom action bar — always visible */}
+      {myEntry ? (
+        <View style={styles.alreadyAdded}>
+          <Text style={styles.alreadyAddedText}>You've added your perspective</Text>
+          <View style={styles.alreadyAddedActions}>
+            <TouchableOpacity onPress={pickPhoto} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.photoPickerBtnText}>📷</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={openEditPerspective}>
+              <Text style={styles.editLink}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <AddPerspective eventId={id} onPickPhoto={pickPhoto} />
+      )}
 
       {/* Edit perspective modal */}
       <Modal
@@ -892,24 +750,6 @@ const styles = StyleSheet.create({
     color: Colors.terracotta,
     fontFamily: Typography.fontFamily,
   },
-  viewToggle: {
-    flexDirection: 'row',
-    backgroundColor: Colors.tan,
-    borderRadius: BorderRadius.pill,
-    padding: 3,
-  },
-  toggleBtn: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
-    borderRadius: BorderRadius.pill,
-  },
-  toggleBtnActive: { backgroundColor: Colors.card },
-  toggleBtnText: {
-    fontSize: 12,
-    color: Colors.textLight,
-    fontFamily: Typography.fontFamily,
-  },
-  toggleBtnTextActive: { color: Colors.terracotta, fontWeight: '700' },
   headerEditBtn: { paddingVertical: Spacing.sm, minWidth: 80, alignItems: 'flex-end' },
   headerEditBtnText: {
     fontSize: Typography.body,
@@ -918,6 +758,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   headerEditPlaceholder: { minWidth: 80 },
+
+  // Main scroll
+  mainScroll: { flex: 1 },
+  mainScrollContent: { paddingBottom: 120 },
 
   // Event meta
   eventMeta: {
@@ -964,17 +808,33 @@ const styles = StyleSheet.create({
   },
   participantAvatarText: { fontSize: 11, color: Colors.white, fontWeight: '600' },
 
-  // Content
-  content: { flex: 1 },
+  // Photo section
+  photoSection: {
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  photoHero: {
+    width: '100%',
+    height: 240,
+  },
+  photoStrip: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  photoStripThumb: {
+    width: 80,
+    height: 80,
+    borderRadius: BorderRadius.sm,
+    marginRight: Spacing.sm,
+  },
 
-  // Structured view
-  structuredScroll: { flex: 1 },
-  structuredContent: {
+  // Perspectives container
+  perspectivesContainer: {
     padding: Spacing.lg,
-    paddingBottom: 120,
     gap: Spacing.md,
   },
-  noEntries: { alignItems: 'center', paddingTop: 60 },
+  noEntries: { alignItems: 'center', paddingTop: 60, paddingBottom: Spacing.xl },
   noEntriesText: {
     fontSize: Typography.body,
     fontFamily: Typography.fontFamily,
@@ -1037,78 +897,6 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
     color: Colors.textDark,
     lineHeight: 22,
-  },
-
-  // Immersive view
-  immersive: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  immersiveOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-  },
-  immersiveContent: {
-    position: 'absolute',
-    bottom: 80,
-    left: Spacing.xl * 1.5,
-    right: Spacing.xl * 1.5,
-    alignItems: 'center',
-  },
-  immersiveAuthor: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: Typography.fontFamily,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: Spacing.lg,
-  },
-  immersiveText: {
-    fontSize: 22,
-    fontFamily: Typography.fontFamily,
-    color: Colors.white,
-    textAlign: 'center',
-    lineHeight: 34,
-    fontStyle: 'italic',
-  },
-  immersiveDots: {
-    position: 'absolute',
-    bottom: Spacing.xl,
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  immersiveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.4)',
-  },
-  immersiveDotActive: {
-    width: 20,
-    backgroundColor: Colors.white,
-  },
-  immersiveEmpty: { alignItems: 'center' },
-  immersiveEmptyText: {
-    fontSize: Typography.body,
-    color: 'rgba(255,255,255,0.7)',
-    fontFamily: Typography.fontFamily,
-  },
-
-  // Photo pair row
-  photoPairRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-  },
-  photoThumbWrapper: {
-    borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-  },
-  photoThumb: {
-    width: PHOTO_SIZE,
-    height: PHOTO_SIZE,
   },
 
   // Lightbox
