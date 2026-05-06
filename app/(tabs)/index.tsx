@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, ActivityIndicator, Animated,
-  Dimensions, ScrollView,
+  Dimensions, ScrollView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -139,21 +139,26 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   const entryCount = (item as any).entryCount ?? 0;
   const newCount = item.newEntryCount ?? 0;
   const palette = getPalette(item.id);
-  const [colorIndex, setColorIndex] = useState(0);
+  const photos = (item.media ?? []).slice(0, 3);
+  const usePhotos = photos.length > 0;
+  const cycleLength = usePhotos ? photos.length : palette.length;
+
+  const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const expandAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    if (cycleLength <= 1) return;
     const interval = setInterval(() => {
       Animated.sequence([
-        Animated.timing(fadeAnim, { toValue: 0.7, duration: 400, useNativeDriver: true }),
-        Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
       ]).start();
-      setColorIndex(i => (i + 1) % palette.length);
-    }, 2200);
+      setIndex(i => (i + 1) % cycleLength);
+    }, 3000);
     return () => clearInterval(interval);
-  }, []);
+  }, [cycleLength]);
 
   const toggleExpanded = () => {
     const toValue = expanded ? 0 : 1;
@@ -177,7 +182,17 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
       onPress={() => router.push(`/memory/${item.id}`)}
       activeOpacity={0.85}
     >
-      <Animated.View style={[styles.cardBg, { backgroundColor: palette[colorIndex], opacity: fadeAnim }]} />
+      {usePhotos ? (
+        <Animated.View style={[styles.cardBg, { opacity: fadeAnim }]}>
+          <Image
+            source={{ uri: photos[index] }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+          />
+        </Animated.View>
+      ) : (
+        <Animated.View style={[styles.cardBg, { backgroundColor: palette[index], opacity: fadeAnim }]} />
+      )}
       <View style={styles.cardOverlay} />
 
       {/* Top row */}

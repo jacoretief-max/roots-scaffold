@@ -745,7 +745,10 @@ app.get('/api/memories', requireAuth, async (req, res) => {
          )), '[]'::json)
         FROM users u
         WHERE u.id = ANY(e.participant_ids)
-       ) as participants
+       ) as participants,
+       (SELECT COALESCE(json_agg(mm.url ORDER BY mm.created_at ASC), '[]'::json)
+        FROM (SELECT url, created_at FROM memory_media WHERE event_id = e.id ORDER BY created_at ASC LIMIT 3) mm
+       ) as media
      FROM events e
      WHERE $1 = ANY(e.participant_ids)
      ORDER BY e.created_at DESC`,
