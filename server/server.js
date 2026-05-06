@@ -786,7 +786,7 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
          'displayName',  u.display_name,
          'avatarColour', u.avatar_colour,
          'avatarUrl',    u.avatar_url
-       ) as author,
+       ) as author
      FROM memory_entries me
      JOIN users u ON u.id = me.author_id
      WHERE me.event_id = $1
