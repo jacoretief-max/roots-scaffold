@@ -923,10 +923,6 @@ app.post('/api/media/presign', requireAuth, async (req, res) => {
     const { contentType, folder = 'memories' } = req.body;
     if (!contentType) return res.status(400).json({ error: 'contentType required' });
 
-    // Debug: verify credentials are loaded
-    console.log('[presign] bucket:', S3_BUCKET, 'region:', process.env.AWS_REGION);
-    console.log('[presign] key id loaded:', !!process.env.AWS_ACCESS_KEY_ID, 'secret loaded:', !!process.env.AWS_SECRET_ACCESS_KEY);
-
     const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'audio/m4a', 'audio/mpeg'];
     if (!allowedTypes.includes(contentType)) {
       return res.status(400).json({ error: `Unsupported content type: ${contentType}` });
@@ -944,7 +940,6 @@ app.post('/api/media/presign', requireAuth, async (req, res) => {
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 }); // 5 min
     const publicUrl = `${S3_BASE_URL}/${key}`;
 
-    console.log('[presign] generated URL for key:', key);
     res.json({ data: { uploadUrl, publicUrl, key } });
   } catch (err) {
     console.error('S3 presign error:', err);
@@ -957,26 +952,22 @@ app.post('/api/media/presign', requireAuth, async (req, res) => {
 app.post('/api/media/confirm', requireAuth, async (req, res) => {
   try {
     const { publicUrl, type, referenceId } = req.body;
-    console.log('[confirm] body:', { publicUrl, type, referenceId, userId: req.userId });
     if (!publicUrl || !type) return res.status(400).json({ error: 'publicUrl and type required' });
 
     if (type === 'avatar') {
       await db.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [publicUrl, req.userId]);
     } else if (type === 'memory' && referenceId) {
-      const result = await db.query(
+      await db.query(
         `INSERT INTO memory_media (event_id, user_id, url, created_at)
          VALUES ($1, $2, $3, NOW())
          ON CONFLICT DO NOTHING`,
         [referenceId, req.userId, publicUrl]
       );
-      console.log('[confirm] insert rowCount:', result.rowCount);
-    } else {
-      console.log('[confirm] no insert — type:', type, 'referenceId:', referenceId);
     }
 
     res.json({ data: { ok: true, publicUrl } });
   } catch (err) {
-    console.error('[confirm] error:', err);
+    console.error('Media confirm error:', err);
     res.status(500).json({ error: 'Failed to confirm media' });
   }
 });
