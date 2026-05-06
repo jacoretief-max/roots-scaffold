@@ -11,6 +11,7 @@
 | Phase 2 | ✅ Complete | All 5 screens built and polished |
 | Phase 3 | ✅ Complete | Contacts sync, nudge engine, calendar integration |
 | Phase 3 (partial) | ✅ Complete | WhatsApp Business API — inbound/outbound nudges active |
+| Nav Redesign | ✅ Complete | 3-tab layout, Connect merged into Circle, Globe removed |
 | Phase 4 | ⬜ Not started | S3 media, voice notes, TestFlight, App Store |
 
 ---
@@ -148,41 +149,31 @@
 
 ## What's Stubbed / Coming Later
 
-### Navigation Redesign (planned — before Phase 4 ships)
+### Navigation Redesign ✅ Complete
 
-Tab bar reduces from 5 tabs to 3:
+Tab bar reduced from 5 tabs to 3:
 
 | Old | New |
 |---|---|
-| Memories | Memories (redesigned — see below) |
-| Globe | ~~Removed~~ |
-| Circle | Circle (absorbs Connect) |
-| Connect | ~~Merged into Circle~~ |
-| Profile | Profile |
-
-**Memories tab** — home state leads with social urgency, not personal archive:
-- "Your turn" section at top — memories you're tagged in where others have added but you haven't yet
-- Recent memory activity below
-- All Memories (month grid) accessible from the header
-
-**Circle tab** — search bar pinned to top replaces the Connect tab; Globe timezone intelligence moves to the Person screen
-
-**Globe tab** — removed entirely. Not returning. Timezone/availability insight lives on the Person screen instead (see Person screen above).
+| Memories | ✅ Memories |
+| Globe | ✅ Removed (hidden via href: null) |
+| Circle | ✅ Circle (absorbs Connect — search bar pinned to top) |
+| Connect | ✅ Merged into Circle |
+| Profile | ✅ Profile |
 
 ### Phase 3 (pending)
 - ⬜ **Call log sync** — iOS doesn't expose call history to third-party apps; Android only via `READ_CALL_LOG` permission
 - ⬜ **Find My 150** — on-device AI analysis using contacts/WhatsApp/photos
 
-### Phase 4 (not started)
-- ⬜ **S3 photo/video storage** — presigned URL upload flow (architecture ready, credentials not set up)
-  - Profile photo upload UI removed, "Coming Phase 4" badge shown
-  - base64 approach was tested and proved unreliable — proper S3 is required
-  - Supports both photos and short videos
-  - **Photo testing before S3 is set up:** Using local device URI via `expo-image-picker` (no upload required). `<Image source={{ uri: localUri }}>` displays correctly in the app. Images do not persist across app restarts but this is sufficient to test and validate the full visual flow in Memories — photo layout, lightbox, interleaved story view. No backend changes needed for this approach.
-- ⬜ **Media display in Story view** — interleaved layout: two media items side by side, then a perspective block, repeating down the feed
-  - Any participant (not just the creator) can add photos and videos to a shared memory
-  - Tap any photo or video → full-screen lightbox with swipe-through navigation and × top-right to close
-  - Deferred until S3 is in place so layout can be built and tested against real content
+### Phase 4 (in progress)
+- ✅ **S3 photo/video storage** — AWS bucket configured, presigned URL upload flow working end to end
+  - XMLHttpRequest binary upload via presigned PUT URLs
+  - Public read bucket policy — photos load directly in app via S3 URLs
+  - Photos linked to memory events in `memory_media` table
+  - Any participant can add photos from New Memory wizard or Memory Event screen
+- ✅ **Media display in Story view** — photos render from S3, interleaved layout with full-screen lightbox viewer
+- ✅ **Memory feed redesign** — unread ring (Stories-style), photo/Ken Burns backgrounds on cards, tab dot, "all caught up" state, ••• unified edit menu, photo-forward unified memory event view
+- ⬜ **Per-user unread tracking (memory_views table)** — current `is_new` flag is global and only tracks new text perspectives; photo/media additions don't notify other participants. Replace with `memory_views (user_id, event_id, last_viewed_at)` table so any update (perspective or photo) triggers the unread ring for each participant independently. Required before TestFlight.
 - ⬜ **Voice notes** — record audio for contact events and memories
 - ⬜ **ID verification** — upload driver's licence/passport, extract DOB only
 - ⬜ **2FA** — TOTP authenticator app setup
@@ -218,15 +209,17 @@ Tab bar reduces from 5 tabs to 3:
 
 ## Phase 4 Priorities (in order)
 
-1. **S3 setup** — AWS bucket, presigned URL endpoint, profile photo + video upload (all participants can add media)
-2. **Media display in Story view** — interleaved photo/video grid + full-screen lightbox viewer
-3. **Voice notes** — expo-av recording, S3 storage, playback in timeline
-4. **TestFlight** — EAS build, upload to App Store Connect, internal testing
-5. **App Store assets** — icon, screenshots, description, privacy policy URL
-6. **App Store submission** — iOS and Google Play
-7. **2FA + phone verification**
-8. **ID verification**
-9. **WhatsApp message frequency** — once Meta approval received
+1. ✅ **S3 setup** — AWS bucket, presigned URL endpoint, photo upload (all participants can add media)
+2. ✅ **Media display** — Story view lightbox, landing card photo rotation (3-photo cycle), All Memories Ken Burns effect
+3. ✅ **Memory feed redesign** — unread ring, tab dot, caught-up state, unified ••• menu
+4. ⬜ **Voice notes** — expo-av recording, S3 storage, playback in timeline
+5. ⬜ **Per-user unread tracking** — `memory_views` table replaces global `is_new` flag; fixes photo-notification gap; must ship before TestFlight
+6. ⬜ **TestFlight** — EAS build, upload to App Store Connect, internal testing
+7. ⬜ **App Store assets** — icon, screenshots, description, privacy policy URL
+8. ⬜ **App Store submission** — iOS and Google Play
+9. ⬜ **2FA + phone verification**
+10. ⬜ **ID verification**
+11. ⬜ **WhatsApp message frequency** — once Meta approval received
 
 ---
 
