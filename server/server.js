@@ -736,7 +736,7 @@ app.get('/api/memories', requireAuth, async (req, res) => {
        e.photo_urls as "photoUrls",
        to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
        (SELECT COUNT(*) FROM memory_entries me WHERE me.event_id = e.id) as "entryCount",
-       (SELECT COUNT(*) FROM memory_entries me WHERE me.event_id = e.id AND me.is_new = true) AS "newEntryCount",
+       (SELECT COUNT(*) FROM memory_entries me WHERE me.event_id = e.id AND me.is_new = true AND me.author_id != $1) AS "newEntryCount",
        (SELECT EXISTS(SELECT 1 FROM memory_entries me WHERE me.event_id = e.id AND me.author_id = $1)) AS "hasMyEntry",
        (SELECT COALESCE(json_agg(json_build_object(
            'id', u.id,
