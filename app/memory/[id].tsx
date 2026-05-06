@@ -9,9 +9,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, router } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useMemory, useAddMemoryEntry, useUpdateMemoryEntry,
   useDeleteMemoryEntry, useUpdateMemory, useConnectionSearch,
+  QueryKeys,
 } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
 import api from '@/api/client';
@@ -429,6 +431,7 @@ export default function MemoryEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: event, isLoading } = useMemory(id);
   const { user } = useAuthStore();
+  const qc = useQueryClient();
   const [menuVisible, setMenuVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
   const [editText, setEditText] = useState('');
@@ -477,9 +480,12 @@ export default function MemoryEventScreen() {
     setLightboxVisible(true);
   };
   // Mark other people's entries as viewed when memory loads
+  // Then invalidate the memories list so the ring/dot clears on the landing screen
   useEffect(() => {
     if (!event) return;
-    api.post(`/memories/${id}/view`).catch(() => {});
+    api.post(`/memories/${id}/view`)
+      .then(() => qc.invalidateQueries({ queryKey: QueryKeys.memories }))
+      .catch(() => {});
   }, [event?.id]);
 
   const { mutate: updateEntry, isPending: isUpdating } = useUpdateMemoryEntry(id);

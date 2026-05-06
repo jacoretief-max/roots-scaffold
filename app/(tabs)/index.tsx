@@ -275,6 +275,9 @@ const HomeFeed = ({ memories }: { memories: MemoryEvent[] }) => {
     return bNew - aNew;
   });
 
+  const hasUnread = recent.some(m => (m.newEntryCount ?? 0) > 0);
+  const allCaughtUp = memories.length > 0 && !hasUnread && yourTurn.length === 0;
+
   return (
     <FlatList
       data={recent}
@@ -283,20 +286,28 @@ const HomeFeed = ({ memories }: { memories: MemoryEvent[] }) => {
       contentContainerStyle={styles.list}
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={
-        yourTurn.length > 0 ? (
-          <View style={styles.yourTurnSection}>
-            <Text style={styles.sectionLabel}>Your turn</Text>
-            <FlatList
-              data={yourTurn}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => <YourTurnCard item={item} />}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.yourTurnList}
-              ItemSeparatorComponent={() => <View style={{ width: Spacing.sm }} />}
-            />
-          </View>
-        ) : null
+        <>
+          {allCaughtUp && (
+            <View style={styles.caughtUp}>
+              <Text style={styles.caughtUpText}>You're all caught up</Text>
+              <Text style={styles.caughtUpSub}>No new perspectives since your last visit.</Text>
+            </View>
+          )}
+          {yourTurn.length > 0 && (
+            <View style={styles.yourTurnSection}>
+              <Text style={styles.sectionLabel}>Your turn</Text>
+              <FlatList
+                data={yourTurn}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => <YourTurnCard item={item} />}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.yourTurnList}
+                ItemSeparatorComponent={() => <View style={{ width: Spacing.sm }} />}
+              />
+            </View>
+          )}
+        </>
       }
       ListEmptyComponent={
         <View style={styles.empty}>
@@ -601,6 +612,26 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: Colors.white,
     fontWeight: '600',
+    fontFamily: Typography.fontFamily,
+  },
+
+  caughtUp: {
+    alignItems: 'center',
+    paddingVertical: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  caughtUpText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textDark,
+    marginBottom: 4,
+  },
+  caughtUpSub: {
+    fontSize: 13,
+    color: Colors.textLight,
     fontFamily: Typography.fontFamily,
   },
 
