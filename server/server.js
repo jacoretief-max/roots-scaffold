@@ -754,6 +754,17 @@ app.get('/api/memories', requireAuth, async (req, res) => {
   res.json({ data: rows });
 });
 
+// POST /api/memories/:id/view — mark other people's entries as seen
+app.post('/api/memories/:id/view', requireAuth, async (req, res) => {
+  await db.query(
+    `UPDATE memory_entries
+     SET is_new = false
+     WHERE event_id = $1 AND author_id != $2 AND is_new = true`,
+    [req.params.id, req.userId]
+  );
+  res.json({ ok: true });
+});
+
 // GET /api/memories/:id
 app.get('/api/memories/:id', requireAuth, async (req, res) => {
   const { rows: [event] } = await db.query(

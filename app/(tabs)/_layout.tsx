@@ -2,6 +2,7 @@ import { Tabs } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 import { Colors } from '@/constants/theme';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
+import { useMemories } from '@/api/hooks';
 
 // ── Icon components ────────────────────────────────────
 const IconBook = ({ color }: { color: string }) => (
@@ -28,17 +29,25 @@ const IconProfile = ({ color }: { color: string }) => (
 const TabIcon = ({
   Icon,
   focused,
+  notify = false,
 }: {
   Icon: ({ color }: { color: string }) => JSX.Element;
   focused: boolean;
+  notify?: boolean;
 }) => (
   <View style={styles.tabItem}>
-    <Icon color={focused ? Colors.terracotta : Colors.textLight} />
+    <View style={styles.iconWrapper}>
+      <Icon color={focused ? Colors.terracotta : Colors.textLight} />
+      {notify && <View style={styles.notifyDot} />}
+    </View>
     <View style={[styles.dot, focused && styles.dotActive]} />
   </View>
 );
 
 export default function TabLayout() {
+  const { data: memories } = useMemories();
+  const hasUnread = (memories ?? []).some(m => (m.newEntryCount ?? 0) > 0);
+
   return (
     <Tabs
       screenOptions={{
@@ -51,7 +60,7 @@ export default function TabLayout() {
         name="index"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon Icon={IconBook} focused={focused} />
+            <TabIcon Icon={IconBook} focused={focused} notify={hasUnread} />
           ),
         }}
       />
@@ -91,6 +100,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
+  },
+  iconWrapper: {
+    position: 'relative',
+  },
+  notifyDot: {
+    position: 'absolute',
+    top: -2,
+    right: -3,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: Colors.terracotta,
+    borderWidth: 1.5,
+    borderColor: Colors.card,
   },
   dot: {
     width: 4,

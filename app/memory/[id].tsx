@@ -14,6 +14,7 @@ import {
   useDeleteMemoryEntry, useUpdateMemory, useConnectionSearch,
 } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
+import api from '@/api/client';
 import { useAuthStore } from '@/store/authStore';
 import { MemoryEntry, MemoryEvent, VisibilityLevel } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
@@ -475,6 +476,12 @@ export default function MemoryEventScreen() {
     setLightboxIndex(index);
     setLightboxVisible(true);
   };
+  // Mark other people's entries as viewed when memory loads
+  useEffect(() => {
+    if (!event) return;
+    api.post(`/memories/${id}/view`).catch(() => {});
+  }, [event?.id]);
+
   const { mutate: updateEntry, isPending: isUpdating } = useUpdateMemoryEntry(id);
   const { mutate: deleteEntry } = useDeleteMemoryEntry(id);
   const { mutate: updateMemory, isPending: isSavingMemory } = useUpdateMemory();

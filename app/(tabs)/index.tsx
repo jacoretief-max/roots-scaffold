@@ -137,6 +137,7 @@ const YourTurnCard = ({ item }: { item: MemoryEvent }) => {
 const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   const hasNew = (item.newEntryCount ?? 0) > 0;
   const entryCount = (item as any).entryCount ?? 0;
+  const newCount = item.newEntryCount ?? 0;
   const palette = getPalette(item.id);
   const [colorIndex, setColorIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
@@ -170,6 +171,7 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
   const overflowCount = participants.length - 4;
 
   return (
+    <View style={hasNew ? styles.cardRing : null}>
     <TouchableOpacity
       style={styles.card}
       onPress={() => router.push(`/memory/${item.id}`)}
@@ -228,7 +230,9 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
 
         {hasNew && (
           <View style={styles.newBadge}>
-            <Text style={styles.newBadgeText}>NEW</Text>
+            <Text style={styles.newBadgeText}>
+              {newCount === 1 ? '1 new' : `${newCount} new`}
+            </Text>
           </View>
         )}
       </View>
@@ -253,6 +257,7 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
         </View>
       </View>
     </TouchableOpacity>
+    </View>
   );
 };
 
@@ -263,7 +268,12 @@ const HomeFeed = ({ memories }: { memories: MemoryEvent[] }) => {
     !m.hasMyEntry && ((m as any).entryCount ?? 0) > 0
   );
 
-  const recent = memories;
+  // Sort: unread first, then by server order (already createdAt desc)
+  const recent = [...memories].sort((a, b) => {
+    const aNew = (a.newEntryCount ?? 0) > 0 ? 1 : 0;
+    const bNew = (b.newEntryCount ?? 0) > 0 ? 1 : 0;
+    return bNew - aNew;
+  });
 
   return (
     <FlatList
@@ -491,6 +501,12 @@ const styles = StyleSheet.create({
   },
 
   // ── Full-width memory card ────────────────────────────
+  cardRing: {
+    borderRadius: BorderRadius.md + 3,
+    borderWidth: 2.5,
+    borderColor: Colors.terracotta,
+    padding: 2,
+  },
   card: {
     height: 220,
     borderRadius: BorderRadius.md,
