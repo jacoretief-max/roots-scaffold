@@ -11,6 +11,19 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
 const { runNudgeEngine } = require('./nudgeEngine');
+const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+
+// ── AWS S3 client ──────────────────────────────────────
+const s3 = new S3Client({
+  region: process.env.AWS_REGION ?? 'us-east-1',
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
+const S3_BUCKET = process.env.AWS_S3_BUCKET;
+const S3_BASE_URL = `https://${S3_BUCKET}.s3.${process.env.AWS_REGION ?? 'us-east-1'}.amazonaws.com`;
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -773,7 +786,7 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
          'displayName',  u.display_name,
          'avatarColour', u.avatar_colour,
          'avatarUrl',    u.avatar_url
-       ) as author
+       ) as author,
      FROM memory_entries me
      JOIN users u ON u.id = me.author_id
      WHERE me.event_id = $1
@@ -792,7 +805,14 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
     [event.participantIds]
   );
 
-  res.json({ data: { ...event, entries, participants } });
+  // Fetch all media for this event (photos/videos added by any participant)
+  const { rows: mediaRows } = await db.query(
+    `SELECT url FROM memory_media WHERE event_id = $1 ORDER BY created_at ASC`,
+    [req.params.id]
+  );
+  const media = mediaRows.map(r => r.url);
+
+  res.json({ data: { ...event, entries, participants, media } });
 });
 
 // PATCH /api/memories/:id — creator only: update event details
@@ -895,35 +915,68 @@ app.delete('/api/memories/:eventId/entries/:entryId', requireAuth, async (req, r
   res.json({ data: { ok: true } });
 });
 
-// POST /api/media/upload — base64 image upload (dev only)
-// Replace with real S3 presign in production
-app.post('/api/media/upload', requireAuth, async (req, res) => {
-  const { base64, contentType } = req.body;
-  if (!base64) return res.status(400).json({ error: 'base64 required' });
-
-  const dataUrl = `data:${contentType ?? 'image/jpeg'};base64,${base64}`;
-
-  await db.query(
-    'UPDATE users SET avatar_url = $1 WHERE id = $2',
-    [dataUrl, req.userId]
-  );
-
-  res.json({ data: { publicUrl: dataUrl } });
-});
-
-// ── Media presign (stub — replace with real AWS S3 presign) ──
+// POST /api/media/presign — generate a presigned S3 upload URL
+// Body: { contentType: 'image/jpeg' | 'video/mp4' | ..., folder: 'memories' | 'avatars' }
+// Returns: { uploadUrl, publicUrl, key }
 app.post('/api/media/presign', requireAuth, async (req, res) => {
-  // TODO: replace with real AWS SDK presigned URL generation
-  // const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
-  res.json({
-    data: {
-      uploadUrl: 'https://your-s3-bucket.s3.amazonaws.com/placeholder',
-      publicUrl: 'https://your-cdn.com/placeholder',
-    },
-  });
+  try {
+    const { contentType, folder = 'memories' } = req.body;
+    if (!contentType) return res.status(400).json({ error: 'contentType required' });
+
+    // Debug: verify credentials are loaded
+    console.log('[presign] bucket:', S3_BUCKET, 'region:', process.env.AWS_REGION);
+    console.log('[presign] key id loaded:', !!process.env.AWS_ACCESS_KEY_ID, 'secret loaded:', !!process.env.AWS_SECRET_ACCESS_KEY);
+
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/quicktime', 'audio/m4a', 'audio/mpeg'];
+    if (!allowedTypes.includes(contentType)) {
+      return res.status(400).json({ error: `Unsupported content type: ${contentType}` });
+    }
+
+    const ext = contentType.split('/')[1].replace('quicktime', 'mov').replace('mpeg', 'mp3');
+    const key = `${folder}/${req.userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+    // ContentType intentionally omitted from signed command — avoids header mismatch 403s
+    const command = new PutObjectCommand({
+      Bucket: S3_BUCKET,
+      Key: key,
+    });
+
+    const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 }); // 5 min
+    const publicUrl = `${S3_BASE_URL}/${key}`;
+
+    console.log('[presign] generated URL for key:', key);
+    res.json({ data: { uploadUrl, publicUrl, key } });
+  } catch (err) {
+    console.error('S3 presign error:', err);
+    res.status(500).json({ error: 'Failed to generate upload URL' });
+  }
 });
 
-app.post('/api/media/confirm', requireAuth, (_, res) => res.json({ data: { ok: true } }));
+// POST /api/media/confirm — save a confirmed S3 upload to the DB
+// Body: { publicUrl, key, type: 'avatar' | 'memory', referenceId? }
+app.post('/api/media/confirm', requireAuth, async (req, res) => {
+  try {
+    const { publicUrl, type, referenceId } = req.body;
+    if (!publicUrl || !type) return res.status(400).json({ error: 'publicUrl and type required' });
+
+    if (type === 'avatar') {
+      await db.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [publicUrl, req.userId]);
+    } else if (type === 'memory' && referenceId) {
+      // Store as a media attachment on the memory event
+      await db.query(
+        `INSERT INTO memory_media (event_id, user_id, url, created_at)
+         VALUES ($1, $2, $3, NOW())
+         ON CONFLICT DO NOTHING`,
+        [referenceId, req.userId, publicUrl]
+      );
+    }
+
+    res.json({ data: { ok: true, publicUrl } });
+  } catch (err) {
+    console.error('Media confirm error:', err);
+    res.status(500).json({ error: 'Failed to confirm media' });
+  }
+});
 
 // ── Admin / test endpoints ─────────────────────────────
 // GET /api/admin/run-nudges — test only, remove before launch

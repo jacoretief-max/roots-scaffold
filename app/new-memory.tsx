@@ -15,7 +15,7 @@ import { useConnectionSearch } from '@/api/hooks';
 import { useAuthStore } from '@/store/authStore';
 import { Colors, Typography, Spacing, BorderRadius, VisibilityLevels } from '@/constants/theme';
 import { VisibilityLevel } from '@/types';
-import { setPendingPhotos } from '@/devPhotoStore';
+import { uploadMedia } from '@/api/upload';
 
 const TOTAL_STEPS = 5;
 const { width } = Dimensions.get('window');
@@ -460,8 +460,9 @@ export default function NewMemoryScreen() {
   const [memoryText, setMemoryText] = useState('');
   const [localPhotos, setLocalPhotos] = useState<string[]>([]);
   const [visibility, setVisibility] = useState<VisibilityLevel>('intimate');
+  const [isUploading, setIsUploading] = useState(false);
   const { user } = useAuthStore();
-  const { mutate: createMemory, isPending } = useCreateMemory();
+  const { mutateAsync: createMemory, isPending } = useCreateMemory();
 
   const canProceed = () => {
     if (step === 0) return title.trim().length > 0;
@@ -480,31 +481,43 @@ export default function NewMemoryScreen() {
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const participantIds = [
       user?.id,
       ...participants.filter(p => p.isRootsUser && p.id).map(p => p.id!),
     ].filter(Boolean) as string[];
 
-    createMemory(
-      {
+    try {
+      const { event, entryId } = await createMemory({
         title: title.trim(),
         date: dayjs(date).format('YYYY-MM-DD'),
         location: location.trim() || undefined,
         visibility,
         participantIds,
         memoryText: memoryText.trim() || undefined,
-      },
-      {
-        onSuccess: (event) => {
-          if (localPhotos.length > 0) setPendingPhotos(localPhotos);
-          router.replace(`/memory/${event.id}`);
-        },
-        onError: (err) => {
-          console.log('ERROR:', JSON.stringify(err));
-        },
+      });
+
+      // Upload any photos to S3 before navigating (linked to event, not entry)
+      if (localPhotos.length > 0) {
+        setIsUploading(true);
+        try {
+          await Promise.all(
+            localPhotos.map(uri =>
+              uploadMedia(uri, 'image/jpeg', 'memories', 'memory', event.id)
+            )
+          );
+        } catch (uploadErr) {
+          console.warn('Photo upload failed:', uploadErr);
+          // Non-fatal — navigate anyway, photos just won't appear
+        } finally {
+          setIsUploading(false);
+        }
       }
-    );
+
+      router.replace(`/memory/${event.id}`);
+    } catch (err) {
+      console.log('Create memory error:', JSON.stringify(err));
+    }
   };
 
   const stepLabels = ['Details', 'People', 'Memory', 'Photos', 'Visibility'];
@@ -525,9 +538,9 @@ export default function NewMemoryScreen() {
         <TouchableOpacity
           style={[styles.headerNextBtn, !canProceed() && styles.headerNextBtnDisabled]}
           onPress={handleNext}
-          disabled={!canProceed() || isPending}
+          disabled={!canProceed() || isPending || isUploading}
         >
-          {isPending
+          {(isPending || isUploading)
             ? <ActivityIndicator color={Colors.white} size="small" />
             : <Text style={styles.headerNextBtnText}>
                 {step === TOTAL_STEPS - 1 ? 'Save' : 'Next →'}
@@ -581,11 +594,11 @@ export default function NewMemoryScreen() {
         >
           <View style={styles.footer}>
             <TouchableOpacity
-              style={[styles.nextBtn, (!canProceed() || isPending) && styles.nextBtnDisabled]}
+              style={[styles.nextBtn, (!canProceed() || isPending || isUploading) && styles.nextBtnDisabled]}
               onPress={handleNext}
-              disabled={!canProceed() || isPending}
+              disabled={!canProceed() || isPending || isUploading}
             >
-              {isPending
+              {(isPending || isUploading)
                 ? <ActivityIndicator color={Colors.white} />
                 : <Text style={styles.nextBtnText}>
                     {step === TOTAL_STEPS - 1 ? 'Save memory' : 'Continue'}

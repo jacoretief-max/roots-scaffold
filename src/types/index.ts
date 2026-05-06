@@ -65,6 +65,7 @@ export interface MemoryEvent {
   // Populated from join
   entries?: MemoryEntry[];
   participants?: User[];
+  media?: string[];           // S3 photo/video URLs for this event
   newEntryCount?: number;     // unread perspectives since last visit
   hasMyEntry?: boolean;       // current user has already added a perspective
 }

@@ -106,3 +106,15 @@ CREATE TABLE IF NOT EXISTS push_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS push_tokens_user_idx ON push_tokens(user_id);
+
+-- ── Media attachments (S3-backed photos/videos on memories) ──
+CREATE TABLE IF NOT EXISTS memory_media (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  user_id     UUID NOT NULL REFERENCES users(id),
+  url         TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(event_id, url)
+);
+
+CREATE INDEX IF NOT EXISTS memory_media_event_idx ON memory_media(event_id);

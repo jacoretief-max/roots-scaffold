@@ -12,7 +12,7 @@ import {
   useMemory, useAddMemoryEntry, useUpdateMemoryEntry,
   useDeleteMemoryEntry, useUpdateMemory, useConnectionSearch,
 } from '@/api/hooks';
-import { consumePendingPhotos } from '@/devPhotoStore';
+import { uploadMedia } from '@/api/upload';
 import { useAuthStore } from '@/store/authStore';
 import { MemoryEntry, MemoryEvent, VisibilityLevel } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
@@ -542,7 +542,7 @@ export default function MemoryEventScreen() {
   const [editText, setEditText] = useState('');
   const [editEntryId, setEditEntryId] = useState('');
   const [editMemoryVisible, setEditMemoryVisible] = useState(false);
-  const [localPhotos, setLocalPhotos] = useState<string[]>(() => consumePendingPhotos());
+  const [localPhotos, setLocalPhotos] = useState<string[]>([]);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
@@ -558,8 +558,25 @@ export default function MemoryEventScreen() {
       allowsEditing: false,
       allowsMultipleSelection: true,
     });
-    if (!result.canceled && result.assets.length > 0) {
-      setLocalPhotos(prev => [...prev, ...result.assets.map(a => a.uri)]);
+    if (result.canceled || result.assets.length === 0) return;
+
+    const uris = result.assets.map(a => a.uri);
+
+    // Show immediately as local URIs, then upload and swap in S3 URLs
+    setLocalPhotos(prev => [...prev, ...uris]);
+    if (!event) return;
+    try {
+      const s3Urls = await Promise.all(
+        uris.map(uri => uploadMedia(uri, 'image/jpeg', 'memories', 'memory', event.id))
+      );
+      // Replace local URIs with S3 URLs
+      setLocalPhotos(prev => {
+        const withoutLocal = prev.filter(u => !uris.includes(u));
+        return [...withoutLocal, ...s3Urls];
+      });
+    } catch (err) {
+      console.warn('Photo upload failed:', err);
+      // Local URIs remain visible for the session — non-fatal
     }
   };
 
@@ -592,6 +609,9 @@ export default function MemoryEventScreen() {
 
   const bgColors = FALLBACK_COLORS;
   const isCreator = event.createdByUserId === user?.id;
+
+  // S3 photos from the API, plus any locally-picked photos for this session
+  const allPhotos = [...(event.media ?? []), ...localPhotos];
 
   const openEditPerspective = () => {
     const myEntry = event.entries?.find(e => e.authorId === user?.id);
@@ -719,7 +739,7 @@ export default function MemoryEventScreen() {
             currentUserId={user?.id ?? ''}
             isCreator={isCreator}
             onDeleteEntry={handleDeleteEntry}
-            localPhotos={localPhotos}
+            localPhotos={allPhotos}
             onPhotoPress={openLightbox}
           />
         ) : (
@@ -802,9 +822,9 @@ export default function MemoryEventScreen() {
                 <Text style={styles.editPhotoPickerIcon}>📷</Text>
                 <Text style={styles.editPhotoPickerLabel}>Add photos</Text>
               </TouchableOpacity>
-              {localPhotos.length > 0 && (
+              {allPhotos.length > 0 && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.editPhotoStrip}>
-                  {localPhotos.map((uri, i) => (
+                  {allPhotos.map((uri, i) => (
                     <TouchableOpacity key={uri} onPress={() => openLightbox(i)} activeOpacity={0.85}>
                       <Image source={{ uri }} style={styles.editPhotoStripThumb} resizeMode="cover" />
                     </TouchableOpacity>
@@ -828,7 +848,7 @@ export default function MemoryEventScreen() {
 
       {/* Lightbox */}
       <Lightbox
-        photos={localPhotos}
+        photos={allPhotos}
         startIndex={lightboxIndex}
         visible={lightboxVisible}
         onClose={() => setLightboxVisible(false)}

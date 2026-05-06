@@ -39,16 +39,20 @@ export const useMemory = (id: string) =>
 export const useCreateMemory = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: Partial<MemoryEvent> & { memoryText?: string }): Promise<MemoryEvent> => {
+    mutationFn: async (
+      payload: Partial<MemoryEvent> & { memoryText?: string }
+    ): Promise<{ event: MemoryEvent; entryId: string | null }> => {
       const { memoryText, ...eventPayload } = payload;
       // Step 1: create the event
       const { data } = await api.post<ApiResponse<MemoryEvent>>('/memories', eventPayload);
       const event = data.data;
       // Step 2: post the first perspective if text was provided
+      let entryId: string | null = null;
       if (memoryText?.trim()) {
-        await api.post(`/memories/${event.id}/entries`, { text: memoryText });
+        const { data: entryData } = await api.post(`/memories/${event.id}/entries`, { text: memoryText });
+        entryId = entryData.data.id ?? null;
       }
-      return event;
+      return { event, entryId };
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.memories }),
   });
