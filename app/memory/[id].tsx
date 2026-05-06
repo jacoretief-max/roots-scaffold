@@ -610,8 +610,9 @@ export default function MemoryEventScreen() {
   const bgColors = FALLBACK_COLORS;
   const isCreator = event.createdByUserId === user?.id;
 
-  // S3 photos from the API, plus any locally-picked photos for this session
-  const allPhotos = [...(event.media ?? []), ...localPhotos];
+  // S3 photos from the API, plus any locally-picked photos not yet in the API response
+  const s3Media = event.media ?? [];
+  const allPhotos = [...new Set([...s3Media, ...localPhotos])];
 
   const openEditPerspective = () => {
     const myEntry = event.entries?.find(e => e.authorId === user?.id);
