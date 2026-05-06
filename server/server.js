@@ -96,7 +96,7 @@ app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 // POST /api/auth/register
 app.post('/api/auth/register', async (req, res) => {
-  const { displayName, email, password, dateOfBirth, phoneNumber } = req.body;
+  const { displayName, email, password, dateOfBirth, phoneNumber, inviteToken } = req.body;
   if (!displayName || !email || !password || !dateOfBirth) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
@@ -125,6 +125,31 @@ app.post('/api/auth/register', async (req, res) => {
       [displayName, email.toLowerCase(), hash, dateOfBirth, phoneNumber ?? null]
     );
     const user = rows[0];
+
+    // Auto-connect if user registered via an invite link
+    if (inviteToken) {
+      const { rows: [inviteConn] } = await db.query(
+        `SELECT * FROM connections WHERE invite_token = $1 AND status = 'offline'`,
+        [inviteToken]
+      );
+      if (inviteConn) {
+        // Upgrade the inviter's offline connection to active
+        await db.query(
+          `UPDATE connections
+           SET connected_user_id = $1, status = 'active', invite_token = NULL, offline_name = NULL
+           WHERE id = $2`,
+          [user.id, inviteConn.id]
+        );
+        // Create reciprocal connection for the new user
+        await db.query(
+          `INSERT INTO connections (user_id, connected_user_id, relation, layer, contact_frequency, status)
+           VALUES ($1, $2, $3, $4, 14, 'active')
+           ON CONFLICT DO NOTHING`,
+          [user.id, inviteConn.user_id, inviteConn.relation, inviteConn.layer]
+        );
+      }
+    }
+
     const tokens = {
       accessToken: signAccess(user.id),
       refreshToken: signRefresh(user.id),
@@ -352,15 +377,29 @@ app.get('/api/connections', requireAuth, async (req, res) => {
        c.score,
        c.last_contact_at as "lastContactAt",
        c.nudge,
+       c.status,
+       c.offline_name as "offlineName",
+       c.offline_phone as "offlinePhone",
+       c.invite_sent_at as "inviteSentAt",
        to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
-       json_build_object(
-         'id', u.id,
-         'displayName', u.display_name,
-         'avatarColour', u.avatar_colour,
-         'city', u.city
-       ) as "connectedUser"
+       CASE
+         WHEN u.id IS NOT NULL THEN json_build_object(
+           'id', u.id,
+           'displayName', u.display_name,
+           'avatarColour', u.avatar_colour,
+           'city', u.city,
+           'phoneNumber', u.phone_number
+         )
+         ELSE json_build_object(
+           'id', null,
+           'displayName', c.offline_name,
+           'avatarColour', '#C4956A',
+           'city', null,
+           'phoneNumber', c.offline_phone
+         )
+       END as "connectedUser"
      FROM connections c
-     JOIN users u ON u.id = c.connected_user_id
+     LEFT JOIN users u ON u.id = c.connected_user_id
      WHERE ${where}
      ORDER BY c.score DESC`,
     params
@@ -383,15 +422,31 @@ app.get('/api/connections/:id', requireAuth, async (req, res) => {
        c.last_contact_at as "lastContactAt",
        c.nudge,
        c.always_in_touch as "alwaysInTouch",
+       c.status,
+       c.offline_name as "offlineName",
+       c.offline_phone as "offlinePhone",
+       c.offline_email as "offlineEmail",
+       c.offline_dob as "offlineDob",
+       c.invite_sent_at as "inviteSentAt",
        to_char(c.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
-       json_build_object(
-         'id', u.id,
-         'displayName', u.display_name,
-         'avatarColour', u.avatar_colour,
-         'city', u.city
-       ) as "connectedUser"
+       CASE
+         WHEN u.id IS NOT NULL THEN json_build_object(
+           'id', u.id,
+           'displayName', u.display_name,
+           'avatarColour', u.avatar_colour,
+           'city', u.city,
+           'phoneNumber', u.phone_number
+         )
+         ELSE json_build_object(
+           'id', null,
+           'displayName', c.offline_name,
+           'avatarColour', '#C4956A',
+           'city', null,
+           'phoneNumber', c.offline_phone
+         )
+       END as "connectedUser"
      FROM connections c
-     JOIN users u ON u.id = c.connected_user_id
+     LEFT JOIN users u ON u.id = c.connected_user_id
      WHERE c.id = $1 AND c.user_id = $2`,
     [req.params.id, req.userId]
   );
@@ -425,31 +480,87 @@ app.get('/api/users/search', requireAuth, async (req, res) => {
 });
 
 // POST /api/connections
-// Add someone to your circle
+// Three paths: (1) add Roots user → pending request, (2) add offline contact with phone → check for match, (3) add offline contact
 app.post('/api/connections', requireAuth, async (req, res) => {
-  const { connectedUserId, relation, layer, since, contactFrequency } = req.body;
-  if (!connectedUserId || !layer) {
-    return res.status(400).json({ error: 'connectedUserId and layer required' });
-  }
+  const { connectedUserId, relation, layer, since, contactFrequency,
+          offlineName, offlinePhone, offlineEmail, offlineDob } = req.body;
+  if (!layer) return res.status(400).json({ error: 'layer required' });
 
   try {
+    // ── Path 1: Adding an existing Roots user ──────────────
+    if (connectedUserId) {
+      const { rows: [existing] } = await db.query(
+        'SELECT id, status FROM connections WHERE user_id = $1 AND connected_user_id = $2',
+        [req.userId, connectedUserId]
+      );
+      if (existing) return res.status(409).json({ error: 'Already in circle', data: existing });
+
+      // Create request record
+      await db.query(
+        `INSERT INTO connection_requests (from_user_id, to_user_id, layer, relation)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (from_user_id, to_user_id) DO NOTHING`,
+        [req.userId, connectedUserId, layer, relation ?? null]
+      );
+      // Create pending connection on sender's side
+      const { rows: [connection] } = await db.query(
+        `INSERT INTO connections
+           (user_id, connected_user_id, relation, layer, since, contact_frequency, status)
+         VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+         RETURNING *`,
+        [req.userId, connectedUserId, relation ?? null, layer, since ?? null, contactFrequency ?? 14]
+      );
+      // Push notification to target
+      const { rows: tokens } = await db.query(
+        'SELECT token FROM push_tokens WHERE user_id = $1', [connectedUserId]
+      );
+      if (tokens.length) {
+        const { rows: [me] } = await db.query(
+          'SELECT display_name FROM users WHERE id = $1', [req.userId]
+        );
+        fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: tokens.map(t => t.token),
+            title: 'New connection request',
+            body: `${me.display_name} added you to their circle`,
+          }),
+        }).catch(() => {});
+      }
+      return res.status(201).json({ data: connection });
+    }
+
+    // ── Path 2 & 3: Offline contact ────────────────────────
+    if (!offlineName) return res.status(400).json({ error: 'offlineName required' });
+
+    // Check if phone matches a Roots user
+    if (offlinePhone) {
+      const cleanPhone = offlinePhone.replace(/\D/g, '');
+      const { rows: [matchedUser] } = await db.query(
+        `SELECT id, display_name as "displayName", avatar_colour as "avatarColour", city
+         FROM users
+         WHERE REGEXP_REPLACE(COALESCE(phone_number,''), '[^0-9]', '', 'g') = $1
+         AND id != $2`,
+        [cleanPhone, req.userId]
+      );
+      if (matchedUser) {
+        return res.status(200).json({ suggestion: true, matchedUser });
+      }
+    }
+
+    // Create offline connection
     const { rows: [connection] } = await db.query(
       `INSERT INTO connections
-         (user_id, connected_user_id, relation, layer, since, contact_frequency)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (user_id, connected_user_id)
-       DO UPDATE SET layer = $4, relation = $3
+         (user_id, relation, layer, since, contact_frequency, status,
+          offline_name, offline_phone, offline_email, offline_dob)
+       VALUES ($1, $2, $3, $4, $5, 'offline', $6, $7, $8, $9)
        RETURNING *`,
-      [
-        req.userId,
-        connectedUserId,
-        relation ?? null,
-        layer,
-        since ?? null,
-        contactFrequency ?? 14,
-      ]
+      [req.userId, relation ?? null, layer, since ?? null, contactFrequency ?? 14,
+       offlineName, offlinePhone ?? null, offlineEmail ?? null, offlineDob ?? null]
     );
-    res.status(201).json({ data: connection });
+    return res.status(201).json({ data: connection });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Failed to add connection' });
@@ -483,6 +594,163 @@ app.patch('/api/connections/:id', requireAuth, async (req, res) => {
   );
   if (!connection) return res.status(404).json({ error: 'Connection not found' });
   res.json({ data: connection });
+});
+
+// ── Connection requests ────────────────────────────────
+
+// GET /api/connection-requests — incoming requests for current user
+app.get('/api/connection-requests', requireAuth, async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT
+       cr.id,
+       cr.from_user_id as "fromUserId",
+       cr.layer,
+       cr.relation,
+       to_char(cr.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
+       json_build_object(
+         'id', u.id,
+         'displayName', u.display_name,
+         'avatarColour', u.avatar_colour,
+         'city', u.city
+       ) as "fromUser"
+     FROM connection_requests cr
+     JOIN users u ON u.id = cr.from_user_id
+     WHERE cr.to_user_id = $1
+     ORDER BY cr.created_at DESC`,
+    [req.userId]
+  );
+  res.json({ data: rows });
+});
+
+// POST /api/connection-requests/:id/accept
+app.post('/api/connection-requests/:id/accept', requireAuth, async (req, res) => {
+  const { rows: [request] } = await db.query(
+    'SELECT * FROM connection_requests WHERE id = $1 AND to_user_id = $2',
+    [req.params.id, req.userId]
+  );
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+
+  try {
+    // Activate sender's pending connection
+    await db.query(
+      `UPDATE connections SET status = 'active'
+       WHERE user_id = $1 AND connected_user_id = $2`,
+      [request.from_user_id, req.userId]
+    );
+    // Create reciprocal connection for accepter
+    await db.query(
+      `INSERT INTO connections (user_id, connected_user_id, relation, layer, contact_frequency, status)
+       VALUES ($1, $2, $3, $4, 14, 'active')
+       ON CONFLICT (user_id, connected_user_id) DO UPDATE SET status = 'active'`,
+      [req.userId, request.from_user_id, request.relation, request.layer]
+    );
+    // Delete the request
+    await db.query('DELETE FROM connection_requests WHERE id = $1', [req.params.id]);
+    // Push notification to requester
+    const { rows: tokens } = await db.query(
+      'SELECT token FROM push_tokens WHERE user_id = $1', [request.from_user_id]
+    );
+    if (tokens.length) {
+      const { rows: [me] } = await db.query(
+        'SELECT display_name FROM users WHERE id = $1', [req.userId]
+      );
+      fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: tokens.map(t => t.token),
+          title: 'Connection accepted',
+          body: `${me.display_name} accepted your connection request`,
+        }),
+      }).catch(() => {});
+    }
+    res.json({ data: { ok: true } });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to accept request' });
+  }
+});
+
+// POST /api/connection-requests/:id/decline
+app.post('/api/connection-requests/:id/decline', requireAuth, async (req, res) => {
+  const { rows: [request] } = await db.query(
+    'SELECT * FROM connection_requests WHERE id = $1 AND to_user_id = $2',
+    [req.params.id, req.userId]
+  );
+  if (!request) return res.status(404).json({ error: 'Request not found' });
+
+  // Sender's connection stays but downgrades to offline — they can still track privately
+  await db.query(
+    `UPDATE connections SET status = 'offline'
+     WHERE user_id = $1 AND connected_user_id = $2`,
+    [request.from_user_id, req.userId]
+  );
+  await db.query('DELETE FROM connection_requests WHERE id = $1', [req.params.id]);
+  res.json({ data: { ok: true } });
+});
+
+// ── Invite flow ────────────────────────────────────────
+
+// POST /api/connections/:id/invite — generate tokenised invite link
+app.post('/api/connections/:id/invite', requireAuth, async (req, res) => {
+  const { rows: [connection] } = await db.query(
+    `SELECT * FROM connections WHERE id = $1 AND user_id = $2 AND status = 'offline'`,
+    [req.params.id, req.userId]
+  );
+  if (!connection) return res.status(404).json({ error: 'Offline connection not found' });
+
+  const token = require('crypto').randomBytes(16).toString('hex');
+  await db.query(
+    `UPDATE connections SET invite_token = $1, invite_sent_at = NOW() WHERE id = $2`,
+    [token, req.params.id]
+  );
+  const inviteUrl = `https://roots.app/invite/${token}`;
+  res.json({ data: { inviteUrl, token } });
+});
+
+// GET /api/invite/:token — resolve token (shown on registration screen)
+app.get('/api/invite/:token', async (req, res) => {
+  const { rows: [row] } = await db.query(
+    `SELECT c.id, c.offline_name as "offlineName",
+            u.display_name as "inviterName",
+            u.avatar_colour as "inviterAvatarColour"
+     FROM connections c
+     JOIN users u ON u.id = c.user_id
+     WHERE c.invite_token = $1`,
+    [req.params.token]
+  );
+  if (!row) return res.status(404).json({ error: 'Invalid invite link' });
+  res.json({ data: row });
+});
+
+// ── Onboarding suggestions ─────────────────────────────
+
+// POST /api/users/me/onboarding-suggestions
+// Called once after registration — returns users who have this phone as an offline contact
+app.post('/api/users/me/onboarding-suggestions', requireAuth, async (req, res) => {
+  const { rows: [me] } = await db.query(
+    'SELECT phone_number FROM users WHERE id = $1', [req.userId]
+  );
+  if (!me?.phone_number) return res.json({ data: [] });
+
+  const cleanPhone = me.phone_number.replace(/\D/g, '');
+  const { rows } = await db.query(
+    `SELECT
+       c.id as "connectionId",
+       json_build_object(
+         'id', u.id,
+         'displayName', u.display_name,
+         'avatarColour', u.avatar_colour,
+         'city', u.city
+       ) as "user"
+     FROM connections c
+     JOIN users u ON u.id = c.user_id
+     WHERE REGEXP_REPLACE(COALESCE(c.offline_phone,''), '[^0-9]', '', 'g') = $1
+     AND c.status = 'offline'
+     AND c.user_id != $2`,
+    [cleanPhone, req.userId]
+  );
+  res.json({ data: rows });
 });
 
 // POST /api/connections/sync-contacts
