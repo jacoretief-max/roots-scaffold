@@ -738,7 +738,19 @@ app.get('/api/memories', requireAuth, async (req, res) => {
        e.photo_urls as "photoUrls",
        to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
        (SELECT COUNT(*) FROM memory_entries me WHERE me.event_id = e.id) as "entryCount",
-       (SELECT COUNT(*) FROM memory_entries me WHERE me.event_id = e.id AND me.is_new = true AND me.author_id != $1) AS "newEntryCount",
+       (
+         (SELECT COUNT(*) FROM memory_entries me
+          WHERE me.event_id = e.id AND me.author_id != $1
+            AND me.created_at > COALESCE(
+              (SELECT last_viewed_at FROM memory_views WHERE user_id = $1 AND event_id = e.id),
+              '1970-01-01'::timestamptz))
+         +
+         (SELECT COUNT(*) FROM memory_media mm
+          WHERE mm.event_id = e.id AND mm.user_id != $1
+            AND mm.created_at > COALESCE(
+              (SELECT last_viewed_at FROM memory_views WHERE user_id = $1 AND event_id = e.id),
+              '1970-01-01'::timestamptz))
+       ) AS "newEntryCount",
        (SELECT EXISTS(SELECT 1 FROM memory_entries me WHERE me.event_id = e.id AND me.author_id = $1)) AS "hasMyEntry",
        (SELECT COALESCE(json_agg(json_build_object(
            'id', u.id,
@@ -759,13 +771,13 @@ app.get('/api/memories', requireAuth, async (req, res) => {
   res.json({ data: rows });
 });
 
-// POST /api/memories/:id/view — mark other people's entries as seen
+// POST /api/memories/:id/view — record per-user last_viewed_at
 app.post('/api/memories/:id/view', requireAuth, async (req, res) => {
   await db.query(
-    `UPDATE memory_entries
-     SET is_new = false
-     WHERE event_id = $1 AND author_id != $2 AND is_new = true`,
-    [req.params.id, req.userId]
+    `INSERT INTO memory_views (user_id, event_id, last_viewed_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (user_id, event_id) DO UPDATE SET last_viewed_at = NOW()`,
+    [req.userId, req.params.id]
   );
   res.json({ ok: true });
 });
@@ -795,7 +807,10 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
        me.author_id as "authorId",
        me.text,
        me.time,
-       me.is_new    as "isNew",
+       (me.author_id != $2 AND me.created_at > COALESCE(
+         (SELECT last_viewed_at FROM memory_views WHERE user_id = $2 AND event_id = $1),
+         '1970-01-01'::timestamptz
+       )) as "isNew",
        to_char(me.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
        json_build_object(
          'id',           u.id,
@@ -807,7 +822,7 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
      JOIN users u ON u.id = me.author_id
      WHERE me.event_id = $1
      ORDER BY me.created_at ASC`,
-    [req.params.id]
+    [req.params.id, req.userId]
   );
 
   // Hydrate participants

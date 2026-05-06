@@ -212,8 +212,9 @@ Tab bar reduced from 5 tabs to 3:
 1. ✅ **S3 setup** — AWS bucket, presigned URL endpoint, photo upload (all participants can add media)
 2. ✅ **Media display** — Story view lightbox, landing card photo rotation (3-photo cycle), All Memories Ken Burns effect
 3. ✅ **Memory feed redesign** — unread ring, tab dot, caught-up state, unified ••• menu
-4. ⬜ **Voice notes** — expo-av recording, S3 storage, playback in timeline
-5. ⬜ **Per-user unread tracking** — `memory_views` table replaces global `is_new` flag; fixes photo-notification gap; must ship before TestFlight
+4. ✅ **Voice notes** — expo-av recording, S3 storage, playback in timeline (tap-to-toggle on Person screen contact log)
+   - Voice-to-text deliberately not built: iOS native keyboard mic already handles this well; no value in duplicating it
+5. ✅ **Per-user unread tracking** — `memory_views (user_id, event_id, last_viewed_at)` table; unread ring and NEW badge now per-user; photos trigger unread for other participants; `is_new` column on `memory_entries` retained but no longer used
 6. ⬜ **TestFlight** — EAS build, upload to App Store Connect, internal testing
 7. ⬜ **App Store assets** — icon, screenshots, description, privacy policy URL
 8. ⬜ **App Store submission** — iOS and Google Play
