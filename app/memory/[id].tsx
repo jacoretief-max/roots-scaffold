@@ -6,6 +6,7 @@ import {
   Dimensions, Modal, Image, Alert, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Path, Circle } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, router } from 'expo-router';
 import {
@@ -18,6 +19,14 @@ import { MemoryEntry, MemoryEvent, VisibilityLevel } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 
 const { width, height } = Dimensions.get('window');
+
+// ── Icons ──────────────────────────────────────────────
+const IconCamera = ({ color, size = 24 }: { color: string; size?: number }) => (
+  <Svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+    <Path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+    <Circle cx="12" cy="13" r="4"/>
+  </Svg>
+);
 
 // ── Photo section (hero + strip) ──────────────────────
 const PhotoSection = ({
@@ -204,7 +213,7 @@ const AddPerspective = ({
     >
       <View style={[styles.addPerspective, focused && styles.addPerspectiveFocused]}>
         <TouchableOpacity onPress={onPickPhoto} style={styles.photoPickerBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={styles.photoPickerBtnText}>📷</Text>
+          <IconCamera color={Colors.textLight} size={22} />
         </TouchableOpacity>
         <TextInput
           style={styles.perspectiveInput}
@@ -419,6 +428,7 @@ export default function MemoryEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: event, isLoading } = useMemory(id);
   const { user } = useAuthStore();
+  const [menuVisible, setMenuVisible] = useState(false);
   const [editVisible, setEditVisible] = useState(false);
   const [editText, setEditText] = useState('');
   const [editEntryId, setEditEntryId] = useState('');
@@ -542,13 +552,9 @@ export default function MemoryEventScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>← Memories</Text>
         </TouchableOpacity>
-        {isCreator ? (
-          <TouchableOpacity onPress={() => setEditMemoryVisible(true)} style={styles.headerEditBtn}>
-            <Text style={styles.headerEditBtnText}>Edit</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.headerEditPlaceholder} />
-        )}
+        <TouchableOpacity onPress={() => setMenuVisible(true)} style={styles.headerMenuBtn}>
+          <Text style={styles.headerMenuBtnText}>•••</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Scrollable body: meta + photos + perspectives */}
@@ -612,22 +618,83 @@ export default function MemoryEventScreen() {
         />
       </ScrollView>
 
-      {/* Bottom action bar — always visible */}
+      {/* Bottom action bar */}
       {myEntry ? (
         <View style={styles.alreadyAdded}>
           <Text style={styles.alreadyAddedText}>You've added your perspective</Text>
-          <View style={styles.alreadyAddedActions}>
-            <TouchableOpacity onPress={pickPhoto} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.photoPickerBtnText}>📷</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={openEditPerspective}>
-              <Text style={styles.editLink}>Edit</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            onPress={pickPhoto}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={styles.cameraBtn}
+          >
+            <IconCamera color={Colors.terracotta} size={24} />
+          </TouchableOpacity>
         </View>
       ) : (
         <AddPerspective eventId={id} onPickPhoto={pickPhoto} />
       )}
+
+      {/* Action sheet menu */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setMenuVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.menuBackdrop}
+          activeOpacity={1}
+          onPress={() => setMenuVisible(false)}
+        />
+        <View style={styles.menuSheet}>
+          {isCreator && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => { setMenuVisible(false); setEditMemoryVisible(true); }}
+            >
+              <Text style={styles.menuItemText}>Edit memory details</Text>
+            </TouchableOpacity>
+          )}
+          {myEntry && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => { setMenuVisible(false); openEditPerspective(); }}
+            >
+              <Text style={styles.menuItemText}>Edit your perspective</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={styles.menuItem}
+            onPress={() => { setMenuVisible(false); pickPhoto(); }}
+          >
+            <Text style={styles.menuItemText}>Add photos</Text>
+          </TouchableOpacity>
+          {isCreator && (
+            <TouchableOpacity
+              style={[styles.menuItem, styles.menuItemDestructive]}
+              onPress={() => {
+                setMenuVisible(false);
+                Alert.alert(
+                  'Delete memory?',
+                  'This will permanently remove the memory and all perspectives. This cannot be undone.',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { text: 'Delete', style: 'destructive', onPress: () => router.back() },
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.menuItemDestructiveText}>Delete memory</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[styles.menuItem, styles.menuCancel]}
+            onPress={() => setMenuVisible(false)}
+          >
+            <Text style={styles.menuCancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Modal>
 
       {/* Edit perspective modal */}
       <Modal
@@ -750,14 +817,53 @@ const styles = StyleSheet.create({
     color: Colors.terracotta,
     fontFamily: Typography.fontFamily,
   },
-  headerEditBtn: { paddingVertical: Spacing.sm, minWidth: 80, alignItems: 'flex-end' },
-  headerEditBtnText: {
-    fontSize: Typography.body,
+  headerMenuBtn: { paddingVertical: Spacing.sm, paddingLeft: Spacing.lg },
+  headerMenuBtnText: {
+    fontSize: 18,
     color: Colors.terracotta,
-    fontFamily: Typography.fontFamily,
-    fontWeight: '700',
+    letterSpacing: 2,
+    lineHeight: 22,
   },
-  headerEditPlaceholder: { minWidth: 80 },
+
+  // Action sheet
+  menuBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  menuSheet: {
+    backgroundColor: Colors.card,
+    borderTopLeftRadius: BorderRadius.lg,
+    borderTopRightRadius: BorderRadius.lg,
+    paddingBottom: Spacing.xl,
+    paddingTop: Spacing.sm,
+  },
+  menuItem: {
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    borderBottomWidth: 0.5,
+    borderBottomColor: Colors.tan,
+  },
+  menuItemText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+    textAlign: 'center',
+  },
+  menuItemDestructive: { borderBottomColor: Colors.tan },
+  menuItemDestructiveText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: '#C0392B',
+    textAlign: 'center',
+  },
+  menuCancel: { marginTop: Spacing.sm, borderBottomWidth: 0 },
+  menuCancelText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textLight,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
 
   // Main scroll
   mainScroll: { flex: 1 },
@@ -946,9 +1052,7 @@ const styles = StyleSheet.create({
   photoPickerBtn: {
     paddingVertical: Spacing.sm,
     paddingRight: Spacing.xs,
-  },
-  photoPickerBtnText: {
-    fontSize: 22,
+    justifyContent: 'center',
   },
 
   // Add perspective
@@ -1009,16 +1113,8 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     flex: 1,
   },
-  alreadyAddedActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-  },
-  editLink: {
-    fontSize: 13,
-    color: Colors.terracotta,
-    fontFamily: Typography.fontFamily,
-    fontWeight: '700',
+  cameraBtn: {
+    paddingLeft: Spacing.md,
   },
 
   // Edit modal photo strip
