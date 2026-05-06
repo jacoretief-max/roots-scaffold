@@ -348,6 +348,7 @@ export const useContactEvents = (connectionId: string) =>
         title: string;
         date: string;
         note?: string;
+        audioUrl?: string;
         memoryEventId?: string;
         createdAt: string;
       }>;
@@ -362,6 +363,7 @@ export const useCreateContactEvent = (connectionId: string) => {
       title?: string;
       date: string;
       note?: string;
+      audioUrl?: string;
       memoryEventId?: string;
     }) => {
       const { data } = await api.post(

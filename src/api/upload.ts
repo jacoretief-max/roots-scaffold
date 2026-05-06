@@ -14,7 +14,7 @@ export interface PresignResult {
 /** Request a presigned S3 upload URL from the server. */
 export async function presignMedia(
   contentType: string,
-  folder: 'memories' | 'avatars'
+  folder: 'memories' | 'avatars' | 'contact-audio'
 ): Promise<PresignResult> {
   const { data } = await api.post('/media/presign', { contentType, folder });
   return data.data as PresignResult;
@@ -50,7 +50,7 @@ export async function uploadToS3(
 /** Tell the server the upload is complete and save the URL to the DB. */
 export async function confirmMedia(
   publicUrl: string,
-  type: 'avatar' | 'memory',
+  type: 'avatar' | 'memory' | 'contact-audio',
   referenceId?: string
 ): Promise<void> {
   await api.post('/media/confirm', { publicUrl, type, referenceId });
@@ -63,8 +63,8 @@ export async function confirmMedia(
 export async function uploadMedia(
   localUri: string,
   contentType: string,
-  folder: 'memories' | 'avatars',
-  type: 'avatar' | 'memory',
+  folder: 'memories' | 'avatars' | 'contact-audio',
+  type: 'avatar' | 'memory' | 'contact-audio',
   referenceId?: string
 ): Promise<string> {
   const presign = await presignMedia(contentType, folder);

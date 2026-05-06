@@ -683,6 +683,7 @@ app.post('/api/connections/confirm-calendar-match', requireAuth, async (req, res
 app.get('/api/connections/:id/events', requireAuth, async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, type, title, date, note,
+            audio_url as "audioUrl",
             memory_event_id as "memoryEventId",
             created_at as "createdAt"
      FROM contact_events
@@ -696,7 +697,7 @@ app.get('/api/connections/:id/events', requireAuth, async (req, res) => {
 
 // POST /api/connections/:id/events
 app.post('/api/connections/:id/events', requireAuth, async (req, res) => {
-  const { type, title, date, note, memoryEventId } = req.body;
+  const { type, title, date, note, memoryEventId, audioUrl } = req.body;
   if (!type || !date) return res.status(400).json({ error: 'type and date required' });
 
   // Update last_contact_at and score on the connection
@@ -710,12 +711,13 @@ app.post('/api/connections/:id/events', requireAuth, async (req, res) => {
 
   const { rows: [event] } = await db.query(
     `INSERT INTO contact_events
-       (user_id, connection_id, type, title, date, note, memory_event_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+       (user_id, connection_id, type, title, date, note, memory_event_id, audio_url)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, type, title, date, note,
+               audio_url as "audioUrl",
                memory_event_id as "memoryEventId",
                created_at as "createdAt"`,
-    [req.userId, req.params.id, type, title ?? null, date, note ?? null, memoryEventId ?? null]
+    [req.userId, req.params.id, type, title ?? null, date, note ?? null, memoryEventId ?? null, audioUrl ?? null]
   );
 
   res.json({ data: event });
@@ -976,6 +978,11 @@ app.post('/api/media/confirm', requireAuth, async (req, res) => {
          VALUES ($1, $2, $3, NOW())
          ON CONFLICT DO NOTHING`,
         [referenceId, req.userId, publicUrl]
+      );
+    } else if (type === 'contact-audio' && referenceId) {
+      await db.query(
+        `UPDATE contact_events SET audio_url = $1 WHERE id = $2 AND user_id = $3`,
+        [publicUrl, referenceId, req.userId]
       );
     }
 
