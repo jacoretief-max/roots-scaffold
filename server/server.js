@@ -957,23 +957,26 @@ app.post('/api/media/presign', requireAuth, async (req, res) => {
 app.post('/api/media/confirm', requireAuth, async (req, res) => {
   try {
     const { publicUrl, type, referenceId } = req.body;
+    console.log('[confirm] body:', { publicUrl, type, referenceId, userId: req.userId });
     if (!publicUrl || !type) return res.status(400).json({ error: 'publicUrl and type required' });
 
     if (type === 'avatar') {
       await db.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [publicUrl, req.userId]);
     } else if (type === 'memory' && referenceId) {
-      // Store as a media attachment on the memory event
-      await db.query(
+      const result = await db.query(
         `INSERT INTO memory_media (event_id, user_id, url, created_at)
          VALUES ($1, $2, $3, NOW())
          ON CONFLICT DO NOTHING`,
         [referenceId, req.userId, publicUrl]
       );
+      console.log('[confirm] insert rowCount:', result.rowCount);
+    } else {
+      console.log('[confirm] no insert — type:', type, 'referenceId:', referenceId);
     }
 
     res.json({ data: { ok: true, publicUrl } });
   } catch (err) {
-    console.error('Media confirm error:', err);
+    console.error('[confirm] error:', err);
     res.status(500).json({ error: 'Failed to confirm media' });
   }
 });
