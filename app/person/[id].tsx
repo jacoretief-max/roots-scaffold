@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
+  View, Text, TouchableOpacity, Pressable, StyleSheet,
   ScrollView, Alert, ActivityIndicator, Modal, Switch, TextInput, Linking,
+  Animated,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { Audio } from 'expo-av';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useConnection, useLogContact, useRemoveConnection, useUpdateConnection, useContactEvents, useCreateContactEvent } from '@/api/hooks';
+import { uploadMedia } from '@/api/upload';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers, Shadows } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
 import dayjs from 'dayjs';
@@ -373,6 +376,88 @@ const getEventEmoji = (type: string) => {
   }
 };
 
+// ── Audio player (timeline) ────────────────────────────
+const AudioPlayer = ({ uri }: { uri: string }) => {
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [position, setPosition] = useState(0);
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    return () => {
+      soundRef.current?.unloadAsync();
+    };
+  }, []);
+
+  const togglePlay = async () => {
+    try {
+      await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+      if (!soundRef.current) {
+        const { sound, status } = await Audio.Sound.createAsync(
+          { uri },
+          { shouldPlay: true },
+          (s) => {
+            if (!s.isLoaded) return;
+            setPosition(s.positionMillis);
+            setDuration(s.durationMillis ?? 0);
+            if (s.durationMillis) {
+              Animated.timing(progressAnim, {
+                toValue: s.positionMillis / s.durationMillis,
+                duration: 100,
+                useNativeDriver: false,
+              }).start();
+            }
+            if (s.didJustFinish) {
+              setIsPlaying(false);
+              setPosition(0);
+              progressAnim.setValue(0);
+              soundRef.current?.setPositionAsync(0);
+            }
+          }
+        );
+        soundRef.current = sound;
+        setIsPlaying(true);
+        if (status.isLoaded) setDuration(status.durationMillis ?? 0);
+      } else if (isPlaying) {
+        await soundRef.current.pauseAsync();
+        setIsPlaying(false);
+      } else {
+        await soundRef.current.playAsync();
+        setIsPlaying(true);
+      }
+    } catch (e) {
+      Alert.alert('Playback error', 'Could not play audio.');
+    }
+  };
+
+  const formatMs = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  };
+
+  return (
+    <View style={styles.audioPlayer}>
+      <TouchableOpacity onPress={togglePlay} style={styles.audioPlayBtn} activeOpacity={0.7}>
+        <Text style={styles.audioPlayBtnText}>{isPlaying ? '⏸' : '▶'}</Text>
+      </TouchableOpacity>
+      <View style={styles.audioTrack}>
+        <View style={styles.audioProgressBg}>
+          <Animated.View
+            style={[
+              styles.audioProgressFill,
+              { width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) },
+            ]}
+          />
+        </View>
+        <Text style={styles.audioDuration}>
+          {position > 0 ? formatMs(position) : formatMs(duration)}
+        </Text>
+      </View>
+    </View>
+  );
+};
+
 // ── Person screen ──────────────────────────────────────
 export default function PersonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -386,6 +471,12 @@ export default function PersonScreen() {
   const [showNoteInput, setShowNoteInput] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [pendingEventType, setPendingEventType] = useState<string>('manual');
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [isUploadingAudio, setIsUploadingAudio] = useState(false);
+  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   if (isLoading) {
     return (
@@ -427,18 +518,78 @@ export default function PersonScreen() {
     setShowNoteInput(true);
   };
 
-  const handleSaveContactEvent = () => {
+  const startRecording = async () => {
+    if (recordingRef.current || isRecording) return; // already recording
+    try {
+      const { granted } = await Audio.requestPermissionsAsync();
+      if (!granted) {
+        Alert.alert('Permission needed', 'Please allow microphone access to record voice notes.');
+        return;
+      }
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recordingRef.current = recording;
+      setIsRecording(true);
+      setRecordingDuration(0);
+      setAudioUri(null);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration(d => d + 1);
+      }, 1000);
+    } catch (e) {
+      Alert.alert('Recording error', 'Could not start recording.');
+    }
+  };
+
+  const stopRecording = async () => {
+    try {
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      setIsRecording(false);
+      if (!recordingRef.current) return;
+      await recordingRef.current.stopAndUnloadAsync();
+      const uri = recordingRef.current.getURI();
+      recordingRef.current = null;
+      if (uri) setAudioUri(uri);
+    } catch (e) {
+      setIsRecording(false);
+    }
+  };
+
+  const handleSaveContactEvent = async () => {
+    let uploadedAudioUrl: string | undefined;
+    if (audioUri) {
+      setIsUploadingAudio(true);
+      try {
+        uploadedAudioUrl = await uploadMedia(audioUri, 'audio/m4a', 'contact-audio', 'contact-audio');
+      } catch (e) {
+        Alert.alert('Upload failed', 'Could not upload voice note. Save without it?', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Save anyway', onPress: () => saveEvent(undefined) },
+        ]);
+        setIsUploadingAudio(false);
+        return;
+      }
+      setIsUploadingAudio(false);
+    }
+    saveEvent(uploadedAudioUrl);
+  };
+
+  const saveEvent = (uploadedAudioUrl?: string) => {
     createContactEvent(
       {
         type: pendingEventType,
         title: pendingEventType === 'manual' ? 'Contact logged' : 'Calendar event',
         date: new Date().toISOString(),
         note: noteText.trim() || undefined,
+        audioUrl: uploadedAudioUrl,
       },
       {
         onSuccess: () => {
           setShowNoteInput(false);
           setNoteText('');
+          setAudioUri(null);
+          setRecordingDuration(0);
           Alert.alert('Logged', `Contact with ${displayName} logged.`);
         },
       }
@@ -613,7 +764,31 @@ export default function PersonScreen() {
                   <Text style={styles.noteSkipBtnText}>Skip note</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={styles.notePhaseHint}>Voice notes coming in Phase 4</Text>
+              {/* Voice note area */}
+              {audioUri ? (
+                <View style={styles.micAudioPreview}>
+                  <Text style={styles.micAudioPreviewText}>🎙 Voice note recorded</Text>
+                  <TouchableOpacity
+                    onPress={() => { setAudioUri(null); setRecordingDuration(0); }}
+                    style={styles.micDiscardBtn}
+                  >
+                    <Text style={styles.micDiscardBtnText}>Discard</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.micBtn, isRecording && styles.micBtnRecording]}
+                  onPress={isRecording ? stopRecording : startRecording}
+                  activeOpacity={0.75}
+                >
+                  <Text style={styles.micBtnIcon}>{isRecording ? '⏹' : '🎙'}</Text>
+                  <Text style={[styles.micBtnLabel, isRecording && styles.micBtnLabelRecording]}>
+                    {isRecording
+                      ? `Recording ${Math.floor(recordingDuration / 60)}:${String(recordingDuration % 60).padStart(2, '0')} — tap to stop`
+                      : 'Tap to record a voice note'}
+                  </Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <TouchableOpacity
@@ -660,6 +835,9 @@ export default function PersonScreen() {
                 </Text>
                 {event.note && (
                   <Text style={styles.timelineNote}>{event.note}</Text>
+                )}
+                {event.audioUrl && (
+                  <AudioPlayer uri={event.audioUrl} />
                 )}
               </View>
             </View>
@@ -1096,12 +1274,110 @@ const styles = StyleSheet.create({
     color: Colors.textLight,
     fontFamily: Typography.fontFamily,
   },
-  notePhaseHint: {
-    fontSize: 11,
+  // Mic / voice note capture
+  micRow: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xs,
+  },
+  micBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.background,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.pill,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+  },
+  micBtnRecording: {
+    backgroundColor: Colors.scoreLow + '12',
+    borderColor: Colors.scoreLow + '66',
+  },
+  micBtnIcon: {
+    fontSize: 18,
+  },
+  micBtnLabel: {
+    fontSize: 13,
     color: Colors.textLight,
     fontFamily: Typography.fontFamily,
-    textAlign: 'center',
-    fontStyle: 'italic',
+  },
+  micBtnLabelRecording: {
+    color: Colors.scoreLow,
+    fontWeight: '600',
+  },
+  micAudioPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.terracotta + '10',
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderWidth: 0.5,
+    borderColor: Colors.terracotta + '44',
+  },
+  micAudioPreviewText: {
+    fontSize: 13,
+    color: Colors.terracotta,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+  },
+  micDiscardBtn: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
+  },
+  micDiscardBtnText: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textDecorationLine: 'underline',
+  },
+
+  // Audio player (timeline)
+  audioPlayer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    padding: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  audioPlayBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.terracotta,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  audioPlayBtnText: {
+    fontSize: 11,
+    color: Colors.white,
+  },
+  audioTrack: {
+    flex: 1,
+    gap: 4,
+  },
+  audioProgressBg: {
+    height: 3,
+    backgroundColor: Colors.tan,
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  audioProgressFill: {
+    height: '100%',
+    backgroundColor: Colors.terracotta,
+    borderRadius: 2,
+  },
+  audioDuration: {
+    fontSize: 10,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
   },
   timelineEmpty: {
     padding: Spacing.md,
