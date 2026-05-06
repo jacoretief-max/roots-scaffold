@@ -177,23 +177,96 @@ export const useUserSearch = (query: string) =>
     staleTime: 0,
   });
 
-// Add connection
+// Add connection — Roots user (pending request) or offline contact
 export const useAddConnection = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: {
-      connectedUserId: string;
-      relation: string;
+      // Roots user path
+      connectedUserId?: string;
+      // Offline contact path
+      offlineName?: string;
+      offlinePhone?: string;
+      offlineEmail?: string;
+      offlineDob?: string;
+      // Shared
+      relation?: string;
       layer: string;
       since?: string;
       contactFrequency?: number;
-    }) => {
+    }): Promise<{ data?: any; suggestion?: boolean; matchedUser?: any }> => {
       const { data } = await api.post('/connections', payload);
-      return data.data;
+      return data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.connections }),
   });
 };
+
+// Connection requests
+export const useConnectionRequests = () =>
+  useQuery({
+    queryKey: ['connection_requests'],
+    queryFn: async () => {
+      const { data } = await api.get('/connection-requests');
+      return data.data as Array<{
+        id: string;
+        fromUserId: string;
+        layer: string;
+        relation?: string;
+        createdAt: string;
+        fromUser: { id: string; displayName: string; avatarColour: string; city?: string };
+      }>;
+    },
+    staleTime: 1000 * 60,
+  });
+
+export const useAcceptRequest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await api.post(`/connection-requests/${id}/accept`);
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['connection_requests'] });
+      qc.invalidateQueries({ queryKey: QueryKeys.connections });
+    },
+  });
+};
+
+export const useDeclineRequest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data } = await api.post(`/connection-requests/${id}/decline`);
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['connection_requests'] });
+    },
+  });
+};
+
+// Generate invite link for an offline contact
+export const useGenerateInvite = () =>
+  useMutation({
+    mutationFn: async (connectionId: string): Promise<{ inviteUrl: string; token: string }> => {
+      const { data } = await api.post(`/connections/${connectionId}/invite`);
+      return data.data;
+    },
+  });
+
+// Onboarding suggestions — people who already have you in their circle
+export const useOnboardingSuggestions = () =>
+  useMutation({
+    mutationFn: async (): Promise<Array<{
+      connectionId: string;
+      user: { id: string; displayName: string; avatarColour: string; city?: string };
+    }>> => {
+      const { data } = await api.post('/users/me/onboarding-suggestions');
+      return data.data;
+    },
+  });
 
 // Remove connection
 export const useRemoveConnection = () => {
