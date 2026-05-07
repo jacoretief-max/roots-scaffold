@@ -10,7 +10,7 @@ import * as Calendar from 'expo-calendar';
 import {
   useUserSearch, useAddConnection, useSyncContacts,
   useConfirmContactMatch, useConfirmCalendarMatch, useSyncCalendar,
-  useAcceptRequest, useDeclineRequest,
+  useConnectionRequests, useAcceptRequest, useDeclineRequest,
 } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
@@ -621,6 +621,7 @@ export default function ConnectScreen() {
     dismissedIds: string[];
   } | null>(null);
   const { data: results = [], isLoading } = useUserSearch(query);
+  const { data: incomingRequests = [] } = useConnectionRequests();
   const { mutate: addConnection } = useAddConnection();
   const { mutate: syncContacts } = useSyncContacts();
   const { mutate: confirmMatch } = useConfirmContactMatch();
@@ -789,6 +790,19 @@ export default function ConnectScreen() {
     setModalVisible(true);
   };
 
+  // Opens modal for an incoming request (pending_received mode)
+  const handleOpenRequest = (request: any) => {
+    setSelectedPerson({
+      id: request.fromUser.id,
+      displayName: request.fromUser.displayName,
+      avatarColour: request.fromUser.avatarColour,
+      city: request.fromUser.city,
+      requestId: request.id,
+    });
+    setModalMode('pending_received');
+    setModalVisible(true);
+  };
+
   // Opens modal in offline mode, pre-filling name from query or explicit name
   const handleAddOffline = (name: string) => {
     setSelectedPerson({ displayName: name, avatarColour: Colors.terracotta });
@@ -842,6 +856,39 @@ export default function ConnectScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={styles.title}>Connect</Text>
+
+        {/* Incoming connection requests */}
+        {incomingRequests.length > 0 && (
+          <View style={styles.requestsSection}>
+            <Text style={styles.requestsLabel}>
+              {incomingRequests.length === 1 ? '1 connection request' : `${incomingRequests.length} connection requests`}
+            </Text>
+            {incomingRequests.map((req: any) => (
+              <TouchableOpacity
+                key={req.id}
+                style={styles.requestRow}
+                onPress={() => handleOpenRequest(req)}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.resultAvatar, { backgroundColor: req.fromUser.avatarColour }]}>
+                  <Text style={styles.resultAvatarText}>
+                    {req.fromUser.displayName.charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.resultInfo}>
+                  <Text style={styles.resultName}>{req.fromUser.displayName}</Text>
+                  {req.fromUser.city
+                    ? <Text style={styles.resultCity}>{req.fromUser.city}</Text>
+                    : null
+                  }
+                </View>
+                <View style={styles.requestChevron}>
+                  <Text style={styles.requestChevronText}>›</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Search bar */}
         <View style={styles.searchWrap}>
@@ -1084,6 +1131,44 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     marginBottom: Spacing.lg,
+  },
+
+  // Incoming requests section
+  requestsSection: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.lg,
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 0.5,
+    borderColor: Colors.terracotta + '44',
+    overflow: 'hidden',
+  },
+  requestsLabel: {
+    fontSize: Typography.label,
+    color: Colors.terracotta,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontFamily: Typography.fontFamily,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderTopWidth: 0.5,
+    borderTopColor: Colors.tan,
+    gap: Spacing.md,
+  },
+  requestChevron: {
+    paddingLeft: Spacing.sm,
+  },
+  requestChevronText: {
+    fontSize: 22,
+    color: Colors.textLight,
+    lineHeight: 26,
   },
 
   // Search
