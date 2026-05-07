@@ -25,7 +25,8 @@
         "NSPhotoLibraryUsageDescription": "Roots accesses your photo library so you can add photos to memories.",
         "NSPhotoLibraryAddUsageDescription": "Roots saves photos to your library.",
         "NSMicrophoneUsageDescription": "Roots may use the microphone if you record video for a memory.",
-        "NSCalendarsUsageDescription": "Roots reads your calendar to detect shared events with connections."
+        "NSCalendarsUsageDescription": "Roots reads your calendar to detect shared events with connections.",
+        "LSApplicationQueriesSchemes": ["whatsapp"]
       },
       "entitlements": {
         "com.apple.developer.contacts.notes": true

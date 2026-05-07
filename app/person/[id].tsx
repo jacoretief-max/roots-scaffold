@@ -125,9 +125,8 @@ const TimezoneCard = ({
   const handleWhatsApp = () => {
     if (!hasPhone) { Alert.alert('No phone number', `No phone number stored for ${displayName}. Sync your contacts to add one.`); return; }
     const clean = phoneNumber!.replace(/\D/g, '');
-    Linking.canOpenURL('whatsapp://').then(supported => {
-      if (supported) Linking.openURL(`whatsapp://send?phone=${clean}`);
-      else Alert.alert('WhatsApp not installed', 'WhatsApp does not appear to be installed on this device.');
+    Linking.openURL(`whatsapp://send?phone=${clean}`).catch(() => {
+      Alert.alert('WhatsApp not installed', 'WhatsApp does not appear to be installed on this device.');
     });
   };
 
@@ -629,9 +628,8 @@ export default function PersonScreen() {
       onSuccess: ({ inviteUrl }) => {
         const msg = `Hi! I've added you to my Roots circle. Join me here: ${inviteUrl}`;
         const waUrl = `whatsapp://send?${phoneNumber ? `phone=${phoneNumber.replace(/\D/g, '')}&` : ''}text=${encodeURIComponent(msg)}`;
-        Linking.canOpenURL('whatsapp://').then(supported => {
-          if (supported) Linking.openURL(waUrl);
-          else Linking.openURL(`sms:${phoneNumber ?? ''}?body=${encodeURIComponent(msg)}`);
+        Linking.openURL(waUrl).catch(() => {
+          Linking.openURL(`sms:${phoneNumber ?? ''}?body=${encodeURIComponent(msg)}`);
         });
       },
       onError: () => Alert.alert('Error', 'Could not generate invite link. Please try again.'),
@@ -801,9 +799,8 @@ export default function PersonScreen() {
                     style={styles.offlineActionBtn}
                     onPress={() => {
                       const clean = phoneNumber.replace(/\D/g, '');
-                      Linking.canOpenURL('whatsapp://').then(supported => {
-                        if (supported) Linking.openURL(`whatsapp://send?phone=${clean}`);
-                        else Alert.alert('WhatsApp not installed');
+                      Linking.openURL(`whatsapp://send?phone=${clean}`).catch(() => {
+                        Alert.alert('WhatsApp not installed', 'WhatsApp does not appear to be installed on this device.');
                       });
                     }}
                   >

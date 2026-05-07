@@ -551,11 +551,10 @@ export default function CircleScreen() {
   };
 
   const handleInvite = (name: string) => {
-    const message = `Hi! I've been using Roots — a private app for keeping in touch with the people who matter most. No social feed, no ads, just real connections. Join me here: https://yourroots.app`;
+    const message = `Hi${name ? ` ${name}` : ''}! I've been using Roots — a private app for keeping in touch with the people who matter most. No social feed, no ads, just real connections. Join me here: https://yourroots.app`;
     const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
-    Linking.canOpenURL(whatsappUrl).then(supported => {
-      if (supported) Linking.openURL(whatsappUrl);
-      else Linking.openURL(`sms:?body=${encodeURIComponent(message)}`);
+    Linking.openURL(whatsappUrl).catch(() => {
+      Linking.openURL(`sms:?body=${encodeURIComponent(message)}`);
     });
   };
 
