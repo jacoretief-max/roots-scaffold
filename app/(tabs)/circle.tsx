@@ -293,17 +293,21 @@ const calStyles = StyleSheet.create({
 
 // ── Add to circle modal ────────────────────────────────
 const AddToCircleModal = ({
-  visible, person, onClose, onAdd,
+  visible, person, mode = 'roots', onClose, onAdd,
 }: {
   visible: boolean;
-  person: { id: string; displayName: string; avatarColour: string; city?: string } | null;
+  person: { id?: string; displayName: string; avatarColour: string; city?: string } | null;
+  mode?: 'roots' | 'offline';
   onClose: () => void;
-  onAdd: (payload: { connectedUserId: string; relation: string; layer: DunbarLayer; since?: string; contactFrequency: number }) => void;
+  onAdd: (payload: any) => void;
 }) => {
   const [relation, setRelation] = useState('');
   const [layer, setLayer] = useState<DunbarLayer>('active');
   const [since, setSince] = useState('');
   const [contactFrequency, setContactFrequency] = useState(14);
+  const [offlineName, setOfflineName] = useState('');
+  const [offlinePhone, setOfflinePhone] = useState('');
+  const [offlineDob, setOfflineDob] = useState('');
 
   const RELATIONS = ['Best friend', 'Friend', 'Close friend', 'Family', 'Partner', 'Colleague', 'Mentor', 'Neighbour', 'Acquaintance'];
   const FREQUENCY_OPTIONS = [
@@ -314,12 +318,38 @@ const AddToCircleModal = ({
     { label: 'Every few months', days: 90 },
   ];
 
-  const handleAdd = () => {
-    if (!relation) { Alert.alert('Missing info', 'Please select a relation type.'); return; }
-    onAdd({ connectedUserId: person!.id, relation, layer, since: since || undefined, contactFrequency });
+  const parseDob = (raw: string): string | null | 'invalid' => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const parts = trimmed.split('/');
+    if (parts.length < 2 || parts.length > 3) return 'invalid';
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const year = parts.length === 3 ? parseInt(parts[2], 10) : 1900;
+    if (isNaN(day) || isNaN(month) || isNaN(year)) return 'invalid';
+    if (month < 1 || month > 12) return 'invalid';
+    const date = new Date(year, month - 1, day);
+    if (date.getDate() !== day || date.getMonth() !== month - 1) return 'invalid';
+    return `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
   };
 
-  const reset = () => { setRelation(''); setLayer('active'); setSince(''); setContactFrequency(14); };
+  const handleAdd = () => {
+    if (!relation) { Alert.alert('Missing info', 'Please select a relation type.'); return; }
+    if (mode === 'offline') {
+      const name = offlineName.trim() || person!.displayName;
+      if (!name) { Alert.alert('Missing info', 'Please enter a name.'); return; }
+      const dobResult = parseDob(offlineDob);
+      if (dobResult === 'invalid') { Alert.alert('Invalid date', 'Please enter a date as DD/MM or DD/MM/YYYY.'); return; }
+      onAdd({ offlineName: name, offlinePhone: offlinePhone.trim() || undefined, offlineDob: dobResult ?? undefined, relation, layer, since: since || undefined, contactFrequency });
+    } else {
+      onAdd({ connectedUserId: person!.id, relation, layer, since: since || undefined, contactFrequency });
+    }
+  };
+
+  const reset = () => {
+    setRelation(''); setLayer('active'); setSince(''); setContactFrequency(14);
+    setOfflineName(''); setOfflinePhone(''); setOfflineDob('');
+  };
 
   return (
     <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { reset(); onClose(); }}>
@@ -334,7 +364,7 @@ const AddToCircleModal = ({
           </TouchableOpacity>
         </View>
         <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {person && (
+          {mode === 'roots' && person && (
             <View style={styles.personSummary}>
               <View style={[styles.personAvatar, { backgroundColor: person.avatarColour }]}>
                 <Text style={styles.personAvatarText}>{person.displayName.charAt(0).toUpperCase()}</Text>
@@ -344,6 +374,40 @@ const AddToCircleModal = ({
                 {person.city && <Text style={styles.personCity}>{person.city}</Text>}
               </View>
             </View>
+          )}
+          {mode === 'offline' && (
+            <>
+              <Text style={styles.sectionLabel}>Their name</Text>
+              <TextInput
+                style={styles.input}
+                value={offlineName || person?.displayName || ''}
+                onChangeText={setOfflineName}
+                placeholder="Full name"
+                placeholderTextColor={Colors.textLight}
+                autoCapitalize="words"
+              />
+              <Text style={styles.sectionLabel}>Phone number (optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={offlinePhone}
+                onChangeText={setOfflinePhone}
+                placeholder="+27 82 000 0000"
+                placeholderTextColor={Colors.textLight}
+                keyboardType="phone-pad"
+              />
+              <Text style={styles.sectionLabel}>Birthday (optional)</Text>
+              <TextInput
+                style={[styles.input, { marginBottom: Spacing.xs }]}
+                value={offlineDob}
+                onChangeText={setOfflineDob}
+                placeholder="DD/MM or DD/MM/YYYY"
+                placeholderTextColor={Colors.textLight}
+                keyboardType="numbers-and-punctuation"
+              />
+              <Text style={styles.offlineHint}>
+                Year is optional — day and month is enough for birthday reminders. They'll get an invite to join Roots once you save.
+              </Text>
+            </>
           )}
           <Text style={styles.sectionLabel}>Relation</Text>
           <View style={styles.chipGrid}>
@@ -404,6 +468,7 @@ export default function CircleScreen() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  const [modalMode, setModalMode] = useState<'roots' | 'offline'>('roots');
   const [syncResult, setSyncResult] = useState<{ matched: any[]; suggestions: any[]; total: number } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCalendarSyncing, setIsCalendarSyncing] = useState(false);
@@ -535,7 +600,17 @@ export default function CircleScreen() {
   };
 
   // ── Add connection ─────────────────────────────────
-  const handleAdd = (person: any) => { setSelectedPerson(person); setModalVisible(true); };
+  const handleAdd = (person: any) => {
+    setSelectedPerson(person);
+    setModalMode('roots');
+    setModalVisible(true);
+  };
+
+  const handleAddOffline = (name: string) => {
+    setSelectedPerson({ displayName: name, avatarColour: Colors.tan });
+    setModalMode('offline');
+    setModalVisible(true);
+  };
 
   const handleConfirmAdd = (payload: any) => {
     addConnection(payload, {
@@ -544,17 +619,15 @@ export default function CircleScreen() {
         setSelectedPerson(null);
         setQuery('');
         searchRef.current?.blur();
-        Alert.alert('Added to circle', `${selectedPerson?.displayName} has been added to your circle.`);
+        const name = payload.offlineName ?? selectedPerson?.displayName;
+        Alert.alert(
+          modalMode === 'offline' ? 'Added to circle' : 'Request sent',
+          modalMode === 'offline'
+            ? `${name} has been added to your circle. An invite will be sent.`
+            : `Your connection request has been sent to ${name}.`
+        );
       },
       onError: () => Alert.alert('Error', 'Failed to add connection. Please try again.'),
-    });
-  };
-
-  const handleInvite = (name: string) => {
-    const message = `Hi${name ? ` ${name}` : ''}! I've been using Roots — a private app for keeping in touch with the people who matter most. No social feed, no ads, just real connections. Join me here: https://yourroots.app`;
-    const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
-    Linking.openURL(whatsappUrl).catch(() => {
-      Linking.openURL(`sms:?body=${encodeURIComponent(message)}`);
     });
   };
 
@@ -612,24 +685,15 @@ export default function CircleScreen() {
             </View>
           )}
 
-          {/* Invite if no results */}
+          {/* Not found — add as offline contact */}
           {showInvite && (
             <View style={[styles.section, styles.inviteCard]}>
               <Text style={styles.inviteTitle}>"{query}" isn't on Roots yet</Text>
               <Text style={styles.inviteDesc}>
-                Invite them to join. Once they sign up, you can add them to your circle.
+                Add them to your circle now — they'll get an invite to join Roots and connect with you automatically when they do.
               </Text>
-              <TouchableOpacity style={styles.inviteBtn} onPress={() => handleInvite(query)}>
-                <Text style={styles.inviteBtnText}>Invite {query} via WhatsApp</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.inviteBtnSms}
-                onPress={() => {
-                  const msg = `Hi ${query}! I've been using Roots — a private app for keeping in touch with the people who matter most. Join me: https://yourroots.app`;
-                  Linking.openURL(`sms:?body=${encodeURIComponent(msg)}`);
-                }}
-              >
-                <Text style={styles.inviteBtnSmsText}>Send SMS instead</Text>
+              <TouchableOpacity style={styles.inviteBtn} onPress={() => handleAddOffline(query)}>
+                <Text style={styles.inviteBtnText}>Add {query} to my circle</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -776,6 +840,7 @@ export default function CircleScreen() {
       <AddToCircleModal
         visible={modalVisible}
         person={selectedPerson}
+        mode={modalMode}
         onClose={() => { setModalVisible(false); setSelectedPerson(null); }}
         onAdd={handleConfirmAdd}
       />
@@ -908,10 +973,9 @@ const styles = StyleSheet.create({
   inviteCard: { marginTop: Spacing.lg },
   inviteTitle: { fontSize: Typography.heading.sm, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark, marginBottom: Spacing.sm },
   inviteDesc: { fontSize: 13, color: Colors.textLight, fontFamily: Typography.fontFamily, lineHeight: 20, marginBottom: Spacing.lg },
-  inviteBtn: { backgroundColor: Colors.terracotta, borderRadius: BorderRadius.sm, padding: Spacing.md, alignItems: 'center', marginBottom: Spacing.sm },
+  inviteBtn: { backgroundColor: Colors.terracotta, borderRadius: BorderRadius.sm, padding: Spacing.md, alignItems: 'center' },
   inviteBtnText: { fontSize: Typography.body, color: Colors.white, fontWeight: '700', fontFamily: Typography.fontFamily },
-  inviteBtnSms: { borderWidth: 0.5, borderColor: Colors.tan, borderRadius: BorderRadius.sm, padding: Spacing.md, alignItems: 'center' },
-  inviteBtnSmsText: { fontSize: Typography.body, color: Colors.textDark, fontFamily: Typography.fontFamily },
+  offlineHint: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily, lineHeight: 18, marginBottom: Spacing.sm, fontStyle: 'italic' },
 
   // Empty state (search prompt)
   emptySearchTitle: { fontSize: Typography.heading.sm, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark, marginBottom: Spacing.sm, marginTop: Spacing.lg },
