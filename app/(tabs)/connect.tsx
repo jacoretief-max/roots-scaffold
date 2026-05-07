@@ -58,7 +58,7 @@ const AddPersonModal = ({
   mode: AddPersonMode;
   onClose: () => void;
   onAdd: (payload: any) => void;
-  onAccept?: (requestId: string) => void;
+  onAccept?: (requestId: string, payload: { relation: string; layer: string; contactFrequency: number; since?: string }) => void;
   onDecline?: (requestId: string) => void;
 }) => {
   const [relation, setRelation] = useState('');
@@ -143,46 +143,119 @@ const AddPersonModal = ({
     );
   }
 
-  // ── Pending received ──────────────────────────────────
+  // ── Pending received — full form before accepting ─────
   if (mode === 'pending_received') {
+    const handleAcceptWithForm = () => {
+      if (!relation) {
+        Alert.alert('Missing info', 'Please select a relation type.');
+        return;
+      }
+      onAccept?.(person!.requestId!, { relation, layer, contactFrequency, since: since || undefined });
+      reset();
+      onClose();
+    };
+
     return (
       <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
         <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={handleClose}>
-              <Text style={styles.modalCancel}>Cancel</Text>
+            <TouchableOpacity onPress={() => { onDecline?.(person!.requestId!); handleClose(); }}>
+              <Text style={[styles.modalCancel, { color: Colors.textLight }]}>Decline</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Connection request</Text>
-            <View style={{ width: 50 }} />
+            <Text style={styles.modalTitle}>Accept request</Text>
+            <TouchableOpacity onPress={handleAcceptWithForm}>
+              <Text style={styles.modalSave}>Accept</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.modalContent}>
+
+          <ScrollView
+            style={styles.modalContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             <View style={styles.personSummary}>
               <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
                 <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.personName}>{displayName}</Text>
                 {person?.city && <Text style={styles.personCity}>{person.city}</Text>}
+                <Text style={[styles.personCity, { marginTop: 4 }]}>
+                  wants to connect with you
+                </Text>
               </View>
             </View>
-            <Text style={styles.pendingHint}>
-              {displayName} wants to add you to their circle.
-            </Text>
-            <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg }}>
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: Colors.terracotta, flex: 1 }]}
-                onPress={() => { onAccept?.(person!.requestId!); handleClose(); }}
-              >
-                <Text style={styles.actionBtnText}>Accept</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionBtn, { borderWidth: 0.5, borderColor: Colors.tan, flex: 1 }]}
-                onPress={() => { onDecline?.(person!.requestId!); handleClose(); }}
-              >
-                <Text style={[styles.actionBtnText, { color: Colors.textLight }]}>Decline</Text>
-              </TouchableOpacity>
+
+            {/* Relation */}
+            <Text style={styles.sectionLabel}>How do you know them?</Text>
+            <View style={styles.chipGrid}>
+              {RELATIONS.map(r => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.chip, relation === r && styles.chipActive]}
+                  onPress={() => setRelation(r)}
+                >
+                  <Text style={[styles.chipText, relation === r && styles.chipTextActive]}>{r}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
-          </View>
+            <TextInput
+              style={[styles.input, { marginTop: Spacing.sm }]}
+              value={RELATIONS.includes(relation) ? '' : relation}
+              onChangeText={setRelation}
+              placeholder="Or type your own…"
+              placeholderTextColor={Colors.textLight}
+            />
+
+            {/* Dunbar layer */}
+            <Text style={styles.sectionLabel}>Add to which layer?</Text>
+            {DunbarLayers.map(l => (
+              <TouchableOpacity
+                key={l.key}
+                style={[styles.layerOption, layer === l.key && styles.layerOptionActive]}
+                onPress={() => setLayer(l.key as DunbarLayer)}
+              >
+                <View style={styles.layerRadio}>
+                  {layer === l.key && <View style={styles.layerRadioInner} />}
+                </View>
+                <View style={styles.layerText}>
+                  <Text style={[styles.layerLabel, layer === l.key && styles.layerLabelActive]}>
+                    {l.label}
+                    <Text style={styles.layerLimit}> · up to {l.limit}</Text>
+                  </Text>
+                  <Text style={styles.layerDesc}>{l.description}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+
+            {/* Since when */}
+            <Text style={styles.sectionLabel}>Friends since (optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={since}
+              onChangeText={setSince}
+              placeholder="e.g. 2015 or uni days"
+              placeholderTextColor={Colors.textLight}
+            />
+
+            {/* Contact frequency */}
+            <Text style={styles.sectionLabel}>How often do you want to stay in touch?</Text>
+            <View style={styles.chipGrid}>
+              {FREQUENCY_OPTIONS.map(f => (
+                <TouchableOpacity
+                  key={f.days}
+                  style={[styles.chip, contactFrequency === f.days && styles.chipActive]}
+                  onPress={() => setContactFrequency(f.days)}
+                >
+                  <Text style={[styles.chipText, contactFrequency === f.days && styles.chipTextActive]}>
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
         </SafeAreaView>
       </Modal>
     );
@@ -743,8 +816,13 @@ export default function ConnectScreen() {
     });
   };
 
-  const handleAccept = (requestId: string) => {
-    acceptRequest(requestId, {
+  const handleAccept = (requestId: string, payload: { relation: string; layer: string; contactFrequency: number; since?: string }) => {
+    acceptRequest({ id: requestId, ...payload }, {
+      onSuccess: () => {
+        Alert.alert('Connected', `${selectedPerson?.displayName} has been added to your circle.`);
+        setModalVisible(false);
+        setSelectedPerson(null);
+      },
       onError: () => Alert.alert('Error', 'Could not accept request. Please try again.'),
     });
   };

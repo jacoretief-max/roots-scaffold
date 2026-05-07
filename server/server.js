@@ -630,6 +630,9 @@ app.post('/api/connection-requests/:id/accept', requireAuth, async (req, res) =>
   );
   if (!request) return res.status(404).json({ error: 'Request not found' });
 
+  const { relation, layer, contactFrequency, since } = req.body;
+  if (!relation || !layer) return res.status(400).json({ error: 'relation and layer are required' });
+
   try {
     // Activate sender's pending connection
     await db.query(
@@ -637,12 +640,15 @@ app.post('/api/connection-requests/:id/accept', requireAuth, async (req, res) =>
        WHERE user_id = $1 AND connected_user_id = $2`,
       [request.from_user_id, req.userId]
     );
-    // Create reciprocal connection for accepter
+    // Create reciprocal connection using the accepter's own relation/layer/frequency
     await db.query(
-      `INSERT INTO connections (user_id, connected_user_id, relation, layer, contact_frequency, status)
-       VALUES ($1, $2, $3, $4, 14, 'active')
-       ON CONFLICT (user_id, connected_user_id) DO UPDATE SET status = 'active'`,
-      [req.userId, request.from_user_id, request.relation, request.layer]
+      `INSERT INTO connections
+         (user_id, connected_user_id, relation, layer, contact_frequency, since, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'active')
+       ON CONFLICT (user_id, connected_user_id) DO UPDATE
+         SET status = 'active', relation = $3, layer = $4,
+             contact_frequency = $5, since = $6`,
+      [req.userId, request.from_user_id, relation, layer, contactFrequency ?? 14, since ?? null]
     );
     // Delete the request
     await db.query('DELETE FROM connection_requests WHERE id = $1', [req.params.id]);

@@ -223,8 +223,25 @@ export const useConnectionRequests = () =>
 export const useAcceptRequest = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (id: string) => {
-      const { data } = await api.post(`/connection-requests/${id}/accept`);
+    mutationFn: async ({
+      id,
+      relation,
+      layer,
+      contactFrequency,
+      since,
+    }: {
+      id: string;
+      relation: string;
+      layer: string;
+      contactFrequency: number;
+      since?: string;
+    }) => {
+      const { data } = await api.post(`/connection-requests/${id}/accept`, {
+        relation,
+        layer,
+        contactFrequency,
+        since,
+      });
       return data.data;
     },
     onSuccess: () => {
