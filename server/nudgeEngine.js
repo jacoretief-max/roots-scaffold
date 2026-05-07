@@ -70,7 +70,7 @@ const runNudgeEngine = async (db) => {
   console.log('[Nudge Engine] Running at', new Date().toISOString());
 
   try {
-    // Get all connections that are not exempt
+    // Get all active and offline connections (pending excluded — not yet established)
     const { rows: connections } = await db.query(`
       SELECT
         c.id,
@@ -83,19 +83,23 @@ const runNudgeEngine = async (db) => {
         c.nudge_sent_at,
         c.always_in_touch,
         c.nudge,
-        cu.display_name as connected_name,
-        cu.date_of_birth,
+        c.status,
+        COALESCE(cu.display_name, c.offline_name) as connected_name,
+        COALESCE(cu.date_of_birth, c.offline_dob)  as date_of_birth,
         -- Get push tokens for the connection owner
         array_agg(pt.token) FILTER (WHERE pt.token IS NOT NULL) as push_tokens,
         -- WhatsApp details for the connection owner
         uo.whatsapp_number as owner_whatsapp,
         uo.whatsapp_opted_in as owner_whatsapp_opted_in
       FROM connections c
-      JOIN users cu ON cu.id = c.connected_user_id
+      LEFT JOIN users cu ON cu.id = c.connected_user_id
       JOIN users uo ON uo.id = c.user_id
       LEFT JOIN push_tokens pt ON pt.user_id = c.user_id
       WHERE c.always_in_touch = false
-      GROUP BY c.id, cu.display_name, cu.date_of_birth, uo.whatsapp_number, uo.whatsapp_opted_in
+        AND c.status IN ('active', 'offline')
+      GROUP BY c.id, cu.display_name, cu.date_of_birth,
+               c.offline_name, c.offline_dob,
+               uo.whatsapp_number, uo.whatsapp_opted_in
     `);
 
     console.log(`[Nudge Engine] Processing ${connections.length} connections`);

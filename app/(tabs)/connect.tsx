@@ -67,6 +67,7 @@ const AddPersonModal = ({
   const [contactFrequency, setContactFrequency] = useState(14);
   const [offlineName, setOfflineName] = useState('');
   const [offlinePhone, setOfflinePhone] = useState('');
+  const [offlineDob, setOfflineDob] = useState('');
 
   const reset = () => {
     setRelation('');
@@ -75,6 +76,28 @@ const AddPersonModal = ({
     setContactFrequency(14);
     setOfflineName('');
     setOfflinePhone('');
+    setOfflineDob('');
+  };
+
+  // Parses DD/MM or DD/MM/YYYY → ISO string, using 1900 as sentinel year if omitted.
+  // Returns null if the input is blank (optional field) or throws on invalid dates.
+  const parseDob = (raw: string): string | null | 'invalid' => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    const parts = trimmed.split('/');
+    if (parts.length < 2 || parts.length > 3) return 'invalid';
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const year = parts.length === 3 ? parseInt(parts[2], 10) : 1900;
+    if (isNaN(day) || isNaN(month) || isNaN(year)) return 'invalid';
+    if (month < 1 || month > 12) return 'invalid';
+    const date = new Date(year, month - 1, day);
+    // Ensure the date didn't roll over (e.g. 31/02)
+    if (date.getDate() !== day || date.getMonth() !== month - 1) return 'invalid';
+    const y = String(year).padStart(4, '0');
+    const m = String(month).padStart(2, '0');
+    const d = String(day).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
   const handleClose = () => { reset(); onClose(); };
@@ -98,9 +121,15 @@ const AddPersonModal = ({
         Alert.alert('Missing info', 'Please enter a name.');
         return;
       }
+      const dobResult = parseDob(offlineDob);
+      if (dobResult === 'invalid') {
+        Alert.alert('Invalid date', 'Please enter a date as DD/MM or DD/MM/YYYY — e.g. 14/06 or 14/06/1985.');
+        return;
+      }
       onAdd({
         offlineName: name,
         offlinePhone: offlinePhone.trim() || undefined,
+        offlineDob: dobResult ?? undefined,
         relation,
         layer,
         since: since || undefined,
@@ -313,15 +342,27 @@ const AddPersonModal = ({
               />
               <Text style={styles.sectionLabel}>Phone number (optional)</Text>
               <TextInput
-                style={[styles.input, { marginBottom: Spacing.xs }]}
+                style={styles.input}
                 value={offlinePhone}
                 onChangeText={setOfflinePhone}
                 placeholder="+27 82 000 0000"
                 placeholderTextColor={Colors.textLight}
                 keyboardType="phone-pad"
               />
+              <Text style={styles.sectionLabel}>Birthday (optional)</Text>
+              <TextInput
+                style={[styles.input, { marginBottom: Spacing.xs }]}
+                value={offlineDob}
+                onChangeText={setOfflineDob}
+                placeholder="DD/MM or DD/MM/YYYY"
+                placeholderTextColor={Colors.textLight}
+                keyboardType="numbers-and-punctuation"
+              />
               <Text style={styles.offlineHint}>
-                They'll receive an invite once you save. They can join Roots and connect with you automatically.
+                Year is optional — day and month is enough for birthday reminders.
+              </Text>
+              <Text style={[styles.offlineHint, { marginTop: Spacing.md }]}>
+                They'll receive an invite once you save and can connect with you automatically when they join.
               </Text>
             </>
           )}

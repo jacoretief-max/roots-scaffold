@@ -88,15 +88,21 @@ const DunbarDiagram = ({
 
 // ── Connection card ────────────────────────────────────
 const ConnectionCard = ({ item }: { item: Connection }) => {
+  const status = item.status ?? 'active';
+  const isPending = status === 'pending';
+  const isOffline = status === 'offline';
+
   const score = item.score ?? 80;
   const scoreColor =
     score > 75 ? Colors.scoreHealthy
     : score > 50 ? Colors.scoreMedium
     : Colors.scoreLow;
 
-  const displayName = item.connectedUser?.displayName ?? (item as any).display_name ?? 'Unknown';
-  const avatarColour = item.connectedUser?.avatarColour ?? (item as any).avatar_colour ?? Colors.terracotta;
-  const city = item.connectedUser?.city ?? (item as any).city;
+  const displayName = item.connectedUser?.displayName ?? item.offlineName ?? 'Unknown';
+  const avatarColour = isOffline
+    ? Colors.tan
+    : (item.connectedUser?.avatarColour ?? Colors.terracotta);
+  const city = item.connectedUser?.city;
 
   const lastContactText = () => {
     if (!item.lastContactAt) return 'No contact logged';
@@ -112,30 +118,64 @@ const ConnectionCard = ({ item }: { item: Connection }) => {
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[
+        styles.card,
+        isPending && styles.cardPending,
+        isOffline && styles.cardOffline,
+      ]}
       onPress={() => router.push(`/person/${item.id}`)}
       activeOpacity={0.85}
     >
       <View style={[styles.avatar, { backgroundColor: avatarColour }]}>
-        <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
-        <View style={[styles.statusDot, { backgroundColor: Colors.statusAvailable }]} />
+        <Text style={[styles.avatarText, (isPending || isOffline) && styles.avatarTextMuted]}>
+          {displayName.charAt(0).toUpperCase()}
+        </Text>
+        {!isPending && !isOffline && (
+          <View style={[styles.statusDot, { backgroundColor: Colors.statusAvailable }]} />
+        )}
       </View>
       <View style={styles.cardInfo}>
         <View style={styles.cardNameRow}>
-          <Text style={styles.cardName}>{displayName}</Text>
-          <Text style={[styles.scoreNum, { color: scoreColor }]}>{score}</Text>
+          <Text style={[styles.cardName, (isPending || isOffline) && styles.cardNameMuted]}>
+            {displayName}
+          </Text>
+          {isPending && (
+            <View style={styles.statusPill}>
+              <Text style={styles.statusPillText}>Pending</Text>
+            </View>
+          )}
+          {isOffline && (
+            <View style={[styles.statusPill, styles.statusPillOffline]}>
+              <Text style={[styles.statusPillText, styles.statusPillTextOffline]}>Not on Roots</Text>
+            </View>
+          )}
+          {!isPending && !isOffline && (
+            <Text style={[styles.scoreNum, { color: scoreColor }]}>{score}</Text>
+          )}
         </View>
-        <Text style={styles.cardMeta}>
+        <Text style={[styles.cardMeta, (isPending || isOffline) && styles.cardMetaMuted]}>
           {item.relation ?? 'Connection'}{city ? ` · ${city}` : ''}
         </Text>
-        <View style={styles.scoreBarBg}>
-          <View style={[styles.scoreBarFill, { width: `${score}%` as any, backgroundColor: scoreColor }]} />
-        </View>
-        <Text style={styles.lastContact}>{lastContactText()}</Text>
-        {item.nudge && (
-          <View style={styles.nudgeRow}>
-            <Text style={styles.nudgeText}>{item.nudge}</Text>
-          </View>
+        {!isPending && !isOffline && (
+          <>
+            <View style={styles.scoreBarBg}>
+              <View style={[styles.scoreBarFill, { width: `${score}%` as any, backgroundColor: scoreColor }]} />
+            </View>
+            <Text style={styles.lastContact}>{lastContactText()}</Text>
+            {item.nudge && (
+              <View style={styles.nudgeRow}>
+                <Text style={styles.nudgeText}>{item.nudge}</Text>
+              </View>
+            )}
+          </>
+        )}
+        {isPending && (
+          <Text style={styles.statusHint}>Waiting for them to accept your request</Text>
+        )}
+        {isOffline && (
+          <Text style={styles.statusHint}>
+            {item.inviteSentAt ? 'Invite sent · not yet on Roots' : 'Tap to send an invite'}
+          </Text>
         )}
       </View>
     </TouchableOpacity>
@@ -383,7 +423,10 @@ export default function CircleScreen() {
   const searchMode = searchFocused || query.length > 0;
   const showInvite = query.length > 1 && searchResults.length === 0 && !isSearching;
 
+  // Pending connections don't count — relationship not yet established.
+  // Offline connections do count — they are real relationships.
   const counts = allConnections.reduce((acc, c) => {
+    if ((c.status ?? 'active') === 'pending') return acc;
     const layer = c.layer ?? (c as any).layer;
     acc[layer] = (acc[layer] ?? 0) + 1;
     return acc;
@@ -821,19 +864,44 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md, padding: Spacing.md, marginBottom: Spacing.sm,
     gap: Spacing.md, borderWidth: 0.5, borderColor: Colors.tan, ...Shadows.card,
   },
+  cardPending: {
+    opacity: 0.65,
+    borderStyle: 'dashed',
+  },
+  cardOffline: {
+    backgroundColor: Colors.background,
+    borderStyle: 'dashed',
+  },
   avatar: { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 18, color: Colors.white, fontWeight: '600' },
+  avatarTextMuted: { color: Colors.textLight },
   statusDot: { position: 'absolute', bottom: 1, right: 1, width: 11, height: 11, borderRadius: 6, borderWidth: 1.5, borderColor: Colors.card },
   cardInfo: { flex: 1 },
   cardNameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
   cardName: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
+  cardNameMuted: { color: Colors.textLight },
   scoreNum: { fontSize: 16, fontFamily: Typography.fontFamily, fontWeight: '700' },
   cardMeta: { fontSize: 12, color: Colors.textLight, marginBottom: Spacing.sm, fontFamily: Typography.fontFamily },
+  cardMetaMuted: { marginBottom: Spacing.xs },
   scoreBarBg: { height: 4, backgroundColor: Colors.tan, borderRadius: 2, overflow: 'hidden', marginBottom: Spacing.xs },
   scoreBarFill: { height: '100%', borderRadius: 2 },
   lastContact: { fontSize: 11, color: Colors.textLight, fontFamily: Typography.fontFamily, marginTop: 2 },
   nudgeRow: { marginTop: Spacing.sm, padding: Spacing.sm, backgroundColor: Colors.terracotta + '10', borderLeftWidth: 2, borderLeftColor: Colors.terracotta },
   nudgeText: { fontSize: 12, color: Colors.terracottaDark, fontStyle: 'italic', fontFamily: Typography.fontFamily, lineHeight: 17 },
+  statusPill: {
+    backgroundColor: Colors.tan,
+    borderRadius: BorderRadius.pill,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+  },
+  statusPillOffline: {
+    backgroundColor: Colors.background,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+  },
+  statusPillText: { fontSize: 10, color: Colors.textLight, fontFamily: Typography.fontFamily, fontWeight: '600' },
+  statusPillTextOffline: { color: Colors.textLight },
+  statusHint: { fontSize: 11, color: Colors.textLight, fontFamily: Typography.fontFamily, fontStyle: 'italic', marginTop: 2 },
 
   // Search results
   resultRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.sm, borderBottomWidth: 0.5, borderBottomColor: Colors.tan },
