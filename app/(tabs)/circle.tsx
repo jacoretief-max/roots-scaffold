@@ -808,8 +808,13 @@ export default function CircleScreen() {
   };
 
   const handleConfirmMatch = (suggestion: any) => {
+    // Offline contacts have no connectedUserId — use connectionId instead
     confirmMatch(
-      { connectedUserId: suggestion.connectedUserId, phoneNumber: suggestion.phoneNumber },
+      {
+        connectedUserId: suggestion.isOffline ? undefined : suggestion.connectedUserId,
+        connectionId: suggestion.isOffline ? suggestion.connectionId : undefined,
+        phoneNumber: suggestion.phoneNumber,
+      },
       {
         onSuccess: () => {
           setSyncResult(prev => prev ? {

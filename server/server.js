@@ -58,7 +58,9 @@ const nameSimilarity = (a, b) => {
 // Smarter name comparison that handles word order, initials, and partial matches.
 // Returns a score 0–1. Combines character-level Levenshtein with word-level overlap.
 const nameScore = (rawA, rawB) => {
-  const clean = (s) => s.toLowerCase().replace(/[^a-z\s]/g, '').trim();
+  // NFD decomposition strips diacritics (é→e, ö→o, etc.) before comparison
+  const clean = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z\s]/g, '').trim();
   const a = clean(rawA);
   const b = clean(rawB);
   if (!a || !b) return 0;
@@ -814,9 +816,18 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
   }
 
   const { rows: connections } = await db.query(
-    `SELECT c.id, c.connected_user_id, u.display_name, u.phone_number
+    // LEFT JOIN so offline contacts (connected_user_id IS NULL) are included.
+    // For offline contacts, use offline_name / offline_phone from the connection row.
+    `SELECT
+       c.id,
+       c.status,
+       c.connected_user_id,
+       c.offline_name,
+       c.offline_phone,
+       COALESCE(u.display_name, c.offline_name) AS display_name,
+       COALESCE(u.phone_number,  c.offline_phone) AS phone_number
      FROM connections c
-     JOIN users u ON u.id = c.connected_user_id
+     LEFT JOIN users u ON u.id = c.connected_user_id
      WHERE c.user_id = $1`,
     [req.userId]
   );
@@ -825,13 +836,13 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
   const suggestions = [];
 
   for (const connection of connections) {
-    const connectionName = connection.display_name.toLowerCase().trim();
+    if (!connection.display_name) continue; // skip rows with no name at all
+    const connectionName = connection.display_name;
     let bestMatch = null;
     let bestScore = 0;
 
     for (const contact of contacts) {
-      const contactName = contact.name?.toLowerCase().trim();
-      if (!contactName || contactName.length < 3) continue;
+      if (!contact.name || contact.name.length < 3) continue;
 
       // Phone match takes priority — treated as exact
       const phoneMatch = contact.phoneNumber &&
@@ -846,8 +857,8 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
         break; // Phone match is definitive — stop looking
       }
 
-      // Fall back to name similarity (smarter multi-strategy scorer)
-      const score = nameScore(contactName, connectionName);
+      // Name similarity (diacritic-aware, word-order-aware)
+      const score = nameScore(contact.name, connectionName);
 
       if (score > bestScore) {
         bestScore = score;
@@ -858,22 +869,31 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
     if (!bestMatch) continue;
 
     if (bestMatch.score === 1.0) {
-      // Perfect match (phone or exact name) — sync automatically
-      await db.query(
-        'UPDATE users SET phone_number = $1 WHERE id = $2',
-        [bestMatch.contact.phoneNumber ?? connection.phone_number, connection.connected_user_id]
-      );
+      // Perfect match — sync phone number automatically
+      if (connection.connected_user_id) {
+        // Active/pending Roots user → update their profile
+        await db.query(
+          'UPDATE users SET phone_number = $1 WHERE id = $2',
+          [bestMatch.contact.phoneNumber, connection.connected_user_id]
+        );
+      } else {
+        // Offline contact → update the connection row
+        await db.query(
+          'UPDATE connections SET offline_phone = $1 WHERE id = $2',
+          [bestMatch.contact.phoneNumber, connection.id]
+        );
+      }
       matched.push({
         connectionId: connection.id,
         name: connection.display_name,
         phoneNumber: bestMatch.contact.phoneNumber,
-        score: bestMatch.score,
       });
     } else if (bestMatch.score >= 0.65) {
-      // Fuzzy match — present to user to confirm (lowered from 0.75 → 0.65)
+      // Fuzzy match — present to user to confirm
       suggestions.push({
         connectionId: connection.id,
-        connectedUserId: connection.connected_user_id,
+        connectedUserId: connection.connected_user_id,  // null for offline
+        isOffline: !connection.connected_user_id,
         rootsName: connection.display_name,
         contactName: bestMatch.contact.name,
         phoneNumber: bestMatch.contact.phoneNumber,
@@ -886,12 +906,24 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
 });
 
 // POST /api/connections/confirm-contact-match
+// Handles both Roots users (connectedUserId present) and offline contacts (connectionId only)
 app.post('/api/connections/confirm-contact-match', requireAuth, async (req, res) => {
-  const { connectedUserId, phoneNumber } = req.body;
-  await db.query(
-    'UPDATE users SET phone_number = $1 WHERE id = $2',
-    [phoneNumber, connectedUserId]
-  );
+  const { connectedUserId, connectionId, phoneNumber } = req.body;
+  if (connectedUserId) {
+    // Active/pending Roots user — update their profile phone
+    await db.query(
+      'UPDATE users SET phone_number = $1 WHERE id = $2',
+      [phoneNumber, connectedUserId]
+    );
+  } else if (connectionId) {
+    // Offline contact — update offline_phone on the connection row
+    await db.query(
+      'UPDATE connections SET offline_phone = $1 WHERE id = $2 AND user_id = $3',
+      [phoneNumber, connectionId, req.userId]
+    );
+  } else {
+    return res.status(400).json({ error: 'connectedUserId or connectionId required' });
+  }
   res.json({ data: { ok: true } });
 });
 

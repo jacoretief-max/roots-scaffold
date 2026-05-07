@@ -326,15 +326,18 @@ export const useSyncContacts = () =>
     },
   });
 
-// Confirm a fuzzy contact match
+// Confirm a fuzzy contact match.
+// Pass connectedUserId for Roots users, connectionId for offline contacts.
 export const useConfirmContactMatch = () =>
   useMutation({
-    mutationFn: async ({ connectedUserId, phoneNumber }: {
-      connectedUserId: string;
+    mutationFn: async ({ connectedUserId, connectionId, phoneNumber }: {
+      connectedUserId?: string;
+      connectionId?: string;
       phoneNumber: string;
     }) => {
       const { data } = await api.post('/connections/confirm-contact-match', {
         connectedUserId,
+        connectionId,
         phoneNumber,
       });
       return data.data;
