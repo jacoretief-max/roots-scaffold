@@ -724,16 +724,6 @@ export default function CircleScreen() {
                 </View>
               )}
 
-              {/* Find My 150 */}
-              <TouchableOpacity style={styles.find150Btn}>
-                <Text style={styles.find150BtnTitle}>Find My 150</Text>
-                <Text style={styles.find150BtnDesc}>
-                  AI-assisted · analyses your contacts, calls and messages to find the people who matter most
-                </Text>
-                <View style={styles.find150Badge}>
-                  <Text style={styles.find150BadgeText}>Coming in Phase 3</Text>
-                </View>
-              </TouchableOpacity>
             </View>
           )}
 
@@ -957,12 +947,6 @@ const styles = StyleSheet.create({
   dismissBtn: { flex: 1, borderWidth: 0.5, borderColor: Colors.tan, borderRadius: BorderRadius.sm, padding: Spacing.sm, alignItems: 'center' },
   dismissBtnText: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily },
 
-  // Find My 150
-  find150Btn: { backgroundColor: Colors.card, borderRadius: BorderRadius.md, padding: Spacing.lg, marginBottom: Spacing.md, borderWidth: 0.5, borderColor: Colors.tan, opacity: 0.7 },
-  find150BtnTitle: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark, marginBottom: 4 },
-  find150BtnDesc: { fontSize: 13, color: Colors.textLight, fontFamily: Typography.fontFamily, lineHeight: 19, marginBottom: Spacing.sm },
-  find150Badge: { backgroundColor: Colors.terracotta + '18', borderRadius: BorderRadius.pill, paddingHorizontal: 10, paddingVertical: 3, alignSelf: 'flex-start' },
-  find150BadgeText: { fontSize: 11, color: Colors.terracotta, fontWeight: '700', fontFamily: Typography.fontFamily },
 
   // Empty circle state
   empty: { alignItems: 'center', paddingTop: Spacing.xl, paddingBottom: Spacing.xl, paddingHorizontal: Spacing.lg },
