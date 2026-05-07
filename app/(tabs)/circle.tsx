@@ -797,9 +797,18 @@ export default function CircleScreen() {
     const { data } = await Contacts.getContactsAsync({
       fields: [Contacts.Fields.Name, Contacts.Fields.PhoneNumbers],
     });
+    const pickBestPhone = (numbers?: Contacts.PhoneNumber[]) => {
+      if (!numbers?.length) return undefined;
+      const priority = ['iphone', 'mobile', 'home', 'work', 'other'];
+      for (const label of priority) {
+        const match = numbers.find(n => (n.label ?? '').toLowerCase() === label);
+        if (match?.number) return match.number;
+      }
+      return numbers[0].number;
+    };
     const contacts = data.filter(c => c.name).map(c => ({
       name: c.name!,
-      phoneNumber: c.phoneNumbers?.[0]?.number,
+      phoneNumber: pickBestPhone(c.phoneNumbers),
     }));
     syncContacts(contacts, {
       onSuccess: (result) => { setSyncResult(result); setIsSyncing(false); },
