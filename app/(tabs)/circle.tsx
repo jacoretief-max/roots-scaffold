@@ -17,9 +17,34 @@ import {
   useConfirmContactMatch,
   useConfirmCalendarMatch,
   useSyncCalendar,
+  useConnectionRequests,
+  useAcceptRequest,
+  useDeclineRequest,
 } from '@/api/hooks';
 import { Connection, DunbarLayer } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers, Shadows } from '@/constants/theme';
+
+// ── Add person modal modes ─────────────────────────────
+//
+// mode = 'roots'            → found Roots user, send connection request
+// mode = 'offline'          → not on Roots, add as offline contact + invite
+// mode = 'pending_sent'     → request already sent, show pending state
+// mode = 'pending_received' → they requested you, accept or decline
+type AddPersonMode = 'roots' | 'offline' | 'pending_sent' | 'pending_received';
+
+const RELATIONS = [
+  'Best friend', 'Friend', 'Close friend',
+  'Family', 'Partner', 'Colleague',
+  'Mentor', 'Neighbour', 'Acquaintance',
+];
+
+const FREQUENCY_OPTIONS = [
+  { label: 'Every few days', days: 3 },
+  { label: 'Weekly', days: 7 },
+  { label: 'Fortnightly', days: 14 },
+  { label: 'Monthly', days: 30 },
+  { label: 'Every few months', days: 90 },
+];
 
 // ── Dunbar ring diagram ────────────────────────────────
 const DunbarDiagram = ({
@@ -187,28 +212,59 @@ const SearchResult = ({
   person,
   onAdd,
 }: {
-  person: { id: string; displayName: string; avatarColour: string; city?: string; inCircle: boolean };
+  person: {
+    id: string;
+    displayName: string;
+    avatarColour: string;
+    city?: string;
+    status?: 'active' | 'pending_sent' | 'pending_received' | null;
+    inCircle?: boolean;
+    requestId?: string;
+  };
   onAdd: (person: any) => void;
-}) => (
-  <View style={styles.resultRow}>
-    <View style={[styles.resultAvatar, { backgroundColor: person.avatarColour }]}>
-      <Text style={styles.resultAvatarText}>{person.displayName.charAt(0).toUpperCase()}</Text>
-    </View>
-    <View style={styles.resultInfo}>
-      <Text style={styles.resultName}>{person.displayName}</Text>
-      {person.city && <Text style={styles.resultCity}>{person.city}</Text>}
-    </View>
-    {person.inCircle ? (
-      <View style={styles.inCircleBadge}>
-        <Text style={styles.inCircleBadgeText}>In circle</Text>
-      </View>
-    ) : (
+}) => {
+  const isInCircle = person.inCircle || person.status === 'active';
+
+  const action = () => {
+    if (isInCircle) return null;
+    if (person.status === 'pending_sent') {
+      return (
+        <TouchableOpacity style={styles.pendingBadge} onPress={() => onAdd(person)}>
+          <Text style={styles.pendingBadgeText}>Pending</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (person.status === 'pending_received') {
+      return (
+        <TouchableOpacity style={styles.acceptBtn} onPress={() => onAdd(person)}>
+          <Text style={styles.addBtnText}>Accept</Text>
+        </TouchableOpacity>
+      );
+    }
+    return (
       <TouchableOpacity style={styles.addBtn} onPress={() => onAdd(person)}>
         <Text style={styles.addBtnText}>Add</Text>
       </TouchableOpacity>
-    )}
-  </View>
-);
+    );
+  };
+
+  return (
+    <View style={styles.resultRow}>
+      <View style={[styles.resultAvatar, { backgroundColor: person.avatarColour }]}>
+        <Text style={styles.resultAvatarText}>{person.displayName.charAt(0).toUpperCase()}</Text>
+      </View>
+      <View style={styles.resultInfo}>
+        <Text style={styles.resultName}>{person.displayName}</Text>
+        {person.city && <Text style={styles.resultCity}>{person.city}</Text>}
+      </View>
+      {isInCircle ? (
+        <View style={styles.inCircleBadge}>
+          <Text style={styles.inCircleBadgeText}>In circle</Text>
+        </View>
+      ) : action()}
+    </View>
+  );
+};
 
 // ── Calendar match card ────────────────────────────────
 const CalendarMatchCard = ({
@@ -291,15 +347,29 @@ const calStyles = StyleSheet.create({
   hint: { fontSize: 11, color: Colors.textLight, fontFamily: Typography.fontFamily, textAlign: 'center', fontStyle: 'italic' },
 });
 
-// ── Add to circle modal ────────────────────────────────
-const AddToCircleModal = ({
-  visible, person, mode = 'roots', onClose, onAdd,
+// ── Add person modal (four-path) ──────────────────────
+const AddPersonModal = ({
+  visible,
+  person,
+  mode,
+  onClose,
+  onAdd,
+  onAccept,
+  onDecline,
 }: {
   visible: boolean;
-  person: { id?: string; displayName: string; avatarColour: string; city?: string } | null;
-  mode?: 'roots' | 'offline';
+  person: {
+    id?: string;
+    displayName: string;
+    avatarColour?: string;
+    city?: string;
+    requestId?: string;
+  } | null;
+  mode: AddPersonMode;
   onClose: () => void;
   onAdd: (payload: any) => void;
+  onAccept?: (requestId: string, payload: { relation: string; layer: string; contactFrequency: number; since?: string }) => void;
+  onDecline?: (requestId: string) => void;
 }) => {
   const [relation, setRelation] = useState('');
   const [layer, setLayer] = useState<DunbarLayer>('active');
@@ -309,15 +379,18 @@ const AddToCircleModal = ({
   const [offlinePhone, setOfflinePhone] = useState('');
   const [offlineDob, setOfflineDob] = useState('');
 
-  const RELATIONS = ['Best friend', 'Friend', 'Close friend', 'Family', 'Partner', 'Colleague', 'Mentor', 'Neighbour', 'Acquaintance'];
-  const FREQUENCY_OPTIONS = [
-    { label: 'Every few days', days: 3 },
-    { label: 'Weekly', days: 7 },
-    { label: 'Fortnightly', days: 14 },
-    { label: 'Monthly', days: 30 },
-    { label: 'Every few months', days: 90 },
-  ];
+  const reset = () => {
+    setRelation('');
+    setLayer('active');
+    setSince('');
+    setContactFrequency(14);
+    setOfflineName('');
+    setOfflinePhone('');
+    setOfflineDob('');
+  };
 
+  // Parses DD/MM or DD/MM/YYYY → ISO string, using 1900 as sentinel year if omitted.
+  // Returns null if blank (optional field), or 'invalid' for bad input.
   const parseDob = (raw: string): string | null | 'invalid' => {
     const trimmed = raw.trim();
     if (!trimmed) return null;
@@ -330,57 +403,238 @@ const AddToCircleModal = ({
     if (month < 1 || month > 12) return 'invalid';
     const date = new Date(year, month - 1, day);
     if (date.getDate() !== day || date.getMonth() !== month - 1) return 'invalid';
-    return `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   };
 
+  const handleClose = () => { reset(); onClose(); };
+
   const handleAdd = () => {
-    if (!relation) { Alert.alert('Missing info', 'Please select a relation type.'); return; }
-    if (mode === 'offline') {
+    if (!relation) {
+      Alert.alert('Missing info', 'Please select a relation type.');
+      return;
+    }
+    if (mode === 'roots') {
+      onAdd({
+        connectedUserId: person!.id,
+        relation,
+        layer,
+        since: since || undefined,
+        contactFrequency,
+      });
+    } else if (mode === 'offline') {
       const name = offlineName.trim() || person!.displayName;
-      if (!name) { Alert.alert('Missing info', 'Please enter a name.'); return; }
+      if (!name) {
+        Alert.alert('Missing info', 'Please enter a name.');
+        return;
+      }
       const dobResult = parseDob(offlineDob);
-      if (dobResult === 'invalid') { Alert.alert('Invalid date', 'Please enter a date as DD/MM or DD/MM/YYYY.'); return; }
-      onAdd({ offlineName: name, offlinePhone: offlinePhone.trim() || undefined, offlineDob: dobResult ?? undefined, relation, layer, since: since || undefined, contactFrequency });
-    } else {
-      onAdd({ connectedUserId: person!.id, relation, layer, since: since || undefined, contactFrequency });
+      if (dobResult === 'invalid') {
+        Alert.alert('Invalid date', 'Please enter a date as DD/MM or DD/MM/YYYY — e.g. 14/06 or 14/06/1985.');
+        return;
+      }
+      onAdd({
+        offlineName: name,
+        offlinePhone: offlinePhone.trim() || undefined,
+        offlineDob: dobResult ?? undefined,
+        relation,
+        layer,
+        since: since || undefined,
+        contactFrequency,
+      });
     }
   };
 
-  const reset = () => {
-    setRelation(''); setLayer('active'); setSince(''); setContactFrequency(14);
-    setOfflineName(''); setOfflinePhone(''); setOfflineDob('');
-  };
+  const avatarColour = person?.avatarColour ?? Colors.terracotta;
+  const displayName = person?.displayName ?? '';
 
-  return (
-    <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => { reset(); onClose(); }}>
-      <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
-        <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={() => { reset(); onClose(); }}>
-            <Text style={styles.modalCancel}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Add to circle</Text>
-          <TouchableOpacity onPress={handleAdd}>
-            <Text style={styles.modalSave}>Add</Text>
-          </TouchableOpacity>
-        </View>
-        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {mode === 'roots' && person && (
+  // ── Pending sent ────────────────────────────────────
+  if (mode === 'pending_sent') {
+    return (
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={handleClose}>
+              <Text style={styles.modalCancel}>Close</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Request sent</Text>
+            <View style={{ width: 50 }} />
+          </View>
+          <View style={[styles.modalContent, { justifyContent: 'flex-start' }]}>
             <View style={styles.personSummary}>
-              <View style={[styles.personAvatar, { backgroundColor: person.avatarColour }]}>
-                <Text style={styles.personAvatarText}>{person.displayName.charAt(0).toUpperCase()}</Text>
+              <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
+                <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
               </View>
               <View>
-                <Text style={styles.personName}>{person.displayName}</Text>
+                <Text style={styles.personName}>{displayName}</Text>
+                {person?.city && <Text style={styles.personCity}>{person.city}</Text>}
+              </View>
+            </View>
+            <Text style={styles.pendingHint}>
+              Your connection request is waiting for {displayName} to accept. You'll be notified when they do.
+            </Text>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // ── Pending received — full form before accepting ───
+  if (mode === 'pending_received') {
+    const handleAcceptWithForm = () => {
+      if (!relation) {
+        Alert.alert('Missing info', 'Please select a relation type.');
+        return;
+      }
+      onAccept?.(person!.requestId!, { relation, layer, contactFrequency, since: since || undefined });
+      reset();
+      onClose();
+    };
+
+    return (
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => { onDecline?.(person!.requestId!); handleClose(); }}>
+              <Text style={[styles.modalCancel, { color: Colors.textLight }]}>Decline</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Accept request</Text>
+            <TouchableOpacity onPress={handleAcceptWithForm}>
+              <Text style={styles.modalSave}>Accept</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            style={styles.modalContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View style={styles.personSummary}>
+              <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
+                <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.personName}>{displayName}</Text>
+                {person?.city && <Text style={styles.personCity}>{person.city}</Text>}
+                <Text style={[styles.personCity, { marginTop: 4 }]}>
+                  wants to connect with you
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.sectionLabel}>How do you know them?</Text>
+            <View style={styles.chipGrid}>
+              {RELATIONS.map(r => (
+                <TouchableOpacity
+                  key={r}
+                  style={[styles.chip, relation === r && styles.chipActive]}
+                  onPress={() => setRelation(r)}
+                >
+                  <Text style={[styles.chipText, relation === r && styles.chipTextActive]}>{r}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TextInput
+              style={[styles.input, { marginTop: Spacing.sm }]}
+              value={RELATIONS.includes(relation) ? '' : relation}
+              onChangeText={setRelation}
+              placeholder="Or type your own…"
+              placeholderTextColor={Colors.textLight}
+            />
+
+            <Text style={styles.sectionLabel}>Add to which layer?</Text>
+            {DunbarLayers.map(l => (
+              <TouchableOpacity
+                key={l.key}
+                style={[styles.layerOption, layer === l.key && styles.layerOptionActive]}
+                onPress={() => setLayer(l.key as DunbarLayer)}
+              >
+                <View style={styles.layerRadio}>
+                  {layer === l.key && <View style={styles.layerRadioInner} />}
+                </View>
+                <View style={styles.layerText}>
+                  <Text style={[styles.layerLabel, layer === l.key && styles.layerLabelActive]}>
+                    {l.label}<Text style={styles.layerLimit}> · up to {l.limit}</Text>
+                  </Text>
+                  <Text style={styles.layerDescModalText}>{l.description}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+
+            <Text style={styles.sectionLabel}>Friends since (optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={since}
+              onChangeText={setSince}
+              placeholder="e.g. 2015 or uni days"
+              placeholderTextColor={Colors.textLight}
+            />
+
+            <Text style={styles.sectionLabel}>How often do you want to stay in touch?</Text>
+            <View style={styles.chipGrid}>
+              {FREQUENCY_OPTIONS.map(f => (
+                <TouchableOpacity
+                  key={f.days}
+                  style={[styles.chip, contactFrequency === f.days && styles.chipActive]}
+                  onPress={() => setContactFrequency(f.days)}
+                >
+                  <Text style={[styles.chipText, contactFrequency === f.days && styles.chipTextActive]}>
+                    {f.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // ── Roots user or Offline contact (shared form) ─────
+  const title = mode === 'offline' ? 'Add to circle' : 'Send request';
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={handleClose}
+    >
+      <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+        <View style={styles.modalHeader}>
+          <TouchableOpacity onPress={handleClose}>
+            <Text style={styles.modalCancel}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={styles.modalTitle}>{title}</Text>
+          <TouchableOpacity onPress={handleAdd}>
+            <Text style={styles.modalSave}>{mode === 'offline' ? 'Add' : 'Send'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {mode === 'roots' && person && (
+            <View style={styles.personSummary}>
+              <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
+                <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View>
+                <Text style={styles.personName}>{displayName}</Text>
                 {person.city && <Text style={styles.personCity}>{person.city}</Text>}
               </View>
             </View>
           )}
+
           {mode === 'offline' && (
             <>
               <Text style={styles.sectionLabel}>Their name</Text>
               <TextInput
                 style={styles.input}
-                value={offlineName || person?.displayName || ''}
+                value={offlineName || displayName}
                 onChangeText={setOfflineName}
                 placeholder="Full name"
                 placeholderTextColor={Colors.textLight}
@@ -405,14 +659,22 @@ const AddToCircleModal = ({
                 keyboardType="numbers-and-punctuation"
               />
               <Text style={styles.offlineHint}>
-                Year is optional — day and month is enough for birthday reminders. They'll get an invite to join Roots once you save.
+                Year is optional — day and month is enough for birthday reminders.
+              </Text>
+              <Text style={[styles.offlineHint, { marginTop: Spacing.md }]}>
+                They'll receive an invite once you save and can connect with you automatically when they join.
               </Text>
             </>
           )}
+
           <Text style={styles.sectionLabel}>Relation</Text>
           <View style={styles.chipGrid}>
             {RELATIONS.map(r => (
-              <TouchableOpacity key={r} style={[styles.chip, relation === r && styles.chipActive]} onPress={() => setRelation(r)}>
+              <TouchableOpacity
+                key={r}
+                style={[styles.chip, relation === r && styles.chipActive]}
+                onPress={() => setRelation(r)}
+              >
                 <Text style={[styles.chipText, relation === r && styles.chipTextActive]}>{r}</Text>
               </TouchableOpacity>
             ))}
@@ -424,9 +686,14 @@ const AddToCircleModal = ({
             placeholder="Or type your own…"
             placeholderTextColor={Colors.textLight}
           />
+
           <Text style={styles.sectionLabel}>Circle layer</Text>
           {DunbarLayers.map(l => (
-            <TouchableOpacity key={l.key} style={[styles.layerOption, layer === l.key && styles.layerOptionActive]} onPress={() => setLayer(l.key as DunbarLayer)}>
+            <TouchableOpacity
+              key={l.key}
+              style={[styles.layerOption, layer === l.key && styles.layerOptionActive]}
+              onPress={() => setLayer(l.key as DunbarLayer)}
+            >
               <View style={styles.layerRadio}>
                 {layer === l.key && <View style={styles.layerRadioInner} />}
               </View>
@@ -438,6 +705,7 @@ const AddToCircleModal = ({
               </View>
             </TouchableOpacity>
           ))}
+
           <Text style={styles.sectionLabel}>Friends since (optional)</Text>
           <TextInput
             style={styles.input}
@@ -446,14 +714,22 @@ const AddToCircleModal = ({
             placeholder="e.g. 2015 or uni days"
             placeholderTextColor={Colors.textLight}
           />
+
           <Text style={styles.sectionLabel}>How often do you want to stay in touch?</Text>
           <View style={styles.chipGrid}>
             {FREQUENCY_OPTIONS.map(f => (
-              <TouchableOpacity key={f.days} style={[styles.chip, contactFrequency === f.days && styles.chipActive]} onPress={() => setContactFrequency(f.days)}>
-                <Text style={[styles.chipText, contactFrequency === f.days && styles.chipTextActive]}>{f.label}</Text>
+              <TouchableOpacity
+                key={f.days}
+                style={[styles.chip, contactFrequency === f.days && styles.chipActive]}
+                onPress={() => setContactFrequency(f.days)}
+              >
+                <Text style={[styles.chipText, contactFrequency === f.days && styles.chipTextActive]}>
+                  {f.label}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
+
           <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
@@ -468,7 +744,7 @@ export default function CircleScreen() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [selectedPerson, setSelectedPerson] = useState<any>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [modalMode, setModalMode] = useState<'roots' | 'offline'>('roots');
+  const [modalMode, setModalMode] = useState<AddPersonMode>('roots');
   const [syncResult, setSyncResult] = useState<{ matched: any[]; suggestions: any[]; total: number } | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isCalendarSyncing, setIsCalendarSyncing] = useState(false);
@@ -478,11 +754,14 @@ export default function CircleScreen() {
   const { data: allConnections = [], isLoading: loadingAll } = useConnections();
   const { data: filtered = [], isLoading: loadingFiltered } = useConnections(activeLayer ?? undefined);
   const { data: searchResults = [], isLoading: isSearching } = useUserSearch(query);
+  const { data: incomingRequests = [] } = useConnectionRequests();
   const { mutate: addConnection } = useAddConnection();
   const { mutate: syncContacts } = useSyncContacts();
   const { mutate: confirmMatch } = useConfirmContactMatch();
   const { mutate: confirmCalendarMatch } = useConfirmCalendarMatch();
   const { mutate: syncCalendar } = useSyncCalendar();
+  const { mutate: acceptRequest } = useAcceptRequest();
+  const { mutate: declineRequest } = useDeclineRequest();
 
   const isLoading = loadingAll || loadingFiltered;
   const searchMode = searchFocused || query.length > 0;
@@ -503,7 +782,7 @@ export default function CircleScreen() {
     setActiveLayer(prev => prev === layer ? null : layer);
   };
 
-  // ── Sync contacts ──────────────────────────────────
+  // ── Sync contacts ────────────────────────────────────
   const handleSyncContacts = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== 'granted') {
@@ -550,7 +829,7 @@ export default function CircleScreen() {
     } : prev);
   };
 
-  // ── Sync calendar ──────────────────────────────────
+  // ── Sync calendar ────────────────────────────────────
   const handleSyncCalendar = async () => {
     const { status } = await Calendar.requestCalendarPermissionsAsync();
     if (status !== 'granted') {
@@ -599,13 +878,30 @@ export default function CircleScreen() {
     } : prev);
   };
 
-  // ── Add connection ─────────────────────────────────
+  // ── Add / accept / decline ────────────────────────────
   const handleAdd = (person: any) => {
     setSelectedPerson(person);
-    setModalMode('roots');
+    const status = person.status;
+    if (status === 'pending_sent') setModalMode('pending_sent');
+    else if (status === 'pending_received') setModalMode('pending_received');
+    else setModalMode('roots');
     setModalVisible(true);
   };
 
+  // Opens modal for an incoming request in pending_received mode
+  const handleOpenRequest = (request: any) => {
+    setSelectedPerson({
+      id: request.fromUser.id,
+      displayName: request.fromUser.displayName,
+      avatarColour: request.fromUser.avatarColour,
+      city: request.fromUser.city,
+      requestId: request.id,
+    });
+    setModalMode('pending_received');
+    setModalVisible(true);
+  };
+
+  // Opens modal in offline mode, pre-filling name from search query
   const handleAddOffline = (name: string) => {
     setSelectedPerson({ displayName: name, avatarColour: Colors.tan });
     setModalMode('offline');
@@ -631,6 +927,23 @@ export default function CircleScreen() {
     });
   };
 
+  const handleAccept = (requestId: string, payload: { relation: string; layer: string; contactFrequency: number; since?: string }) => {
+    acceptRequest({ id: requestId, ...payload }, {
+      onSuccess: () => {
+        Alert.alert('Connected', `${selectedPerson?.displayName} has been added to your circle.`);
+        setModalVisible(false);
+        setSelectedPerson(null);
+      },
+      onError: () => Alert.alert('Error', 'Could not accept request. Please try again.'),
+    });
+  };
+
+  const handleDecline = (requestId: string) => {
+    declineRequest(requestId, {
+      onError: () => Alert.alert('Error', 'Could not decline request. Please try again.'),
+    });
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
 
@@ -638,6 +951,36 @@ export default function CircleScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Circle</Text>
       </View>
+
+      {/* Incoming connection requests */}
+      {incomingRequests.length > 0 && (
+        <View style={styles.requestsSection}>
+          <Text style={styles.requestsLabel}>
+            {incomingRequests.length === 1 ? '1 connection request' : `${incomingRequests.length} connection requests`}
+          </Text>
+          {(incomingRequests as any[]).map((req: any) => (
+            <TouchableOpacity
+              key={req.id}
+              style={styles.requestRow}
+              onPress={() => handleOpenRequest(req)}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.resultAvatar, { backgroundColor: req.fromUser.avatarColour }]}>
+                <Text style={styles.resultAvatarText}>
+                  {req.fromUser.displayName.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+              <View style={styles.resultInfo}>
+                <Text style={styles.resultName}>{req.fromUser.displayName}</Text>
+                {req.fromUser.city ? <Text style={styles.resultCity}>{req.fromUser.city}</Text> : null}
+              </View>
+              <View style={styles.requestChevron}>
+                <Text style={styles.requestChevronText}>›</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {/* Pinned search bar */}
       <View style={styles.searchWrap}>
@@ -837,12 +1180,14 @@ export default function CircleScreen() {
         </ScrollView>
       )}
 
-      <AddToCircleModal
+      <AddPersonModal
         visible={modalVisible}
         person={selectedPerson}
         mode={modalMode}
         onClose={() => { setModalVisible(false); setSelectedPerson(null); }}
         onAdd={handleConfirmAdd}
+        onAccept={handleAccept}
+        onDecline={handleDecline}
       />
     </SafeAreaView>
   );
@@ -862,6 +1207,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textDark,
   },
+
+  // Incoming requests section
+  requestsSection: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 0.5,
+    borderColor: Colors.terracotta + '44',
+    overflow: 'hidden',
+  },
+  requestsLabel: {
+    fontSize: Typography.label,
+    color: Colors.terracotta,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontFamily: Typography.fontFamily,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
+  },
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderTopWidth: 0.5,
+    borderTopColor: Colors.tan,
+    gap: Spacing.md,
+  },
+  requestChevron: { paddingLeft: Spacing.sm },
+  requestChevronText: { fontSize: 22, color: Colors.textLight, lineHeight: 26 },
 
   // Search bar
   searchWrap: {
@@ -968,6 +1345,16 @@ const styles = StyleSheet.create({
   inCircleBadgeText: { fontSize: 12, color: Colors.terracotta, fontWeight: '600', fontFamily: Typography.fontFamily },
   addBtn: { backgroundColor: Colors.terracotta, borderRadius: BorderRadius.pill, paddingHorizontal: 14, paddingVertical: 6 },
   addBtnText: { fontSize: 13, color: Colors.white, fontWeight: '700', fontFamily: Typography.fontFamily },
+  acceptBtn: { backgroundColor: Colors.sage, borderRadius: BorderRadius.pill, paddingHorizontal: 14, paddingVertical: 6 },
+  pendingBadge: {
+    borderRadius: BorderRadius.pill,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 4,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    backgroundColor: Colors.card,
+  },
+  pendingBadgeText: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily },
 
   // Invite card
   inviteCard: { marginTop: Spacing.lg },
@@ -1010,7 +1397,6 @@ const styles = StyleSheet.create({
   dismissBtn: { flex: 1, borderWidth: 0.5, borderColor: Colors.tan, borderRadius: BorderRadius.sm, padding: Spacing.sm, alignItems: 'center' },
   dismissBtnText: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily },
 
-
   // Empty circle state
   empty: { alignItems: 'center', paddingTop: Spacing.xl, paddingBottom: Spacing.xl, paddingHorizontal: Spacing.lg },
   emptyTitle: { fontSize: Typography.heading.sm, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark, marginBottom: Spacing.sm, textAlign: 'center' },
@@ -1018,7 +1404,7 @@ const styles = StyleSheet.create({
   emptyBtn: { backgroundColor: Colors.terracotta, borderRadius: BorderRadius.sm, paddingHorizontal: Spacing.xl, paddingVertical: Spacing.md },
   emptyBtnText: { fontSize: Typography.body, color: Colors.white, fontWeight: '700', fontFamily: Typography.fontFamily },
 
-  // Add to circle modal
+  // Modal
   modalContainer: { flex: 1, backgroundColor: Colors.background },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderBottomWidth: 0.5, borderBottomColor: Colors.tan },
   modalCancel: { fontSize: Typography.body, color: Colors.textLight, fontFamily: Typography.fontFamily },
@@ -1030,6 +1416,14 @@ const styles = StyleSheet.create({
   personAvatarText: { fontSize: 20, color: Colors.white, fontWeight: '600' },
   personName: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
   personCity: { fontSize: 13, color: Colors.textLight, fontFamily: Typography.fontFamily },
+  pendingHint: {
+    fontSize: Typography.body,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 22,
+    marginTop: Spacing.lg,
+    textAlign: 'center',
+  },
   chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.md },
   chip: { borderWidth: 0.5, borderColor: Colors.tan, borderRadius: BorderRadius.pill, paddingHorizontal: 14, paddingVertical: 7 },
   chipActive: { backgroundColor: Colors.terracotta + '18', borderColor: Colors.terracotta },

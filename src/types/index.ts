@@ -44,6 +44,10 @@ export interface Connection {
   lastContactAt: string;      // ISO datetime
   nudge?: string;             // AI-generated nudge text, if any
   createdAt: string;
+  status: 'active' | 'pending' | 'offline';
+  offlineName?: string;
+  offlinePhone?: string;
+  inviteSentAt?: string;
   // Populated from join
   connectedUser?: User;
 }

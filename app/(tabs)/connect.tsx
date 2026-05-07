@@ -1,3 +1,17 @@
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  DEAD FILE — DO NOT USE                                         ║
+// ║                                                                  ║
+// ║  This tab has been removed from the navigation (_layout.tsx     ║
+// ║  sets href: null). All functionality from this file has been    ║
+// ║  merged into app/(tabs)/circle.tsx:                             ║
+// ║    • AddPersonModal (4-mode)                                    ║
+// ║    • Incoming connection requests section                        ║
+// ║    • handleOpenRequest / handleAccept / handleDecline           ║
+// ║    • useConnectionRequests / useAcceptRequest / useDeclineRequest║
+// ║                                                                  ║
+// ║  Kept here for reference only. Safe to delete once stable.      ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
 import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
