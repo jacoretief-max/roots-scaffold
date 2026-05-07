@@ -55,6 +55,51 @@ const nameSimilarity = (a, b) => {
   return (maxLen - levenshtein(a, b)) / maxLen;
 };
 
+// Smarter name comparison that handles word order, initials, and partial matches.
+// Returns a score 0–1. Combines character-level Levenshtein with word-level overlap.
+const nameScore = (rawA, rawB) => {
+  const clean = (s) => s.toLowerCase().replace(/[^a-z\s]/g, '').trim();
+  const a = clean(rawA);
+  const b = clean(rawB);
+  if (!a || !b) return 0;
+
+  // Exact match
+  if (a === b) return 1.0;
+
+  // Overall Levenshtein score
+  const overall = nameSimilarity(a, b);
+
+  // Also try reversed order (e.g. "Botha Jan" vs "Jan Botha")
+  const aWords = a.split(/\s+/).filter(w => w.length > 1);
+  const bWords = b.split(/\s+/).filter(w => w.length > 1);
+  const aReversed = [...aWords].reverse().join(' ');
+  const bReversed = [...bWords].reverse().join(' ');
+  const reversedScore = Math.max(
+    nameSimilarity(a, bReversed),
+    nameSimilarity(aReversed, b),
+  );
+
+  // Word-level overlap: how many words from one name appear in the other
+  // (accounts for initials, nicknames, middle names)
+  const wordOverlapScore = (() => {
+    if (aWords.length === 0 || bWords.length === 0) return 0;
+    let matchCount = 0;
+    for (const aw of aWords) {
+      for (const bw of bWords) {
+        // Exact word match or one is initial of the other
+        if (aw === bw) { matchCount++; break; }
+        if (aw.length === 1 && bw.startsWith(aw)) { matchCount += 0.5; break; }
+        if (bw.length === 1 && aw.startsWith(bw)) { matchCount += 0.5; break; }
+        // High similarity on individual words (handles "Jan" / "Jannie")
+        if (nameSimilarity(aw, bw) >= 0.80) { matchCount += 0.8; break; }
+      }
+    }
+    return matchCount / Math.max(aWords.length, bWords.length);
+  })();
+
+  return Math.max(overall, reversedScore, wordOverlapScore * 0.95);
+};
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
@@ -801,20 +846,8 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
         break; // Phone match is definitive — stop looking
       }
 
-      // Fall back to name similarity
-      const nameParts = connectionName.split(' ');
-      const reversedName = nameParts.length === 2
-        ? `${nameParts[1]}, ${nameParts[0]}`
-        : connectionName;
-
-      const score = Math.max(
-        nameSimilarity(contactName, connectionName),
-        nameSimilarity(contactName, reversedName),
-        nameSimilarity(
-          contactName.replace(',', '').split(' ').reverse().join(' '),
-          connectionName
-        )
-      );
+      // Fall back to name similarity (smarter multi-strategy scorer)
+      const score = nameScore(contactName, connectionName);
 
       if (score > bestScore) {
         bestScore = score;
@@ -825,7 +858,7 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
     if (!bestMatch) continue;
 
     if (bestMatch.score === 1.0) {
-      // Perfect match — sync automatically
+      // Perfect match (phone or exact name) — sync automatically
       await db.query(
         'UPDATE users SET phone_number = $1 WHERE id = $2',
         [bestMatch.contact.phoneNumber ?? connection.phone_number, connection.connected_user_id]
@@ -836,8 +869,8 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
         phoneNumber: bestMatch.contact.phoneNumber,
         score: bestMatch.score,
       });
-    } else if (bestMatch.score >= 0.75) {
-      // Fuzzy match — suggest to user
+    } else if (bestMatch.score >= 0.65) {
+      // Fuzzy match — present to user to confirm (lowered from 0.75 → 0.65)
       suggestions.push({
         connectionId: connection.id,
         connectedUserId: connection.connected_user_id,
