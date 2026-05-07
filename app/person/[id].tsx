@@ -8,7 +8,7 @@ import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
-import { useConnection, useLogContact, useRemoveConnection, useUpdateConnection, useContactEvents, useCreateContactEvent } from '@/api/hooks';
+import { useConnection, useLogContact, useRemoveConnection, useUpdateConnection, useContactEvents, useCreateContactEvent, useGenerateInvite } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers, Shadows } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
@@ -478,6 +478,8 @@ export default function PersonScreen() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const { mutate: generateInvite, isPending: isInviting } = useGenerateInvite();
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -497,9 +499,15 @@ export default function PersonScreen() {
     );
   }
 
-  const displayName = connection.connectedUser?.displayName ?? 'Unknown';
-  const avatarColour = connection.connectedUser?.avatarColour ?? Colors.terracotta;
+  const status = (connection as any).status ?? 'active';
+  const isPending = status === 'pending';
+  const isOffline = status === 'offline';
+
+  const displayName = connection.connectedUser?.displayName ?? (connection as any).offlineName ?? 'Unknown';
+  const avatarColour = isOffline ? Colors.tan : (connection.connectedUser?.avatarColour ?? Colors.terracotta);
   const city = connection.connectedUser?.city ?? '';
+  const phoneNumber = connection.connectedUser?.phoneNumber ?? (connection as any).offlinePhone;
+  const inviteSentAt = (connection as any).inviteSentAt;
   const score = connection.score ?? 80;
   const layer = DunbarLayers.find(l => l.key === connection.layer);
 
@@ -616,6 +624,35 @@ export default function PersonScreen() {
     );
   };
 
+  const handleSendInvite = () => {
+    generateInvite(id, {
+      onSuccess: ({ inviteUrl }) => {
+        const msg = `Hi! I've added you to my Roots circle. Join me here: ${inviteUrl}`;
+        const waUrl = `whatsapp://send?${phoneNumber ? `phone=${phoneNumber.replace(/\D/g, '')}&` : ''}text=${encodeURIComponent(msg)}`;
+        Linking.canOpenURL('whatsapp://').then(supported => {
+          if (supported) Linking.openURL(waUrl);
+          else Linking.openURL(`sms:${phoneNumber ?? ''}?body=${encodeURIComponent(msg)}`);
+        });
+      },
+      onError: () => Alert.alert('Error', 'Could not generate invite link. Please try again.'),
+    });
+  };
+
+  const handleWithdrawRequest = () => {
+    Alert.alert(
+      'Withdraw request?',
+      `This will remove ${displayName} from your circle.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Withdraw',
+          style: 'destructive',
+          onPress: () => removeConnection(id, { onSuccess: () => router.back() }),
+        },
+      ]
+    );
+  };
+
   const handleSaveEdit = (payload: { layer: DunbarLayer; relation: string; contactFrequency: number; alwaysInTouch: boolean }) => {
     updateConnection(
       { id, ...payload } as any,
@@ -636,12 +673,15 @@ export default function PersonScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>← Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.editBtn}
-          onPress={() => setEditVisible(true)}
-        >
-          <Text style={styles.editBtnText}>Edit</Text>
-        </TouchableOpacity>
+        {isPending ? (
+          <TouchableOpacity style={styles.editBtn} onPress={handleWithdrawRequest}>
+            <Text style={[styles.editBtnText, { color: Colors.textLight }]}>Withdraw</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity style={styles.editBtn} onPress={() => setEditVisible(true)}>
+            <Text style={styles.editBtnText}>Edit</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
@@ -649,15 +689,25 @@ export default function PersonScreen() {
         {/* Profile card */}
         <View style={styles.profileCard}>
           <View style={[styles.avatar, { backgroundColor: avatarColour }]}>
-            <Text style={styles.avatarText}>
+            <Text style={[styles.avatarText, isOffline && { color: Colors.textLight }]}>
               {displayName.charAt(0).toUpperCase()}
             </Text>
           </View>
           <Text style={styles.displayName}>{displayName}</Text>
           {city ? <Text style={styles.city}>{city}</Text> : null}
 
-          {/* Layer + relation badges */}
+          {/* Status / layer / relation badges */}
           <View style={styles.badges}>
+            {isPending && (
+              <View style={[styles.layerBadge, { backgroundColor: Colors.tan }]}>
+                <Text style={[styles.layerBadgeText, { color: Colors.textLight }]}>Request pending</Text>
+              </View>
+            )}
+            {isOffline && (
+              <View style={[styles.layerBadge, { backgroundColor: Colors.tan }]}>
+                <Text style={[styles.layerBadgeText, { color: Colors.textLight }]}>Not on Roots</Text>
+              </View>
+            )}
             {layer && (
               <View style={styles.layerBadge}>
                 <Text style={styles.layerBadgeText}>{layer.label}</Text>
@@ -675,43 +725,45 @@ export default function PersonScreen() {
           )}
         </View>
 
-        {/* Connection health */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Connection health</Text>
-
-          <View style={styles.healthCard}>
-            {/* Score */}
-            <View style={styles.scoreRow}>
-              <Text style={styles.scoreLabel}>Score</Text>
-              <Text style={[styles.scoreNum, { color: scoreColor }]}>{score}</Text>
-            </View>
-            <View style={styles.scoreBarBg}>
-              <View style={[
-                styles.scoreBarFill,
-                { width: `${score}%` as any, backgroundColor: scoreColor }
-              ]} />
-            </View>
-
-            <View style={styles.divider} />
-
-            {/* Last contact */}
-            <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Last contact</Text>
-              <Text style={styles.metaValue}>{lastContactText()}</Text>
-            </View>
-
-            {/* Contact frequency */}
-            <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Target frequency</Text>
-              <Text style={styles.metaValue}>
-                Every {connection.contactFrequency ?? 14} days
+        {/* Pending banner */}
+        {isPending && (
+          <View style={styles.section}>
+            <View style={styles.pendingBanner}>
+              <Text style={styles.pendingBannerTitle}>Waiting for them to accept</Text>
+              <Text style={styles.pendingBannerDesc}>
+                {displayName} will get a notification. Once they accept, their health score and contact timeline will appear here.
               </Text>
             </View>
           </View>
-        </View>
+        )}
 
-        {/* AI nudge */}
-        {connection.nudge && (
+        {/* Connection health — active and offline only */}
+        {!isPending && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Connection health</Text>
+            <View style={styles.healthCard}>
+              <View style={styles.scoreRow}>
+                <Text style={styles.scoreLabel}>Score</Text>
+                <Text style={[styles.scoreNum, { color: scoreColor }]}>{score}</Text>
+              </View>
+              <View style={styles.scoreBarBg}>
+                <View style={[styles.scoreBarFill, { width: `${score}%` as any, backgroundColor: scoreColor }]} />
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.metaRow}>
+                <Text style={styles.metaLabel}>Last contact</Text>
+                <Text style={styles.metaValue}>{lastContactText()}</Text>
+              </View>
+              <View style={styles.metaRow}>
+                <Text style={styles.metaLabel}>Target frequency</Text>
+                <Text style={styles.metaValue}>Every {connection.contactFrequency ?? 14} days</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* AI nudge — active and offline only */}
+        {!isPending && connection.nudge && (
           <View style={styles.section}>
             <View style={styles.nudgeCard}>
               <Text style={styles.nudgeLabel}>Nudge</Text>
@@ -720,18 +772,70 @@ export default function PersonScreen() {
           </View>
         )}
 
-        {/* Timezone availability */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Reach out</Text>
-          <TimezoneCard
-            city={city}
-            displayName={displayName}
-            phoneNumber={connection.connectedUser?.phoneNumber}
-          />
-        </View>
+        {/* Timezone card — active Roots users with a known city only */}
+        {!isPending && !isOffline && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Reach out</Text>
+            <TimezoneCard
+              city={city}
+              displayName={displayName}
+              phoneNumber={phoneNumber}
+            />
+          </View>
+        )}
 
-        {/* Actions */}
-        <View style={styles.section}>
+        {/* Offline reach out — call/WhatsApp/invite directly */}
+        {isOffline && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Reach out</Text>
+            <View style={styles.offlineActions}>
+              {phoneNumber ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.offlineActionBtn}
+                    onPress={() => Linking.openURL(`tel:${phoneNumber}`)}
+                  >
+                    <Text style={styles.offlineActionBtnText}>📞  Call</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.offlineActionBtn}
+                    onPress={() => {
+                      const clean = phoneNumber.replace(/\D/g, '');
+                      Linking.canOpenURL('whatsapp://').then(supported => {
+                        if (supported) Linking.openURL(`whatsapp://send?phone=${clean}`);
+                        else Alert.alert('WhatsApp not installed');
+                      });
+                    }}
+                  >
+                    <Text style={styles.offlineActionBtnText}>💬  WhatsApp</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <Text style={styles.offlineNoPhone}>No phone number saved for {displayName}.</Text>
+              )}
+              <TouchableOpacity
+                style={[styles.offlineActionBtn, styles.offlineActionBtnInvite]}
+                onPress={handleSendInvite}
+                disabled={isInviting}
+              >
+                {isInviting
+                  ? <ActivityIndicator color={Colors.terracotta} />
+                  : <Text style={[styles.offlineActionBtnText, { color: Colors.terracotta }]}>
+                      {inviteSentAt ? '📨  Resend invite' : '📨  Send invite to join Roots'}
+                    </Text>
+                }
+              </TouchableOpacity>
+              {inviteSentAt && (
+                <Text style={styles.inviteSentHint}>
+                  Invite sent {dayjs(inviteSentAt).fromNow()}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Log contact — active and offline only */}
+        {!isPending && <View style={styles.section}>
           <Text style={styles.sectionTitle}>Log</Text>
 
           {showNoteInput ? (
@@ -803,10 +907,10 @@ export default function PersonScreen() {
               }
             </TouchableOpacity>
           )}
-        </View>
+        </View>}
 
-        {/* Contact timeline */}
-        <View style={styles.section}>
+        {/* Contact timeline — active and offline only */}
+        {!isPending && <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recent moments</Text>
           {eventsLoading && (
             <ActivityIndicator color={Colors.terracotta} />
@@ -842,7 +946,7 @@ export default function PersonScreen() {
               </View>
             </View>
           ))}
-        </View>
+        </View>}
 
         <View style={{ height: 100 }} />
       </ScrollView>
@@ -891,6 +995,68 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 40,
     fontFamily: Typography.fontFamily,
+  },
+
+  // Pending banner
+  pendingBanner: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.lg,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderStyle: 'dashed',
+  },
+  pendingBannerTitle: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '700',
+    color: Colors.textLight,
+    marginBottom: Spacing.xs,
+  },
+  pendingBannerDesc: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 19,
+  },
+
+  // Offline reach out
+  offlineActions: {
+    gap: Spacing.sm,
+  },
+  offlineActionBtn: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    alignItems: 'center',
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+  },
+  offlineActionBtnInvite: {
+    borderColor: Colors.terracotta + '44',
+    backgroundColor: Colors.terracotta + '08',
+  },
+  offlineActionBtnText: {
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+    color: Colors.textDark,
+  },
+  offlineNoPhone: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    fontStyle: 'italic',
+    textAlign: 'center',
+    paddingVertical: Spacing.sm,
+  },
+  inviteSentHint: {
+    fontSize: 11,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginTop: Spacing.xs,
   },
 
   // Profile card
