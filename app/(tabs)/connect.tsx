@@ -7,84 +7,205 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Contacts from 'expo-contacts';
 import * as Calendar from 'expo-calendar';
-import { useUserSearch, useAddConnection, useSyncContacts, useConfirmContactMatch, useConfirmCalendarMatch, useSyncCalendar } from '@/api/hooks';
+import {
+  useUserSearch, useAddConnection, useSyncContacts,
+  useConfirmContactMatch, useConfirmCalendarMatch, useSyncCalendar,
+  useAcceptRequest, useDeclineRequest,
+} from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
 
-// ── Add to circle modal ────────────────────────────────
-const AddToCircleModal = ({
+// ── Add person modal (three-path) ─────────────────────
+//
+// mode = 'roots'            → found Roots user, send connection request
+// mode = 'offline'          → not on Roots, add as offline contact + invite
+// mode = 'pending_sent'     → request already sent, show pending state
+// mode = 'pending_received' → they requested you, accept or decline
+
+type AddPersonMode = 'roots' | 'offline' | 'pending_sent' | 'pending_received';
+
+const RELATIONS = [
+  'Best friend', 'Friend', 'Close friend',
+  'Family', 'Partner', 'Colleague',
+  'Mentor', 'Neighbour', 'Acquaintance',
+];
+
+const FREQUENCY_OPTIONS = [
+  { label: 'Every few days', days: 3 },
+  { label: 'Weekly', days: 7 },
+  { label: 'Fortnightly', days: 14 },
+  { label: 'Monthly', days: 30 },
+  { label: 'Every few months', days: 90 },
+];
+
+const AddPersonModal = ({
   visible,
   person,
+  mode,
   onClose,
   onAdd,
+  onAccept,
+  onDecline,
 }: {
   visible: boolean;
-  person: { id: string; displayName: string; avatarColour: string; city?: string } | null;
+  person: {
+    id?: string;
+    displayName: string;
+    avatarColour?: string;
+    city?: string;
+    requestId?: string;
+  } | null;
+  mode: AddPersonMode;
   onClose: () => void;
-  onAdd: (payload: {
-    connectedUserId: string;
-    relation: string;
-    layer: DunbarLayer;
-    since?: string;
-    contactFrequency: number;
-  }) => void;
+  onAdd: (payload: any) => void;
+  onAccept?: (requestId: string) => void;
+  onDecline?: (requestId: string) => void;
 }) => {
   const [relation, setRelation] = useState('');
   const [layer, setLayer] = useState<DunbarLayer>('active');
   const [since, setSince] = useState('');
   const [contactFrequency, setContactFrequency] = useState(14);
-
-  const RELATIONS = [
-    'Best friend', 'Friend', 'Close friend',
-    'Family', 'Partner', 'Colleague',
-    'Mentor', 'Neighbour', 'Acquaintance',
-  ];
-
-  const FREQUENCY_OPTIONS = [
-    { label: 'Every few days', days: 3 },
-    { label: 'Weekly', days: 7 },
-    { label: 'Fortnightly', days: 14 },
-    { label: 'Monthly', days: 30 },
-    { label: 'Every few months', days: 90 },
-  ];
-
-  const handleAdd = () => {
-    if (!relation) {
-      Alert.alert('Missing info', 'Please select a relation type.');
-      return;
-    }
-    onAdd({
-      connectedUserId: person!.id,
-      relation,
-      layer,
-      since: since || undefined,
-      contactFrequency,
-    });
-  };
+  const [offlineName, setOfflineName] = useState('');
+  const [offlinePhone, setOfflinePhone] = useState('');
 
   const reset = () => {
     setRelation('');
     setLayer('active');
     setSince('');
     setContactFrequency(14);
+    setOfflineName('');
+    setOfflinePhone('');
   };
+
+  const handleClose = () => { reset(); onClose(); };
+
+  const handleAdd = () => {
+    if (!relation) {
+      Alert.alert('Missing info', 'Please select a relation type.');
+      return;
+    }
+    if (mode === 'roots') {
+      onAdd({
+        connectedUserId: person!.id,
+        relation,
+        layer,
+        since: since || undefined,
+        contactFrequency,
+      });
+    } else if (mode === 'offline') {
+      const name = offlineName.trim() || person!.displayName;
+      if (!name) {
+        Alert.alert('Missing info', 'Please enter a name.');
+        return;
+      }
+      onAdd({
+        offlineName: name,
+        offlinePhone: offlinePhone.trim() || undefined,
+        relation,
+        layer,
+        since: since || undefined,
+        contactFrequency,
+      });
+    }
+  };
+
+  const avatarColour = person?.avatarColour ?? Colors.terracotta;
+  const displayName = person?.displayName ?? '';
+
+  // ── Pending sent ──────────────────────────────────────
+  if (mode === 'pending_sent') {
+    return (
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={handleClose}>
+              <Text style={styles.modalCancel}>Close</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Request sent</Text>
+            <View style={{ width: 50 }} />
+          </View>
+          <View style={styles.modalContent}>
+            <View style={styles.personSummary}>
+              <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
+                <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View>
+                <Text style={styles.personName}>{displayName}</Text>
+                {person?.city && <Text style={styles.personCity}>{person.city}</Text>}
+              </View>
+            </View>
+            <Text style={styles.pendingHint}>
+              Your connection request is waiting for {displayName} to accept. You'll be notified when they do.
+            </Text>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // ── Pending received ──────────────────────────────────
+  if (mode === 'pending_received') {
+    return (
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet" onRequestClose={handleClose}>
+        <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={handleClose}>
+              <Text style={styles.modalCancel}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Connection request</Text>
+            <View style={{ width: 50 }} />
+          </View>
+          <View style={styles.modalContent}>
+            <View style={styles.personSummary}>
+              <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
+                <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+              </View>
+              <View>
+                <Text style={styles.personName}>{displayName}</Text>
+                {person?.city && <Text style={styles.personCity}>{person.city}</Text>}
+              </View>
+            </View>
+            <Text style={styles.pendingHint}>
+              {displayName} wants to add you to their circle.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.lg }}>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: Colors.terracotta, flex: 1 }]}
+                onPress={() => { onAccept?.(person!.requestId!); handleClose(); }}
+              >
+                <Text style={styles.actionBtnText}>Accept</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, { borderWidth: 0.5, borderColor: Colors.tan, flex: 1 }]}
+                onPress={() => { onDecline?.(person!.requestId!); handleClose(); }}
+              >
+                <Text style={[styles.actionBtnText, { color: Colors.textLight }]}>Decline</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // ── Roots user or Offline contact (shared form) ───────
+  const title = mode === 'offline' ? 'Add to circle' : 'Send request';
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={() => { reset(); onClose(); }}
+      onRequestClose={handleClose}
     >
       <SafeAreaView style={styles.modalContainer} edges={['top', 'bottom']}>
-        {/* Header */}
         <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={() => { reset(); onClose(); }}>
+          <TouchableOpacity onPress={handleClose}>
             <Text style={styles.modalCancel}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.modalTitle}>Add to circle</Text>
+          <Text style={styles.modalTitle}>{title}</Text>
           <TouchableOpacity onPress={handleAdd}>
-            <Text style={styles.modalSave}>Add</Text>
+            <Text style={styles.modalSave}>{mode === 'offline' ? 'Add' : 'Send'}</Text>
           </TouchableOpacity>
         </View>
 
@@ -93,21 +214,43 @@ const AddToCircleModal = ({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Person summary */}
-          {person && (
+          {/* Person summary / offline name input */}
+          {mode === 'roots' && person && (
             <View style={styles.personSummary}>
-              <View style={[styles.personAvatar, { backgroundColor: person.avatarColour }]}>
-                <Text style={styles.personAvatarText}>
-                  {person.displayName.charAt(0).toUpperCase()}
-                </Text>
+              <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
+                <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
               </View>
               <View>
-                <Text style={styles.personName}>{person.displayName}</Text>
-                {person.city && (
-                  <Text style={styles.personCity}>{person.city}</Text>
-                )}
+                <Text style={styles.personName}>{displayName}</Text>
+                {person.city && <Text style={styles.personCity}>{person.city}</Text>}
               </View>
             </View>
+          )}
+
+          {mode === 'offline' && (
+            <>
+              <Text style={styles.sectionLabel}>Their name</Text>
+              <TextInput
+                style={styles.input}
+                value={offlineName || displayName}
+                onChangeText={setOfflineName}
+                placeholder="Full name"
+                placeholderTextColor={Colors.textLight}
+                autoCapitalize="words"
+              />
+              <Text style={styles.sectionLabel}>Phone number (optional)</Text>
+              <TextInput
+                style={[styles.input, { marginBottom: Spacing.xs }]}
+                value={offlinePhone}
+                onChangeText={setOfflinePhone}
+                placeholder="+27 82 000 0000"
+                placeholderTextColor={Colors.textLight}
+                keyboardType="phone-pad"
+              />
+              <Text style={styles.offlineHint}>
+                They'll receive an invite once you save. They can join Roots and connect with you automatically.
+              </Text>
+            </>
           )}
 
           {/* Relation */}
@@ -119,14 +262,10 @@ const AddToCircleModal = ({
                 style={[styles.chip, relation === r && styles.chipActive]}
                 onPress={() => setRelation(r)}
               >
-                <Text style={[styles.chipText, relation === r && styles.chipTextActive]}>
-                  {r}
-                </Text>
+                <Text style={[styles.chipText, relation === r && styles.chipTextActive]}>{r}</Text>
               </TouchableOpacity>
             ))}
           </View>
-
-          {/* Custom relation */}
           <TextInput
             style={[styles.input, { marginTop: Spacing.sm }]}
             value={RELATIONS.includes(relation) ? '' : relation}
@@ -199,34 +338,53 @@ const SearchResult = ({
     displayName: string;
     avatarColour: string;
     city?: string;
-    inCircle: boolean;
+    status?: 'active' | 'pending_sent' | 'pending_received' | null;
+    requestId?: string;
   };
   onAdd: (person: any) => void;
-}) => (
-  <View style={styles.resultRow}>
-    <View style={[styles.resultAvatar, { backgroundColor: person.avatarColour }]}>
-      <Text style={styles.resultAvatarText}>
-        {person.displayName.charAt(0).toUpperCase()}
-      </Text>
-    </View>
-    <View style={styles.resultInfo}>
-      <Text style={styles.resultName}>{person.displayName}</Text>
-      {person.city && <Text style={styles.resultCity}>{person.city}</Text>}
-    </View>
-    {person.inCircle ? (
-      <View style={styles.inCircleBadge}>
-        <Text style={styles.inCircleBadgeText}>In circle</Text>
-      </View>
-    ) : (
-      <TouchableOpacity
-        style={styles.addBtn}
-        onPress={() => onAdd(person)}
-      >
+}) => {
+  const action = () => {
+    if (person.status === 'active') return null;
+    if (person.status === 'pending_sent') {
+      return (
+        <TouchableOpacity style={styles.pendingBadge} onPress={() => onAdd(person)}>
+          <Text style={styles.pendingBadgeText}>Pending</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (person.status === 'pending_received') {
+      return (
+        <TouchableOpacity style={styles.acceptBtn} onPress={() => onAdd(person)}>
+          <Text style={styles.addBtnText}>Accept</Text>
+        </TouchableOpacity>
+      );
+    }
+    return (
+      <TouchableOpacity style={styles.addBtn} onPress={() => onAdd(person)}>
         <Text style={styles.addBtnText}>Add</Text>
       </TouchableOpacity>
-    )}
-  </View>
-);
+    );
+  };
+
+  return (
+    <View style={styles.resultRow}>
+      <View style={[styles.resultAvatar, { backgroundColor: person.avatarColour }]}>
+        <Text style={styles.resultAvatarText}>
+          {person.displayName.charAt(0).toUpperCase()}
+        </Text>
+      </View>
+      <View style={styles.resultInfo}>
+        <Text style={styles.resultName}>{person.displayName}</Text>
+        {person.city && <Text style={styles.resultCity}>{person.city}</Text>}
+      </View>
+      {person.status === 'active' ? (
+        <View style={styles.inCircleBadge}>
+          <Text style={styles.inCircleBadgeText}>In circle</Text>
+        </View>
+      ) : action()}
+    </View>
+  );
+};
 
 // ── Calendar match card ────────────────────────────────
 const CalendarMatchCard = ({
@@ -376,6 +534,7 @@ const calStyles = StyleSheet.create({
 export default function ConnectScreen() {
   const [query, setQuery] = useState('');
   const [selectedPerson, setSelectedPerson] = useState<any>(null);
+  const [modalMode, setModalMode] = useState<AddPersonMode>('roots');
   const [modalVisible, setModalVisible] = useState(false);
   const [syncResult, setSyncResult] = useState<{
     matched: any[];
@@ -394,6 +553,8 @@ export default function ConnectScreen() {
   const { mutate: confirmMatch } = useConfirmContactMatch();
   const { mutate: confirmCalendarMatch } = useConfirmCalendarMatch();
   const { mutate: syncCalendar } = useSyncCalendar();
+  const { mutate: acceptRequest } = useAcceptRequest();
+  const { mutate: declineRequest } = useDeclineRequest();
 
   const handleSyncContacts = async () => {
     const { status } = await Contacts.requestPermissionsAsync();
@@ -548,6 +709,17 @@ export default function ConnectScreen() {
 
   const handleAdd = (person: any) => {
     setSelectedPerson(person);
+    const status = person.status;
+    if (status === 'pending_sent') setModalMode('pending_sent');
+    else if (status === 'pending_received') setModalMode('pending_received');
+    else setModalMode('roots');
+    setModalVisible(true);
+  };
+
+  // Opens modal in offline mode, pre-filling name from query or explicit name
+  const handleAddOffline = (name: string) => {
+    setSelectedPerson({ displayName: name, avatarColour: Colors.terracotta });
+    setModalMode('offline');
     setModalVisible(true);
   };
 
@@ -557,26 +729,29 @@ export default function ConnectScreen() {
         setModalVisible(false);
         setSelectedPerson(null);
         setQuery('');
+        const name = payload.offlineName ?? selectedPerson?.displayName;
         Alert.alert(
-          'Added to circle',
-          `${selectedPerson?.displayName} has been added to your circle.`
+          modalMode === 'offline' ? 'Added to circle' : 'Request sent',
+          modalMode === 'offline'
+            ? `${name} has been added to your circle. An invite will be sent.`
+            : `Your connection request has been sent to ${name}.`
         );
       },
       onError: () => {
-        Alert.alert('Error', 'Failed to add connection. Please try again.');
+        Alert.alert('Error', 'Something went wrong. Please try again.');
       },
     });
   };
 
-  const handleInvite = (name: string) => {
-    const message = `Hi! I've been using Roots — a private app for keeping in touch with the people who matter most. No social feed, no ads, just real connections. Join me here: https://yourroots.app`;
-    const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(message)}`;
-    Linking.canOpenURL(whatsappUrl).then(supported => {
-      if (supported) {
-        Linking.openURL(whatsappUrl);
-      } else {
-        Linking.openURL(`sms:?body=${encodeURIComponent(message)}`);
-      }
+  const handleAccept = (requestId: string) => {
+    acceptRequest(requestId, {
+      onError: () => Alert.alert('Error', 'Could not accept request. Please try again.'),
+    });
+  };
+
+  const handleDecline = (requestId: string) => {
+    declineRequest(requestId, {
+      onError: () => Alert.alert('Error', 'Could not decline request. Please try again.'),
     });
   };
 
@@ -642,24 +817,15 @@ export default function ConnectScreen() {
               "{query}" isn't on Roots yet
             </Text>
             <Text style={styles.inviteDesc}>
-              Invite them to join. Once they sign up, you can add them to your circle.
+              Add them to your circle now — they'll get an invite to join Roots and connect with you automatically when they do.
             </Text>
             <TouchableOpacity
               style={styles.inviteBtn}
-              onPress={() => handleInvite(query)}
+              onPress={() => handleAddOffline(query)}
             >
               <Text style={styles.inviteBtnText}>
-                Invite {query} via WhatsApp
+                Add {query} to my circle
               </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.inviteBtnSms}
-              onPress={() => {
-                const message = `Hi ${query}! I've been using Roots — a private app for keeping in touch with the people who matter most. No social feed, no ads, just real connections. Join me: https://yourroots.app`;
-                Linking.openURL(`sms:?body=${encodeURIComponent(message)}`);
-              }}
-            >
-              <Text style={styles.inviteBtnSmsText}>Send SMS instead</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -812,15 +978,18 @@ export default function ConnectScreen() {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Add to circle modal */}
-      <AddToCircleModal
+      {/* Add person modal */}
+      <AddPersonModal
         visible={modalVisible}
         person={selectedPerson}
+        mode={modalMode}
         onClose={() => {
           setModalVisible(false);
           setSelectedPerson(null);
         }}
         onAdd={handleConfirmAdd}
+        onAccept={handleAccept}
+        onDecline={handleDecline}
       />
     </SafeAreaView>
   );
@@ -910,10 +1079,29 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: 6,
   },
+  acceptBtn: {
+    backgroundColor: Colors.sage,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+  },
   addBtnText: {
     fontSize: 13,
     color: Colors.white,
     fontWeight: '700',
+    fontFamily: Typography.fontFamily,
+  },
+  pendingBadge: {
+    borderRadius: BorderRadius.pill,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 4,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    backgroundColor: Colors.card,
+  },
+  pendingBadgeText: {
+    fontSize: 12,
+    color: Colors.textLight,
     fontFamily: Typography.fontFamily,
   },
 
@@ -1318,6 +1506,35 @@ const styles = StyleSheet.create({
   layerDesc: {
     fontSize: 12,
     color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+
+  // Pending / offline modal helpers
+  pendingHint: {
+    fontSize: Typography.body,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 22,
+    marginTop: Spacing.lg,
+    textAlign: 'center',
+  },
+  offlineHint: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 18,
+    marginBottom: Spacing.sm,
+    fontStyle: 'italic',
+  },
+  actionBtn: {
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.md,
+    alignItems: 'center',
+  },
+  actionBtnText: {
+    fontSize: Typography.body,
+    color: Colors.white,
+    fontWeight: '700',
     fontFamily: Typography.fontFamily,
   },
 
