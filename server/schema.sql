@@ -35,7 +35,7 @@ CREATE INDEX IF NOT EXISTS users_email_idx ON users(email);
 CREATE TABLE IF NOT EXISTS connections (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id               UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  connected_user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  connected_user_id     UUID REFERENCES users(id) ON DELETE CASCADE, -- NULL for offline contacts
   relation              TEXT,                          -- e.g. "best friend"
   layer                 TEXT NOT NULL CHECK (layer IN ('intimate','close','active','meaningful')),
   since                 DATE,
@@ -43,12 +43,36 @@ CREATE TABLE IF NOT EXISTS connections (
   score                 INTEGER NOT NULL DEFAULT 80 CHECK (score BETWEEN 0 AND 100),
   last_contact_at       TIMESTAMPTZ,
   nudge                 TEXT,                          -- AI-generated nudge string
+  nudge_sent_at         TIMESTAMPTZ,
+  always_in_touch       BOOLEAN NOT NULL DEFAULT false,
+  status                TEXT NOT NULL DEFAULT 'active'
+                          CHECK (status IN ('active', 'pending', 'offline')),
+  -- Offline contact fields (populated when connected_user_id IS NULL)
+  offline_name          TEXT,
+  offline_phone         TEXT,
+  offline_email         TEXT,
+  offline_dob           DATE,
+  invite_sent_at        TIMESTAMPTZ,
   created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(user_id, connected_user_id)
 );
 
 CREATE INDEX IF NOT EXISTS connections_user_idx   ON connections(user_id);
 CREATE INDEX IF NOT EXISTS connections_layer_idx  ON connections(user_id, layer);
+CREATE INDEX IF NOT EXISTS connections_status_idx ON connections(user_id, status);
+
+-- ── Connection requests ────────────────────────────────
+CREATE TABLE IF NOT EXISTS connection_requests (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  from_user_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  layer         TEXT,
+  relation      TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(from_user_id, to_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS conn_requests_to_idx ON connection_requests(to_user_id);
 
 -- ── Events (Memory containers) ─────────────────────────
 CREATE TABLE IF NOT EXISTS events (
