@@ -305,11 +305,20 @@ export const useUpdateConnection = () => {
       layer?: string;
       relation?: string;
       contactFrequency?: number;
+      alwaysInTouch?: boolean;
+      offlineName?: string;
+      offlinePhone?: string;
+      offlineEmail?: string;
+      offlineDob?: string;
+      offlineCity?: string;
     }) => {
       const { data } = await api.patch(`/connections/${id}`, payload);
       return data.data;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.connections }),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: QueryKeys.connections });
+      qc.invalidateQueries({ queryKey: QueryKeys.connection(vars.id) });
+    },
   });
 };
 

@@ -235,20 +235,39 @@ const TimezoneCard = ({
 const EditModal = ({
   visible,
   connection,
+  isOffline,
   onClose,
   onSave,
   onRemove,
 }: {
   visible: boolean;
   connection: any;
+  isOffline: boolean;
   onClose: () => void;
-  onSave: (payload: { layer: DunbarLayer; relation: string; contactFrequency: number; alwaysInTouch: boolean }) => void;
+  onSave: (payload: {
+    layer: DunbarLayer;
+    relation: string;
+    contactFrequency: number;
+    alwaysInTouch: boolean;
+    offlineName?: string;
+    offlinePhone?: string;
+    offlineEmail?: string;
+    offlineDob?: string;
+    offlineCity?: string;
+  }) => void;
   onRemove: () => void;
 }) => {
   const [layer, setLayer] = useState<DunbarLayer>(connection?.layer ?? 'active');
   const [relation, setRelation] = useState(connection?.relation ?? '');
   const [contactFrequency, setContactFrequency] = useState(connection?.contactFrequency ?? 14);
   const [alwaysInTouch, setAlwaysInTouch] = useState((connection as any)?.alwaysInTouch ?? false);
+
+  // Offline contact fields
+  const [offlineName,  setOfflineName]  = useState((connection as any)?.offlineName  ?? '');
+  const [offlinePhone, setOfflinePhone] = useState((connection as any)?.offlinePhone ?? '');
+  const [offlineEmail, setOfflineEmail] = useState((connection as any)?.offlineEmail ?? '');
+  const [offlineDob,   setOfflineDob]   = useState((connection as any)?.offlineDob   ?? '');
+  const [offlineCity,  setOfflineCity]  = useState((connection as any)?.offlineCity  ?? '');
 
   const FREQUENCY_OPTIONS = [
     { label: 'Every few days', days: 3 },
@@ -257,6 +276,22 @@ const EditModal = ({
     { label: 'Monthly', days: 30 },
     { label: 'Every few months', days: 90 },
   ];
+
+  const handleSave = () => {
+    onSave({
+      layer,
+      relation,
+      contactFrequency,
+      alwaysInTouch,
+      ...(isOffline && {
+        offlineName:  offlineName.trim()  || undefined,
+        offlinePhone: offlinePhone.trim() || undefined,
+        offlineEmail: offlineEmail.trim() || undefined,
+        offlineDob:   offlineDob.trim()   || undefined,
+        offlineCity:  offlineCity.trim()  || undefined,
+      }),
+    });
+  };
 
   return (
     <Modal
@@ -271,12 +306,83 @@ const EditModal = ({
             <Text style={styles.modalCancel}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.modalTitle}>Edit connection</Text>
-          <TouchableOpacity onPress={() => onSave({ layer, relation, contactFrequency, alwaysInTouch })}>
+          <TouchableOpacity onPress={handleSave}>
             <Text style={styles.modalSave}>Save</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.modalContent} keyboardShouldPersistTaps="handled">
+
+          {/* ── Offline: editable contact info ── */}
+          {isOffline && (
+            <>
+              <Text style={styles.sectionLabel}>Contact info</Text>
+              <View style={styles.infoFieldGroup}>
+                <View style={styles.infoField}>
+                  <Text style={styles.infoFieldLabel}>Name</Text>
+                  <TextInput
+                    style={styles.infoFieldInput}
+                    value={offlineName}
+                    onChangeText={setOfflineName}
+                    placeholder="Full name"
+                    placeholderTextColor={Colors.textLight}
+                    autoCorrect={false}
+                  />
+                </View>
+                <View style={styles.infoFieldDivider} />
+                <View style={styles.infoField}>
+                  <Text style={styles.infoFieldLabel}>Phone</Text>
+                  <TextInput
+                    style={styles.infoFieldInput}
+                    value={offlinePhone}
+                    onChangeText={setOfflinePhone}
+                    placeholder="+27 …"
+                    placeholderTextColor={Colors.textLight}
+                    keyboardType="phone-pad"
+                    autoCorrect={false}
+                  />
+                </View>
+                <View style={styles.infoFieldDivider} />
+                <View style={styles.infoField}>
+                  <Text style={styles.infoFieldLabel}>Email</Text>
+                  <TextInput
+                    style={styles.infoFieldInput}
+                    value={offlineEmail}
+                    onChangeText={setOfflineEmail}
+                    placeholder="email@example.com"
+                    placeholderTextColor={Colors.textLight}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                </View>
+                <View style={styles.infoFieldDivider} />
+                <View style={styles.infoField}>
+                  <Text style={styles.infoFieldLabel}>Date of birth</Text>
+                  <TextInput
+                    style={styles.infoFieldInput}
+                    value={offlineDob}
+                    onChangeText={setOfflineDob}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={Colors.textLight}
+                    autoCorrect={false}
+                  />
+                </View>
+                <View style={styles.infoFieldDivider} />
+                <View style={styles.infoField}>
+                  <Text style={styles.infoFieldLabel}>City</Text>
+                  <TextInput
+                    style={styles.infoFieldInput}
+                    value={offlineCity}
+                    onChangeText={setOfflineCity}
+                    placeholder="Cape Town"
+                    placeholderTextColor={Colors.textLight}
+                    autoCorrect={false}
+                  />
+                </View>
+              </View>
+            </>
+          )}
 
           {/* Always in touch */}
           <Text style={styles.sectionLabel}>Settings</Text>
@@ -651,9 +757,19 @@ export default function PersonScreen() {
     );
   };
 
-  const handleSaveEdit = (payload: { layer: DunbarLayer; relation: string; contactFrequency: number; alwaysInTouch: boolean }) => {
+  const handleSaveEdit = (payload: {
+    layer: DunbarLayer;
+    relation: string;
+    contactFrequency: number;
+    alwaysInTouch: boolean;
+    offlineName?: string;
+    offlinePhone?: string;
+    offlineEmail?: string;
+    offlineDob?: string;
+    offlineCity?: string;
+  }) => {
     updateConnection(
-      { id, ...payload } as any,
+      { id, ...payload },
       {
         onSuccess: () => {
           setEditVisible(false);
@@ -952,6 +1068,7 @@ export default function PersonScreen() {
       <EditModal
         visible={editVisible}
         connection={connection}
+        isOffline={isOffline}
         onClose={() => setEditVisible(false)}
         onSave={handleSaveEdit}
         onRemove={handleRemove}
@@ -1627,6 +1744,42 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
     marginTop: 2,
     lineHeight: 17,
+  },
+
+  // Offline contact info field group
+  infoFieldGroup: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    overflow: 'hidden',
+    marginBottom: Spacing.sm,
+  },
+  infoField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
+    gap: Spacing.md,
+  },
+  infoFieldLabel: {
+    width: 90,
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    flexShrink: 0,
+  },
+  infoFieldInput: {
+    flex: 1,
+    fontSize: Typography.body,
+    color: Colors.textDark,
+    fontFamily: Typography.fontFamily,
+    padding: 0,
+  },
+  infoFieldDivider: {
+    height: 0.5,
+    backgroundColor: Colors.tan,
+    marginHorizontal: Spacing.md,
   },
 
   // Modal remove button

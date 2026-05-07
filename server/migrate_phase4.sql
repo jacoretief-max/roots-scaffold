@@ -48,3 +48,7 @@ CREATE TABLE IF NOT EXISTS connection_requests (
 );
 
 CREATE INDEX IF NOT EXISTS conn_requests_to_idx ON connection_requests(to_user_id);
+
+-- ── 7. connections: offline city field ─────────────────────────────────────────────────────
+ALTER TABLE connections
+  ADD COLUMN IF NOT EXISTS offline_city TEXT;
