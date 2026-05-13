@@ -16,20 +16,17 @@
     ],
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.yourcompany.roots",
+      "bundleIdentifier": "com.rooikatlabs.roots",
       "buildNumber": "1",
       "infoPlist": {
         "NSContactsUsageDescription": "Roots reads your contacts to help identify the people who matter most to you.",
-        "NSLocationWhenInUseUsageDescription": "Roots uses your location to show your position on the Globe screen.",
         "NSCameraUsageDescription": "Roots uses your camera to capture photos for memories.",
         "NSPhotoLibraryUsageDescription": "Roots accesses your photo library so you can add photos to memories.",
-        "NSPhotoLibraryAddUsageDescription": "Roots saves photos to your library.",
-        "NSMicrophoneUsageDescription": "Roots may use the microphone if you record video for a memory.",
+        "NSMicrophoneUsageDescription": "Roots uses the microphone to record voice notes for contact logs and memories.",
         "NSCalendarsUsageDescription": "Roots reads your calendar to detect shared events with connections.",
-        "LSApplicationQueriesSchemes": ["whatsapp"]
-      },
-      "entitlements": {
-        "com.apple.developer.contacts.notes": true
+        "LSApplicationQueriesSchemes": [
+          "whatsapp"
+        ]
       }
     },
     "android": {
@@ -37,20 +34,16 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#F7F0E6"
       },
-      "package": "com.yourcompany.roots",
+      "package": "com.rooikatlabs.roots",
       "versionCode": 1,
       "permissions": [
         "android.permission.READ_CONTACTS",
-        "android.permission.READ_CALL_LOG",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.CAMERA",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_CALENDAR",
         "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.VIBRATE",
-        "android.permission.WRITE_CONTACTS"
+        "android.permission.VIBRATE"
       ]
     },
     "plugins": [
@@ -62,12 +55,6 @@
           "icon": "./assets/notification-icon.png",
           "color": "#C45A3A",
           "sounds": []
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationAlwaysAndWhenInUsePermission": "Roots uses your location for the Globe screen."
         }
       ],
       [
