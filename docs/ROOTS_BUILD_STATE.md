@@ -1,5 +1,5 @@
-# Roots — Current Build State
-*Version 1.1 · April 2026*
+# Rooted In — Current Build State (formerly Roots)
+*Version 1.2 · May 2026*
 
 ---
 
@@ -12,7 +12,7 @@
 | Phase 3 | ✅ Complete | Contacts sync, nudge engine, calendar integration |
 | Phase 3 (partial) | ✅ Complete | WhatsApp Business API — inbound/outbound nudges active |
 | Nav Redesign | ✅ Complete | 3-tab layout, Connect merged into Circle, Globe removed |
-| Phase 4 | ⬜ Not started | S3 media, voice notes, TestFlight, App Store |
+| Phase 4 | 🔄 In progress | S3 media, voice notes, offline contacts, TestFlight, App Store |
 
 ---
 
@@ -215,12 +215,49 @@ Tab bar reduced from 5 tabs to 3:
 4. ✅ **Voice notes** — expo-av recording, S3 storage, playback in timeline (tap-to-toggle on Person screen contact log)
    - Voice-to-text deliberately not built: iOS native keyboard mic already handles this well; no value in duplicating it
 5. ✅ **Per-user unread tracking** — `memory_views (user_id, event_id, last_viewed_at)` table; unread ring and NEW badge now per-user; photos trigger unread for other participants; `is_new` column on `memory_entries` retained but no longer used
-6. ⬜ **TestFlight** — EAS build, upload to App Store Connect, internal testing
-7. ⬜ **App Store assets** — icon, screenshots, description, privacy policy URL
-8. ⬜ **App Store submission** — iOS and Google Play
-9. ⬜ **2FA + phone verification**
-10. ⬜ **ID verification**
-11. ⬜ **WhatsApp message frequency** — once Meta approval received
+6. ✅ **Offline contacts** — offline_* columns, contact sync with diacritics + label-ranked phone numbers, editable contact info in EditModal, offline_city migration
+7. ⬜ **Apple Developer enrollment** — $99/year, required before any EAS build; activation can take up to 24h after payment
+8. ⬜ **EAS setup + first internal build** — create `eas.json`, fix `app.json` bundle identifier + clean up unused permissions, run first build, verify pipeline works
+9. ⬜ **Onboarding experience** — see plan below; must be done before external testers or App Store submission
+10. ⬜ **App Store assets** — icon, screenshots, description, privacy policy URL
+11. ⬜ **App Store submission** — iOS and Google Play
+12. ⬜ **2FA + phone verification**
+13. ⬜ **ID verification**
+14. ⬜ **WhatsApp message frequency** — once Meta approval received
+
+---
+
+## Onboarding Experience Plan
+
+To be built after EAS pipeline is confirmed working (step 8 above). Three distinct phases:
+
+### 1. Splash / Load screen
+- Branded screen displayed while the app initialises tokens and fetches initial data
+- Smooth animated transition into auth — no white flash
+- Should feel premium; sets the tone for the whole app
+
+### 2. Value story (pre-registration walkthrough)
+- 3–4 screens shown before the user registers
+- Focus on *why* Roots exists, not feature bullets
+- Explain the Dunbar number concept in plain language — most users have never heard of it and it is genuinely compelling
+- Hook them on the idea before asking for an account
+- Copy and flow should be agreed before writing any code — the words matter more than the animations
+
+### 3. Enrollment wizard (post-registration)
+- Runs once after a new user completes registration
+- Goal: by the time the wizard ends the user has at least 3–5 people in their circle and one contact logged — an empty app is a dead app
+- Draft steps:
+  1. Welcome + name confirmation
+  2. Sync contacts — prompt with clear explanation of what it does
+  3. Add your first person — guided add-to-circle for the top suggestion
+  4. Set a contact frequency for that person
+  5. Push notification permission request (framed around nudges)
+  6. Done state — show their circle with the first person in it
+
+### Notes
+- Existing 3-step carousel onboarding will be replaced by this flow
+- `hasSeenOnboarding` flag in auth store gates the wizard (currently exists as `hasSeenIntro`)
+- Wizard state should survive app backgrounding — persist step index in Zustand or AsyncStorage
 
 ---
 
