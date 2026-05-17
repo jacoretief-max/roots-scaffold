@@ -148,7 +148,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
       const { user, tokens } = response.data.data;
       await setTokens(tokens);
       setUser(user);
-      router.replace('/onboarding');
+      router.replace("/onboarding/enroll");
     } catch {
       Alert.alert('Registration failed', 'Please try again or use a different email.');
     } finally {

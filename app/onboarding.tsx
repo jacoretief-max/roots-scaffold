@@ -5,35 +5,42 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 const { width } = Dimensions.get('window');
+const ONBOARDING_KEY = 'rootedin_seen_onboarding';
 
 const SLIDES = [
   {
     key: 'welcome',
     symbol: '❧',
-    title: 'Welcome to Roots',
-    body: "Roots is built on one belief: the people you love are the most important thing in your life. Research consistently shows that people with strong, meaningful connections are healthier, happier, and live longer.",
+    title: 'You can only truly know 150 people',
+    body: "Robin Dunbar, an Oxford anthropologist, discovered that our brains can maintain about 150 meaningful relationships. Not followers. Not connections. People you actually know.\n\nRooted In helps you make the most of every one of them.",
   },
   {
-    key: 'process',
-    title: 'How it works',
+    key: 'circles',
+    title: 'Your inner circles',
     symbol: '◎',
     steps: [
-      { label: 'Find your people', desc: 'We help you identify the connections that matter most, guided by Dunbar\'s relationship science.' },
-      { label: 'Build your history', desc: 'Recreate the moments you\'ve shared, year by year, at your own pace.' },
-      { label: 'Stay connected', desc: 'Roots gently helps you tend those relationships so no one drifts away.' },
+      { label: '5 people',   desc: 'Your closest — the ones you could call at 2am.' },
+      { label: '15 people',  desc: 'Close friends and family you stay in regular contact with.' },
+      { label: '50 people',  desc: 'Good friends you see a few times a year.' },
+      { label: '150 people', desc: 'Your full active social network.' },
     ],
   },
   {
     key: 'promise',
     symbol: '♡',
-    title: 'Our promise to you',
-    body: "You control every step. Nothing is shared without your explicit permission. No public posts. No ads. No algorithm. This is for you and the people you love.",
-    highlights: ['Private by design', 'No advertising', 'No algorithm', 'You own your data'],
+    title: 'Private, honest, yours',
+    body: "Rooted In is not a social network. There is no feed, no likes, no public profile. It is a private space for you to tend the relationships that matter — and nothing else.",
+    highlights: ['No ads, ever', 'No public posts', 'No algorithm', 'You own your data'],
   },
 ];
+
+async function markOnboardingSeen() {
+  try { await SecureStore.setItemAsync(ONBOARDING_KEY, 'true'); } catch {}
+}
 
 export default function OnboardingScreen() {
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -44,27 +51,28 @@ export default function OnboardingScreen() {
     setCurrentIndex(idx);
   };
 
-  const goNext = () => {
+  const goNext = async () => {
     if (currentIndex < SLIDES.length - 1) {
       flatListRef.current?.scrollToIndex({ index: currentIndex + 1, animated: true });
     } else {
-      router.replace('/(tabs)');
+      await markOnboardingSeen();
+      router.replace('/auth');
     }
   };
 
-  const skip = () => router.replace('/(tabs)');
+  const skip = async () => {
+    await markOnboardingSeen();
+    router.replace('/auth');
+  };
 
   const renderSlide = ({ item }: { item: typeof SLIDES[0] }) => (
     <View style={styles.slide}>
       <Text style={styles.symbol}>{item.symbol}</Text>
       <Text style={styles.slideTitle}>{item.title}</Text>
 
-      {/* Slide 1 & 3 — body text */}
       {'body' in item && item.body && (
         <Text style={styles.body}>{item.body}</Text>
       )}
-
-      {/* Slide 2 — step list */}
       {'steps' in item && item.steps && (
         <View style={styles.stepList}>
           {item.steps.map((step, i) => (
@@ -80,8 +88,6 @@ export default function OnboardingScreen() {
           ))}
         </View>
       )}
-
-      {/* Slide 3 — highlights */}
       {'highlights' in item && item.highlights && (
         <View style={styles.highlights}>
           {item.highlights.map((h) => (
@@ -96,12 +102,10 @@ export default function OnboardingScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Skip */}
       <TouchableOpacity style={styles.skipBtn} onPress={skip}>
-        <Text style={styles.skipText}>Skip intro</Text>
+        <Text style={styles.skipText}>Skip</Text>
       </TouchableOpacity>
 
-      {/* Slides */}
       <FlatList
         ref={flatListRef}
         data={SLIDES}
@@ -115,22 +119,22 @@ export default function OnboardingScreen() {
         getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
       />
 
-      {/* Dots + CTA */}
       <View style={styles.footer}>
         <View style={styles.dots}>
           {SLIDES.map((_, i) => (
-            <View
-              key={i}
-              style={[styles.dot, i === currentIndex && styles.dotActive]}
-            />
+            <View key={i} style={[styles.dot, i === currentIndex && styles.dotActive]} />
           ))}
         </View>
-
         <TouchableOpacity style={styles.btn} onPress={goNext}>
           <Text style={styles.btnText}>
-            {currentIndex === SLIDES.length - 1 ? 'Get started' : 'Continue'}
+            {currentIndex === SLIDES.length - 1 ? 'Create account' : 'Continue'}
           </Text>
         </TouchableOpacity>
+        {currentIndex === SLIDES.length - 1 && (
+          <TouchableOpacity onPress={skip} style={styles.loginLink}>
+            <Text style={styles.loginLinkText}>Already have an account? Sign in</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -138,35 +142,18 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  skipBtn: { alignSelf: 'flex-end', padding: Spacing.lg },
+  skipText: { fontSize: 13, color: Colors.textLight, fontFamily: Typography.fontFamily },
 
-  skipBtn: {
-    alignSelf: 'flex-end',
-    padding: Spacing.lg,
-  },
-  skipText: {
-    fontSize: 13,
-    color: Colors.textLight,
-    fontFamily: Typography.fontFamily,
-  },
-
-  slide: {
-    width,
-    paddingHorizontal: Spacing.xl * 1.5,
-    paddingTop: Spacing.xl,
-    flex: 1,
-  },
-  symbol: {
-    fontSize: 44,
-    color: Colors.terracotta,
-    marginBottom: Spacing.lg,
-  },
+  slide: { width, paddingHorizontal: 36, paddingTop: Spacing.lg, flex: 1 },
+  symbol: { fontSize: 44, color: Colors.terracotta, marginBottom: Spacing.lg },
   slideTitle: {
-    fontSize: Typography.heading.lg,
+    fontSize: 22,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
     color: Colors.textDark,
     marginBottom: Spacing.lg,
-    lineHeight: 32,
+    lineHeight: 30,
   },
   body: {
     fontSize: Typography.body,
@@ -175,27 +162,25 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
 
-  // Step list (slide 2)
   stepList: { gap: Spacing.lg },
-  step: { flexDirection: 'row', gap: Spacing.md, alignItems: 'flex-start' },
+  step: { flexDirection: 'row', gap: Spacing.md, alignItems: 'center' },
   stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: Colors.terracotta,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
-    marginTop: 2,
   },
-  stepNumberText: { fontSize: 13, color: Colors.white, fontWeight: '700' },
+  stepNumberText: { fontSize: 13, color: Colors.white, fontWeight: '700', fontFamily: Typography.fontFamily },
   stepText: { flex: 1 },
   stepLabel: {
     fontSize: Typography.body,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
     color: Colors.textDark,
-    marginBottom: 3,
+    marginBottom: 2,
   },
   stepDesc: {
     fontSize: 13,
@@ -204,7 +189,6 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
 
-  // Highlights (slide 3)
   highlights: { gap: Spacing.sm, marginTop: Spacing.md },
   highlight: {
     backgroundColor: Colors.card,
@@ -221,23 +205,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Footer
-  footer: {
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing.xl,
-    gap: Spacing.lg,
-  },
+  footer: { paddingHorizontal: Spacing.xl, paddingBottom: Spacing.xl, gap: Spacing.md },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: Spacing.sm },
-  dot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: Colors.tan,
-  },
-  dotActive: {
-    width: 20,
-    backgroundColor: Colors.terracotta,
-  },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.tan },
+  dotActive: { width: 20, backgroundColor: Colors.terracotta },
   btn: {
     backgroundColor: Colors.terracotta,
     borderRadius: BorderRadius.sm,
@@ -250,4 +221,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.white,
   },
+  loginLink: { alignItems: 'center', paddingVertical: Spacing.xs },
+  loginLinkText: { fontSize: 13, color: Colors.textLight, fontFamily: Typography.fontFamily },
 });

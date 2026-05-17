@@ -1,18 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, Switch, Alert, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as LocalAuthentication from 'expo-local-authentication';
+import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '@/store/authStore';
 import { useWhatsAppOptIn } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
+const BIOMETRICS_KEY = 'rootedin_biometrics_enabled';
+
 export default function SecurityScreen() {
   const { user } = useAuthStore();
 
-  const [notifs, setNotifs] = useState(true);
+  const [notifs, setNotifs]         = useState(true);
+  const [biometrics, setBiometrics] = useState(false);
+  const [bioSupported, setBioSupported] = useState(false);
 
   // WhatsApp opt-in state — seed from stored user data if available
   const [waOptedIn, setWaOptedIn]   = useState<boolean>((user as any)?.whatsappOptedIn ?? false);
@@ -22,6 +28,32 @@ export default function SecurityScreen() {
   const [waSaved, setWaSaved]       = useState(false);
 
   const { mutate: saveWhatsApp, isPending: waSaving } = useWhatsAppOptIn();
+
+  useEffect(() => {
+    (async () => {
+      const hardware = await LocalAuthentication.hasHardwareAsync();
+      const enrolled = await LocalAuthentication.isEnrolledAsync();
+      setBioSupported(hardware && enrolled);
+      const stored = await SecureStore.getItemAsync(BIOMETRICS_KEY).catch(() => null);
+      setBiometrics(stored === 'true');
+    })();
+  }, []);
+
+  const handleBiometricsToggle = async (value: boolean) => {
+    if (value) {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Confirm your identity to enable Face ID sign-in',
+        fallbackLabel: 'Use password',
+      });
+      if (result.success) {
+        await SecureStore.setItemAsync(BIOMETRICS_KEY, 'true').catch(() => {});
+        setBiometrics(true);
+      }
+    } else {
+      await SecureStore.setItemAsync(BIOMETRICS_KEY, 'false').catch(() => {});
+      setBiometrics(false);
+    }
+  };
 
   const handleWaToggle = (value: boolean) => {
     setWaOptedIn(value);
@@ -75,15 +107,27 @@ export default function SecurityScreen() {
         {/* ── Authentication ─────────────────────────── */}
         <Text style={styles.sectionLabel}>Authentication</Text>
         <View style={styles.sectionCard}>
-          <View style={styles.row}>
-            <View style={styles.rowInfo}>
-              <Text style={styles.rowLabel}>Face ID / Biometrics</Text>
-              <Text style={styles.rowDesc}>Sign in without typing your password</Text>
+          {bioSupported ? (
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleInfo}>
+                <Text style={styles.toggleLabel}>Face ID / Touch ID</Text>
+                <Text style={styles.toggleDesc}>Sign in without typing your password</Text>
+              </View>
+              <Switch
+                value={biometrics}
+                onValueChange={handleBiometricsToggle}
+                trackColor={{ false: Colors.tan, true: Colors.terracotta }}
+                thumbColor={Colors.white}
+              />
             </View>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Coming soon</Text>
+          ) : (
+            <View style={styles.row}>
+              <View style={styles.rowInfo}>
+                <Text style={styles.rowLabel}>Face ID / Touch ID</Text>
+                <Text style={styles.rowDesc}>Not available on this device</Text>
+              </View>
             </View>
-          </View>
+          )}
           <View style={styles.rowDivider} />
           <View style={styles.toggleRow}>
             <View style={styles.toggleInfo}>

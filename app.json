@@ -24,6 +24,7 @@
         "NSPhotoLibraryUsageDescription": "Roots accesses your photo library so you can add photos to memories.",
         "NSMicrophoneUsageDescription": "Roots uses the microphone to record voice notes for contact logs and memories.",
         "NSCalendarsUsageDescription": "Roots reads your calendar to detect shared events with connections.",
+        "NSFaceIDUsageDescription": "Rooted In uses Face ID so you can sign in without typing your password.",
         "LSApplicationQueriesSchemes": [
           "whatsapp"
         ],
