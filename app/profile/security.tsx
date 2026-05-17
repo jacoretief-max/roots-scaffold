@@ -12,7 +12,6 @@ import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 export default function SecurityScreen() {
   const { user } = useAuthStore();
 
-  const [twofa, setTwofa]   = useState(false);
   const [notifs, setNotifs] = useState(true);
 
   // WhatsApp opt-in state — seed from stored user data if available
@@ -23,18 +22,6 @@ export default function SecurityScreen() {
   const [waSaved, setWaSaved]       = useState(false);
 
   const { mutate: saveWhatsApp, isPending: waSaving } = useWhatsAppOptIn();
-
-  const handleTwofaToggle = (value: boolean) => {
-    if (value) {
-      Alert.alert(
-        'Two-factor authentication',
-        'Setting up 2FA with an authenticator app is coming in Phase 4.',
-        [{ text: 'OK' }]
-      );
-    } else {
-      setTwofa(false);
-    }
-  };
 
   const handleWaToggle = (value: boolean) => {
     setWaOptedIn(value);
@@ -65,7 +52,7 @@ export default function SecurityScreen() {
           setWaSaved(true);
           Alert.alert(
             'WhatsApp enabled',
-            `Roots will send nudges and accept catch-up messages at ${cleaned}.`
+            `Rooted In will send nudges and accept catch-up messages at ${cleaned}.`
           );
         },
         onError: () => Alert.alert('Error', 'Could not save WhatsApp settings. Try again.'),
@@ -88,17 +75,14 @@ export default function SecurityScreen() {
         {/* ── Authentication ─────────────────────────── */}
         <Text style={styles.sectionLabel}>Authentication</Text>
         <View style={styles.sectionCard}>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleInfo}>
-              <Text style={styles.toggleLabel}>Two-factor authentication</Text>
-              <Text style={styles.toggleDesc}>Add an extra layer of security to your account</Text>
+          <View style={styles.row}>
+            <View style={styles.rowInfo}>
+              <Text style={styles.rowLabel}>Face ID / Biometrics</Text>
+              <Text style={styles.rowDesc}>Sign in without typing your password</Text>
             </View>
-            <Switch
-              value={twofa}
-              onValueChange={handleTwofaToggle}
-              trackColor={{ false: Colors.tan, true: Colors.terracotta }}
-              thumbColor={Colors.white}
-            />
+            <View style={styles.comingSoonBadge}>
+              <Text style={styles.comingSoonText}>Coming soon</Text>
+            </View>
           </View>
           <View style={styles.rowDivider} />
           <View style={styles.toggleRow}>
@@ -122,7 +106,7 @@ export default function SecurityScreen() {
             <View style={styles.toggleInfo}>
               <Text style={styles.toggleLabel}>WhatsApp nudges</Text>
               <Text style={styles.toggleDesc}>
-                Receive nudges via WhatsApp and log catch-ups by messaging Roots
+                Receive nudges via WhatsApp and log catch-ups by messaging Rooted In
               </Text>
             </View>
             <Switch
@@ -169,7 +153,7 @@ export default function SecurityScreen() {
 
         {waOptedIn && (
           <Text style={styles.hint}>
-            Message the Roots WhatsApp number anytime — "Just caught up with Sarah" — and Roots will log it automatically.
+            Message the Rooted In WhatsApp number anytime — "Just caught up with Sarah" — and Rooted In will log it automatically.
           </Text>
         )}
 

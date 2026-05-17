@@ -103,20 +103,6 @@ export default function ProfileScreen() {
           />
         </View>
 
-        <SectionHeader title="Personalise" />
-        <View style={styles.sectionCard}>
-          <SettingsRow
-            label="Avatar colour"
-            value={user?.avatarColour}
-            onPress={() => router.push('/profile/personalise')}
-          />
-          <SettingsRow
-            label="Profile photo"
-            value="Coming in Phase 4"
-            onPress={() => router.push('/profile/personalise')}
-          />
-        </View>
-
         <SectionHeader title="Privacy" />
         <View style={styles.sectionCard}>
           <SettingsRow
@@ -148,7 +134,7 @@ export default function ProfileScreen() {
           />
         </View>
 
-        <Text style={styles.version}>Roots v1.0 · Phase 2</Text>
+        <Text style={styles.version}>Rooted In v1.0</Text>
       </ScrollView>
     </SafeAreaView>
   );

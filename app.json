@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Rooted In",
-    "slug": "rooted-in",
+    "slug": "roots-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -26,7 +26,8 @@
         "NSCalendarsUsageDescription": "Roots reads your calendar to detect shared events with connections.",
         "LSApplicationQueriesSchemes": [
           "whatsapp"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

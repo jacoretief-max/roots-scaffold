@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Alert, ActivityIndicator,
+  ScrollView, Alert, ActivityIndicator, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '@/store/authStore';
 import { useUpdateProfile } from '@/api/hooks';
+import { uploadMedia } from '@/api/upload';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 const AVATAR_COLORS = [
@@ -23,6 +25,8 @@ const AVATAR_COLORS = [
 export default function PersonaliseScreen() {
   const { user } = useAuthStore();
   const [selectedColour, setSelectedColour] = useState(user?.avatarColour ?? Colors.terracotta);
+  const [localPhotoUri, setLocalPhotoUri]   = useState<string | null>(null);
+  const [uploading, setUploading]           = useState(false);
   const { mutate: updateProfile, isPending } = useUpdateProfile();
 
   const hasChanges = selectedColour !== user?.avatarColour;
@@ -36,6 +40,63 @@ export default function PersonaliseScreen() {
       }
     );
   };
+
+  const pickPhoto = (source: 'library' | 'camera') => async () => {
+    const permFn = source === 'library'
+      ? ImagePicker.requestMediaLibraryPermissionsAsync
+      : ImagePicker.requestCameraPermissionsAsync;
+    const { status } = await permFn();
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission needed',
+        source === 'library'
+          ? 'Please allow photo library access to set a profile photo.'
+          : 'Please allow camera access to take a photo.'
+      );
+      return;
+    }
+    const result = source === 'library'
+      ? await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        })
+      : await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: [1, 1],
+          quality: 0.85,
+        });
+    if (result.canceled || !result.assets[0]) return;
+
+    const uri = result.assets[0].uri;
+    setLocalPhotoUri(uri);
+    setUploading(true);
+    try {
+      const s3Url = await uploadMedia(uri, 'image/jpeg', 'avatars', 'avatar');
+      updateProfile(
+        { avatarUrl: s3Url },
+        {
+          onError: () => Alert.alert('Error', 'Photo uploaded but profile update failed. Try again.'),
+        }
+      );
+    } catch {
+      setLocalPhotoUri(null);
+      Alert.alert('Upload failed', 'Could not upload photo. Check your connection and try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleChangePhoto = () => {
+    Alert.alert('Change photo', undefined, [
+      { text: 'Take photo',           onPress: pickPhoto('camera') },
+      { text: 'Choose from library',  onPress: pickPhoto('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
+
+  const displayPhotoUri = localPhotoUri ?? user?.avatarUrl ?? null;
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -55,16 +116,31 @@ export default function PersonaliseScreen() {
 
       <ScrollView style={styles.content}>
 
-        {/* Avatar preview — photo upload coming Phase 4 */}
+        {/* Avatar preview with photo upload */}
         <View style={styles.previewWrap}>
-          <View style={[styles.avatarPreview, { backgroundColor: selectedColour }]}>
-            <Text style={styles.avatarPreviewText}>
-              {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
-            </Text>
-          </View>
-          <View style={styles.comingSoonBadge}>
-            <Text style={styles.comingSoonText}>Photo upload · Phase 4</Text>
-          </View>
+          <TouchableOpacity
+            style={[styles.avatarPreview, { backgroundColor: selectedColour }]}
+            onPress={handleChangePhoto}
+            activeOpacity={0.85}
+            disabled={uploading}
+          >
+            {displayPhotoUri ? (
+              <Image source={{ uri: displayPhotoUri }} style={styles.avatarPhoto} />
+            ) : (
+              <Text style={styles.avatarPreviewText}>
+                {user?.displayName?.charAt(0).toUpperCase() ?? '?'}
+              </Text>
+            )}
+            {uploading && (
+              <View style={styles.uploadingOverlay}>
+                <ActivityIndicator color={Colors.white} />
+              </View>
+            )}
+            <View style={styles.cameraOverlay}>
+              <Text style={styles.cameraOverlayText}>📷</Text>
+            </View>
+          </TouchableOpacity>
+          <Text style={styles.changePhotoHint}>Tap to change photo</Text>
         </View>
 
         {/* Colour swatches */}
@@ -123,19 +199,39 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarPhoto: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   avatarPreviewText: { fontSize: 40, color: Colors.white, fontWeight: '700' },
-  comingSoonBadge: {
-    backgroundColor: Colors.tan,
-    borderRadius: BorderRadius.pill,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 4,
-    marginTop: Spacing.sm,
+  uploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  comingSoonText: {
+  cameraOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.textDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Colors.background,
+  },
+  cameraOverlayText: { fontSize: 13 },
+  changePhotoHint: {
     fontSize: 12,
     color: Colors.textLight,
     fontFamily: Typography.fontFamily,
+    marginTop: 4,
   },
 
   sectionLabel: {

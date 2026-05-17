@@ -625,19 +625,35 @@ app.delete('/api/connections/:id', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/connections/:id
-// Update layer, relation, contact frequency
+// Update relation settings and (for offline contacts) personal contact info
 app.patch('/api/connections/:id', requireAuth, async (req, res) => {
-  const { layer, relation, contactFrequency, alwaysInTouch } = req.body;
+  const {
+    layer, relation, contactFrequency, alwaysInTouch,
+    // Offline contact info (only written when connection is offline)
+    offlineName, offlinePhone, offlineEmail, offlineDob, offlineCity,
+  } = req.body;
+
   const { rows: [connection] } = await db.query(
     `UPDATE connections
      SET
-       layer = COALESCE($1, layer),
-       relation = COALESCE($2, relation),
-       contact_frequency = COALESCE($3, contact_frequency),
-       always_in_touch = COALESCE($4, always_in_touch)
-     WHERE id = $5 AND user_id = $6
+       layer             = COALESCE($1,  layer),
+       relation          = COALESCE($2,  relation),
+       contact_frequency = COALESCE($3,  contact_frequency),
+       always_in_touch   = COALESCE($4,  always_in_touch),
+       -- Offline fields: only update when the connection is actually offline
+       offline_name  = CASE WHEN status = 'offline' THEN COALESCE($5,  offline_name)  ELSE offline_name  END,
+       offline_phone = CASE WHEN status = 'offline' THEN COALESCE($6,  offline_phone) ELSE offline_phone END,
+       offline_email = CASE WHEN status = 'offline' THEN COALESCE($7,  offline_email) ELSE offline_email END,
+       offline_dob   = CASE WHEN status = 'offline' THEN COALESCE($8::DATE, offline_dob) ELSE offline_dob END,
+       offline_city  = CASE WHEN status = 'offline' THEN COALESCE($9,  offline_city)  ELSE offline_city  END
+     WHERE id = $10 AND user_id = $11
      RETURNING *`,
-    [layer, relation, contactFrequency, alwaysInTouch ?? null, req.params.id, req.userId]
+    [
+      layer ?? null, relation ?? null, contactFrequency ?? null, alwaysInTouch ?? null,
+      offlineName ?? null, offlinePhone ?? null, offlineEmail ?? null,
+      offlineDob ?? null, offlineCity ?? null,
+      req.params.id, req.userId,
+    ]
   );
   if (!connection) return res.status(404).json({ error: 'Connection not found' });
   res.json({ data: connection });

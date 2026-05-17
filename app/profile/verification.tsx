@@ -44,24 +44,8 @@ export default function VerificationScreen() {
 
         <Text style={styles.sectionLabel}>Why we verify age</Text>
         <Text style={styles.body}>
-          Roots is designed exclusively for adults aged 18 and over. This is a firm platform policy that protects younger users and ensures the app remains a private, adult space for meaningful relationships.
+          Rooted In is for adults aged 18 and over. We ask for your date of birth during registration and enforce this server-side. It's a firm policy — not a guideline — and it applies to every account on the platform.
         </Text>
-
-        {/* ID verification */}
-        <Text style={styles.sectionLabel}>ID verification (optional)</Text>
-        <Text style={styles.body}>
-          For an additional layer of verification, you can upload a government-issued ID. We extract only your date of birth — no other data from the document is stored, and the document itself is never retained.
-        </Text>
-
-        <View style={styles.idCard}>
-          <Text style={styles.idCardTitle}>Upload ID document</Text>
-          <Text style={styles.idCardDesc}>
-            Driver's licence or passport · DOB extracted only · Document discarded immediately
-          </Text>
-          <View style={styles.comingSoonBadge}>
-            <Text style={styles.comingSoonText}>Coming in Phase 4</Text>
-          </View>
-        </View>
 
         {/* Compliance */}
         <Text style={styles.sectionLabel}>Compliance</Text>
@@ -138,40 +122,6 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
     lineHeight: 22,
     marginBottom: Spacing.md,
-  },
-
-  idCard: {
-    backgroundColor: Colors.card,
-    borderRadius: BorderRadius.md,
-    padding: Spacing.lg,
-    borderWidth: 0.5,
-    borderColor: Colors.tan,
-    gap: Spacing.sm,
-  },
-  idCardTitle: {
-    fontSize: Typography.body,
-    fontFamily: Typography.fontFamily,
-    fontWeight: '700',
-    color: Colors.textDark,
-  },
-  idCardDesc: {
-    fontSize: 13,
-    color: Colors.textLight,
-    fontFamily: Typography.fontFamily,
-    lineHeight: 19,
-  },
-  comingSoonBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: Colors.tan,
-    borderRadius: BorderRadius.pill,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 3,
-    marginTop: Spacing.xs,
-  },
-  comingSoonText: {
-    fontSize: 11,
-    color: Colors.textLight,
-    fontFamily: Typography.fontFamily,
   },
 
   complianceRow: {

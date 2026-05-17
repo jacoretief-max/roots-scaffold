@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 12.0.0"
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "development": {
@@ -30,8 +31,8 @@
     "production": {
       "ios": {
         "appleId": "jacoretief@rooikatlabs.com",
-        "ascAppId": "",
-        "appleTeamId": ""
+        "ascAppId": "6770134115",
+        "appleTeamId": "NFJH57986S"
       }
     }
   }
