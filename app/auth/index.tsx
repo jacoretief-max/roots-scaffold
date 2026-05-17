@@ -239,8 +239,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
       </View>
 
       <Text style={styles.policy}>
-        By creating an account you agree to our Privacy Policy.{'
-'}
+        By creating an account you agree to our Privacy Policy.{'\n'}
         No ads. No public posts. Your data stays yours.
       </Text>
 
