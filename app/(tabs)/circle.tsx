@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
   StyleSheet, ScrollView, ActivityIndicator,
-  Modal, Linking, Alert,
+  Modal, Linking, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
@@ -503,10 +503,15 @@ const AddPersonModal = ({
             </TouchableOpacity>
           </View>
 
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{ flex: 1 }}
+          >
           <ScrollView
             style={styles.modalContent}
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets
           >
             <View style={styles.personSummary}>
               <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
@@ -586,6 +591,7 @@ const AddPersonModal = ({
 
             <View style={{ height: 40 }} />
           </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
     );

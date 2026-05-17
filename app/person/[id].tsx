@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
   ScrollView, Alert, ActivityIndicator, Modal, Switch, TextInput, Linking,
-  Animated,
+  Animated, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
@@ -311,7 +311,8 @@ const EditModal = ({
           </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.modalContent} keyboardShouldPersistTaps="handled">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView style={styles.modalContent} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
 
           {/* ── Offline: editable contact info ── */}
           {isOffline && (
@@ -453,6 +454,7 @@ const EditModal = ({
 
           <View style={{ height: 40 }} />
         </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );

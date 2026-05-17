@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -15,6 +16,7 @@ import { AuthTokens, User } from '@/types';
 // ── Shared input component ─────────────────────────────
 const Input = ({
   label, value, onChangeText, placeholder, secureTextEntry, keyboardType,
+  returnKeyType, onSubmitEditing, inputRef, autoCapitalize,
 }: {
   label: string;
   value: string;
@@ -22,10 +24,15 @@ const Input = ({
   placeholder?: string;
   secureTextEntry?: boolean;
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
+  returnKeyType?: 'next' | 'done' | 'go';
+  onSubmitEditing?: () => void;
+  inputRef?: React.RefObject<TextInput>;
+  autoCapitalize?: 'none' | 'words' | 'sentences';
 }) => (
   <View style={styles.inputWrap}>
     <Text style={styles.inputLabel}>{label}</Text>
     <TextInput
+      ref={inputRef}
       style={styles.input}
       value={value}
       onChangeText={onChangeText}
@@ -33,7 +40,10 @@ const Input = ({
       placeholderTextColor={Colors.textLight}
       secureTextEntry={secureTextEntry}
       keyboardType={keyboardType ?? 'default'}
-      autoCapitalize="none"
+      autoCapitalize={autoCapitalize ?? 'none'}
+      returnKeyType={returnKeyType ?? 'next'}
+      onSubmitEditing={onSubmitEditing}
+      blurOnSubmit={returnKeyType === 'done'}
     />
   </View>
 );
@@ -44,6 +54,7 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { setUser, setTokens } = useAuthStore();
+  const passwordRef = useRef<TextInput>(null);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -52,22 +63,12 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
     }
     setLoading(true);
     try {
-      console.log('[LOGIN] Attempting login for:', email);
-      const response = await api.post('/auth/login', {
-        email,
-        password,
-      });
-      console.log('[LOGIN] Response status:', response.status);
-      console.log('[LOGIN] Response data:', JSON.stringify(response.data));
+      const response = await api.post('/auth/login', { email, password });
       const { user, tokens } = response.data.data;
       await setTokens(tokens);
       setUser(user);
-      console.log('[LOGIN] Success — navigating to tabs');
       router.replace('/(tabs)');
     } catch (err: any) {
-      console.log('[LOGIN] Error:', err?.message);
-      console.log('[LOGIN] Status:', err?.response?.status);
-      console.log('[LOGIN] Response body:', JSON.stringify(err?.response?.data));
       Alert.alert('Login failed', 'Please check your email and password.');
     } finally {
       setLoading(false);
@@ -77,8 +78,23 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
   return (
     <View style={styles.form}>
       <Text style={styles.formTitle}>Welcome back</Text>
-      <Input label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
-      <Input label="Password" value={password} onChangeText={setPassword} secureTextEntry />
+      <Input
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+      />
+      <Input
+        label="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        inputRef={passwordRef}
+        returnKeyType="done"
+        onSubmitEditing={handleLogin}
+      />
       <TouchableOpacity
         style={[styles.btn, loading && styles.btnDisabled]}
         onPress={handleLogin}
@@ -87,7 +103,7 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
         <Text style={styles.btnText}>{loading ? 'Signing in…' : 'Sign in'}</Text>
       </TouchableOpacity>
       <TouchableOpacity onPress={onSwitch} style={styles.switchLink}>
-        <Text style={styles.switchText}>New to Roots? Create account</Text>
+        <Text style={styles.switchText}>New to Rooted In? Create account</Text>
       </TouchableOpacity>
     </View>
   );
@@ -95,7 +111,8 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
 
 // ── Register form with 18+ DOB gate ───────────────────
 const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [dob, setDob] = useState<Date | null>(null);
@@ -103,26 +120,27 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
   const [loading, setLoading] = useState(false);
   const { setUser, setTokens } = useAuthStore();
 
+  const lastNameRef  = useRef<TextInput>(null);
+  const emailRef     = useRef<TextInput>(null);
+  const passwordRef  = useRef<TextInput>(null);
+
   const isOver18 = dob
     ? dayjs().diff(dayjs(dob), 'year') >= 18
     : null;
 
   const handleRegister = async () => {
-    if (!name || !email || !password || !dob) {
+    if (!firstName || !lastName || !email || !password || !dob) {
       Alert.alert('Missing fields', 'Please fill in all fields.');
       return;
     }
     if (!isOver18) {
-      Alert.alert(
-        'Age requirement',
-        'Roots is designed for adults aged 18 and over.'
-      );
+      Alert.alert('Age requirement', 'Rooted In is designed for adults aged 18 and over.');
       return;
     }
     setLoading(true);
     try {
       const response = await api.post('/auth/register', {
-        displayName: name,
+        displayName: `${firstName.trim()} ${lastName.trim()}`,
         email,
         password,
         dateOfBirth: dayjs(dob).format('YYYY-MM-DD'),
@@ -141,9 +159,50 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
   return (
     <View style={styles.form}>
       <Text style={styles.formTitle}>Create your account</Text>
-      <Input label="Your name" value={name} onChangeText={setName} />
-      <Input label="Email" value={email} onChangeText={setEmail} keyboardType="email-address" />
-      <Input label="Password" value={password} onChangeText={setPassword} secureTextEntry />
+
+      {/* Name row */}
+      <View style={styles.nameRow}>
+        <View style={{ flex: 1 }}>
+          <Input
+            label="First name"
+            value={firstName}
+            onChangeText={setFirstName}
+            autoCapitalize="words"
+            returnKeyType="next"
+            onSubmitEditing={() => lastNameRef.current?.focus()}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Input
+            label="Last name"
+            value={lastName}
+            onChangeText={setLastName}
+            autoCapitalize="words"
+            inputRef={lastNameRef}
+            returnKeyType="next"
+            onSubmitEditing={() => emailRef.current?.focus()}
+          />
+        </View>
+      </View>
+
+      <Input
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        inputRef={emailRef}
+        returnKeyType="next"
+        onSubmitEditing={() => passwordRef.current?.focus()}
+      />
+      <Input
+        label="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        inputRef={passwordRef}
+        returnKeyType="done"
+        onSubmitEditing={() => setShowPicker(true)}
+      />
 
       {/* Date of birth picker — 18+ gate */}
       <View style={styles.inputWrap}>
@@ -157,12 +216,11 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
           </Text>
         </TouchableOpacity>
 
-        {/* 18+ validation feedback */}
         {dob && (
           <Text style={[styles.dobFeedback, { color: isOver18 ? Colors.sage : Colors.scoreLow }]}>
             {isOver18
               ? 'Great — you meet the age requirement.'
-              : 'Roots is for adults aged 18 and over.'}
+              : 'Rooted In is for adults aged 18 and over.'}
           </Text>
         )}
 
@@ -181,7 +239,8 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
       </View>
 
       <Text style={styles.policy}>
-        By creating an account you agree to our Privacy Policy.{'\n'}
+        By creating an account you agree to our Privacy Policy.{'
+'}
         No ads. No public posts. Your data stays yours.
       </Text>
 
@@ -206,21 +265,26 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
       >
-        {/* Wordmark */}
-        <View style={styles.header}>
-          <Text style={styles.wordmark}>Roots</Text>
-          <Text style={styles.tagline}>The people you love, kept close.</Text>
-        </View>
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Wordmark */}
+          <View style={styles.header}>
+            <Text style={styles.wordmark}>Rooted In</Text>
+            <Text style={styles.tagline}>The people you love, kept close.</Text>
+          </View>
 
-        {mode === 'login'
-          ? <LoginForm onSwitch={() => setMode('register')} />
-          : <RegisterForm onSwitch={() => setMode('login')} />}
-      </ScrollView>
+          {mode === 'login'
+            ? <LoginForm onSwitch={() => setMode('register')} />
+            : <RegisterForm onSwitch={() => setMode('login')} />}
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -297,6 +361,10 @@ const styles = StyleSheet.create({
     color: Colors.white,
   },
 
+  nameRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
   switchLink: { alignItems: 'center', paddingVertical: Spacing.sm },
   switchText: {
     fontSize: 13,
