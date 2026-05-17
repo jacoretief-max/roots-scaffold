@@ -170,25 +170,33 @@ function RootNavigator() {
     }
   };
 
-  if (phase === 'loading') return <SplashScreen />;
-  if (phase === 'biometric') return <SplashScreen onBiometricRetry={triggerBiometric} />;
-
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="auth/index" />
-      <Stack.Screen name="onboarding" />
-      <Stack.Screen name="onboarding/enroll" />
-      <Stack.Screen name="memory/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="person/[id]" options={{ presentation: 'card' }} />
-      <Stack.Screen name="new-memory" options={{ presentation: 'modal' }} />
-      <Stack.Screen name="profile/account" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/personalise" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/password" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/privacy" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/verification" options={{ headerShown: false }} />
-      <Stack.Screen name="profile/security" options={{ headerShown: false }} />
-    </Stack>
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="auth/index" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="onboarding/enroll" />
+        <Stack.Screen name="memory/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="person/[id]" options={{ presentation: 'card' }} />
+        <Stack.Screen name="new-memory" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="profile/account" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/personalise" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/password" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/privacy" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/verification" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/security" options={{ headerShown: false }} />
+      </Stack>
+
+      {/* Splash overlay — sits on top of the Stack until routing is settled */}
+      {(phase === 'loading' || phase === 'biometric') && (
+        <View style={StyleSheet.absoluteFill}>
+          <SplashScreen
+            onBiometricRetry={phase === 'biometric' ? triggerBiometric : undefined}
+          />
+        </View>
+      )}
+    </>
   );
 }
 
