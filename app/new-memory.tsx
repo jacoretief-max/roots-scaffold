@@ -317,7 +317,7 @@ const Step3 = ({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.stepTitle}>Your perspective</Text>
+        <Text style={styles.stepTitle}>Your take</Text>
         <Text style={styles.stepSub}>Write what this moment meant to you.</Text>
 
         <TextInput

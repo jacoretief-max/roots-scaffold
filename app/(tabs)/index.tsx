@@ -164,7 +164,7 @@ const YourTurnCard = ({ item }: { item: MemoryEvent }) => {
       {/* CTA */}
       <View style={styles.yourTurnCta}>
         <Text style={styles.yourTurnCtaText}>
-          {entryCount === 1 ? '1 perspective' : `${entryCount} perspectives`} · add yours →
+          {entryCount === 1 ? '1 take' : `${entryCount} takes`} · add yours →
         </Text>
       </View>
     </TouchableOpacity>
@@ -343,7 +343,7 @@ const HomeFeed = ({ memories }: { memories: MemoryEvent[] }) => {
           {allCaughtUp && (
             <View style={styles.caughtUp}>
               <Text style={styles.caughtUpText}>You're all caught up</Text>
-              <Text style={styles.caughtUpSub}>No new perspectives since your last visit.</Text>
+              <Text style={styles.caughtUpSub}>No new takes since your last visit.</Text>
             </View>
           )}
           {yourTurn.length > 0 && (

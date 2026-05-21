@@ -136,7 +136,7 @@ const PerspectivesView = ({
   if (entries.length === 0) {
     return (
       <View style={styles.noEntries}>
-        <Text style={styles.noEntriesText}>No perspectives yet.</Text>
+        <Text style={styles.noEntriesText}>No takes yet.</Text>
         <Text style={styles.noEntriesSub}>Be the first to write your memory.</Text>
       </View>
     );
@@ -220,7 +220,7 @@ const AddPerspective = ({
         </TouchableOpacity>
         <TextInput
           style={styles.perspectiveInput}
-          placeholder="Add your perspective…"
+          placeholder="Add your take…"
           placeholderTextColor={Colors.textLight}
           value={text}
           onChangeText={setText}
@@ -527,8 +527,8 @@ export default function MemoryEventScreen() {
 
   const handleDeleteEntry = (entryId: string, authorLabel: string) => {
     Alert.alert(
-      'Delete perspective?',
-      `Remove ${authorLabel} perspective? This cannot be undone.`,
+      'Delete your take?',
+      `Remove ${authorLabel}'s take? This cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -634,7 +634,7 @@ export default function MemoryEventScreen() {
       {/* Bottom action bar */}
       {myEntry ? (
         <View style={styles.alreadyAdded}>
-          <Text style={styles.alreadyAddedText}>You've added your perspective</Text>
+          <Text style={styles.alreadyAddedText}>You've added your take</Text>
           <TouchableOpacity
             onPress={pickPhoto}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -673,7 +673,7 @@ export default function MemoryEventScreen() {
               style={styles.menuItem}
               onPress={() => { setMenuVisible(false); openEditPerspective(); }}
             >
-              <Text style={styles.menuItemText}>Edit your perspective</Text>
+              <Text style={styles.menuItemText}>Edit your take</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -709,7 +709,7 @@ export default function MemoryEventScreen() {
         </View>
       </Modal>
 
-      {/* Edit perspective modal */}
+      {/* Edit your take modal */}
       <Modal
         visible={editVisible}
         animationType="slide"
@@ -721,7 +721,7 @@ export default function MemoryEventScreen() {
             <TouchableOpacity onPress={() => setEditVisible(false)}>
               <Text style={styles.editCancel}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.editTitle}>Edit perspective</Text>
+            <Text style={styles.editTitle}>Edit your take</Text>
             <TouchableOpacity
               onPress={() => {
                 if (!editText.trim()) return;
