@@ -16,17 +16,17 @@ const SLIDES = [
     key: 'welcome',
     symbol: '❧',
     title: 'You can only truly know 150 people',
-    body: "Robin Dunbar, an Oxford anthropologist, discovered that our brains can maintain about 150 meaningful relationships. Not followers. Not connections. People you actually know.\n\nRooted In helps you make the most of every one of them.",
+    body: "Robin Dunbar, an Oxford anthropologist, developed the thesis that our brains can maintain about 150 meaningful relationships. Not followers. Not connections. People you actually know.\n\nRooted In helps you make the most of every one of them.",
   },
   {
     key: 'circles',
-    title: 'Your inner circles',
+    title: 'Your circles',
     symbol: '◎',
     steps: [
-      { label: '5 people',   desc: 'Your closest — the ones you could call at 2am.' },
-      { label: '15 people',  desc: 'Close friends and family you stay in regular contact with.' },
-      { label: '50 people',  desc: 'Good friends you see a few times a year.' },
-      { label: '150 people', desc: 'Your full active social network.' },
+      { label: 'Inner circle',  desc: '5 people · the ones you could call at 2am.' },
+      { label: 'Close friends', desc: '15 people · close friends and family.' },
+      { label: 'Good friends',  desc: '50 people · people you see a few times a year.' },
+      { label: 'Acquaintances', desc: '150 people · your wider active network.' },
     ],
   },
   {

@@ -77,6 +77,7 @@ export default function PersonaliseScreen() {
       updateProfile(
         { avatarUrl: s3Url },
         {
+          onSuccess: () => Alert.alert('Saved', 'Your profile photo has been updated.'),
           onError: () => Alert.alert('Error', 'Photo uploaded but profile update failed. Try again.'),
         }
       );

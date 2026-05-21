@@ -8,9 +8,40 @@ import { router } from 'expo-router';
 import { useChangePassword } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
+function PasswordField({
+  value, onChangeText, placeholder, hasError,
+}: {
+  value: string;
+  onChangeText: (t: string) => void;
+  placeholder?: string;
+  hasError?: boolean;
+}) {
+  const [hidden, setHidden] = useState(true);
+  return (
+    <View style={[styles.inputRow, hasError && styles.inputRowError]}>
+      <TextInput
+        style={styles.input}
+        value={value}
+        onChangeText={onChangeText}
+        secureTextEntry={hidden}
+        placeholder={placeholder}
+        placeholderTextColor={Colors.textLight}
+        autoCapitalize="none"
+      />
+      <TouchableOpacity
+        onPress={() => setHidden(h => !h)}
+        style={styles.eyeBtn}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Text style={styles.eyeBtnText}>{hidden ? 'Show' : 'Hide'}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 export default function PasswordScreen() {
   const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
+  const [next, setNext]       = useState('');
   const [confirm, setConfirm] = useState('');
   const { mutate: changePassword, isPending } = useChangePassword();
 
@@ -57,33 +88,25 @@ export default function PasswordScreen() {
 
       <View style={styles.content}>
         <Text style={styles.sectionLabel}>Current password</Text>
-        <TextInput
-          style={styles.input}
+        <PasswordField
           value={current}
           onChangeText={setCurrent}
-          secureTextEntry
           placeholder="Enter current password"
-          placeholderTextColor={Colors.textLight}
         />
 
         <Text style={styles.sectionLabel}>New password</Text>
-        <TextInput
-          style={styles.input}
+        <PasswordField
           value={next}
           onChangeText={setNext}
-          secureTextEntry
           placeholder="At least 8 characters"
-          placeholderTextColor={Colors.textLight}
         />
 
         <Text style={styles.sectionLabel}>Confirm new password</Text>
-        <TextInput
-          style={[styles.input, confirm.length > 0 && next !== confirm && styles.inputError]}
+        <PasswordField
           value={confirm}
           onChangeText={setConfirm}
-          secureTextEntry
           placeholder="Repeat new password"
-          placeholderTextColor={Colors.textLight}
+          hasError={confirm.length > 0 && next !== confirm}
         />
         {confirm.length > 0 && next !== confirm && (
           <Text style={styles.errorText}>Passwords do not match</Text>
@@ -118,16 +141,28 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginTop: Spacing.lg,
   },
-  input: {
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: Colors.card,
     borderWidth: 0.5,
     borderColor: Colors.tan,
     borderRadius: BorderRadius.sm,
+  },
+  inputRowError: { borderColor: Colors.scoreLow },
+  input: {
+    flex: 1,
     padding: Spacing.md,
     fontSize: Typography.body,
     fontFamily: Typography.fontFamily,
     color: Colors.textDark,
   },
-  inputError: { borderColor: Colors.scoreLow },
+  eyeBtn: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
+  eyeBtnText: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
+  },
   errorText: { fontSize: 12, color: Colors.scoreLow, fontFamily: Typography.fontFamily, marginTop: 4 },
 });

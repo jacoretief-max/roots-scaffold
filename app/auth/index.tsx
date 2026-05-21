@@ -16,37 +16,52 @@ import { AuthTokens, User } from '@/types';
 // ── Shared input component ─────────────────────────────
 const Input = ({
   label, value, onChangeText, placeholder, secureTextEntry, keyboardType,
-  returnKeyType, onSubmitEditing, inputRef, autoCapitalize,
+  returnKeyType, onSubmitEditing, inputRef, autoCapitalize, showToggle,
 }: {
   label: string;
   value: string;
   onChangeText: (t: string) => void;
   placeholder?: string;
   secureTextEntry?: boolean;
+  showToggle?: boolean;
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   returnKeyType?: 'next' | 'done' | 'go';
   onSubmitEditing?: () => void;
   inputRef?: React.RefObject<TextInput>;
   autoCapitalize?: 'none' | 'words' | 'sentences';
-}) => (
-  <View style={styles.inputWrap}>
-    <Text style={styles.inputLabel}>{label}</Text>
-    <TextInput
-      ref={inputRef}
-      style={styles.input}
-      value={value}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      placeholderTextColor={Colors.textLight}
-      secureTextEntry={secureTextEntry}
-      keyboardType={keyboardType ?? 'default'}
-      autoCapitalize={autoCapitalize ?? 'none'}
-      returnKeyType={returnKeyType ?? 'next'}
-      onSubmitEditing={onSubmitEditing}
-      blurOnSubmit={returnKeyType === 'done'}
-    />
-  </View>
-);
+}) => {
+  const [hidden, setHidden] = useState(secureTextEntry ?? false);
+  return (
+    <View style={styles.inputWrap}>
+      <Text style={styles.inputLabel}>{label}</Text>
+      <View style={styles.inputRow}>
+        <TextInput
+          ref={inputRef}
+          style={[styles.input, styles.inputFlex]}
+          value={value}
+          onChangeText={onChangeText}
+          placeholder={placeholder}
+          placeholderTextColor={Colors.textLight}
+          secureTextEntry={hidden}
+          keyboardType={keyboardType ?? 'default'}
+          autoCapitalize={autoCapitalize ?? 'none'}
+          returnKeyType={returnKeyType ?? 'next'}
+          onSubmitEditing={onSubmitEditing}
+          blurOnSubmit={returnKeyType === 'done'}
+        />
+        {showToggle && (
+          <TouchableOpacity
+            onPress={() => setHidden(h => !h)}
+            style={styles.eyeBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.eyeBtnText}>{hidden ? 'Show' : 'Hide'}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
+};
 
 // ── Login form ─────────────────────────────────────────
 const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
@@ -91,6 +106,7 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        showToggle
         inputRef={passwordRef}
         returnKeyType="done"
         onSubmitEditing={handleLogin}
@@ -199,6 +215,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        showToggle
         inputRef={passwordRef}
         returnKeyType="done"
         onSubmitEditing={() => setShowPicker(true)}
@@ -325,6 +342,14 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     fontFamily: Typography.fontFamily,
   },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.card,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.sm,
+  },
   input: {
     backgroundColor: Colors.card,
     borderWidth: 0.5,
@@ -334,6 +359,22 @@ const styles = StyleSheet.create({
     fontSize: Typography.body,
     fontFamily: Typography.fontFamily,
     color: Colors.textDark,
+  },
+  inputFlex: {
+    flex: 1,
+    borderWidth: 0,
+    borderRadius: 0,
+    backgroundColor: 'transparent',
+  },
+  eyeBtn: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+  },
+  eyeBtnText: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    fontWeight: '600',
   },
   dobInput: { justifyContent: 'center' },
   dobFeedback: { fontSize: 12, marginTop: 2 },

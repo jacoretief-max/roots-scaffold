@@ -106,6 +106,7 @@ function RootNavigator() {
   const { isAuthenticated, isLoading } = useAuthStore();
   const { mutate: registerPushToken } = useRegisterPushToken();
   const [phase, setPhase] = useState<AppPhase>('loading');
+  const hasRouted = useRef(false);
 
   // Register push token when authenticated
   useEffect(() => {
@@ -125,9 +126,12 @@ function RootNavigator() {
     registerForPush();
   }, [isAuthenticated]);
 
-  // Route after loading completes
+  // Route after loading completes — only once on initial load.
+  // Screens handle their own navigation after that (e.g. register → enroll).
   useEffect(() => {
     if (isLoading) return;
+    if (hasRouted.current) return;
+    hasRouted.current = true;
 
     (async () => {
       if (isAuthenticated) {
