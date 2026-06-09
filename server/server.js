@@ -627,36 +627,41 @@ app.delete('/api/connections/:id', requireAuth, async (req, res) => {
 // PATCH /api/connections/:id
 // Update relation settings and (for offline contacts) personal contact info
 app.patch('/api/connections/:id', requireAuth, async (req, res) => {
-  const {
-    layer, relation, contactFrequency, alwaysInTouch,
-    // Offline contact info (only written when connection is offline)
-    offlineName, offlinePhone, offlineEmail, offlineDob, offlineCity,
-  } = req.body;
+  try {
+    const {
+      layer, relation, contactFrequency, alwaysInTouch,
+      // Offline contact info (only written when connection is offline)
+      offlineName, offlinePhone, offlineEmail, offlineDob, offlineCity,
+    } = req.body;
 
-  const { rows: [connection] } = await db.query(
-    `UPDATE connections
-     SET
-       layer             = COALESCE($1,  layer),
-       relation          = COALESCE($2,  relation),
-       contact_frequency = COALESCE($3,  contact_frequency),
-       always_in_touch   = COALESCE($4,  always_in_touch),
-       -- Offline fields: only update when the connection is actually offline
-       offline_name  = CASE WHEN status = 'offline' THEN COALESCE($5,  offline_name)  ELSE offline_name  END,
-       offline_phone = CASE WHEN status = 'offline' THEN COALESCE($6,  offline_phone) ELSE offline_phone END,
-       offline_email = CASE WHEN status = 'offline' THEN COALESCE($7,  offline_email) ELSE offline_email END,
-       offline_dob   = CASE WHEN status = 'offline' THEN COALESCE($8::DATE, offline_dob) ELSE offline_dob END,
-       offline_city  = CASE WHEN status = 'offline' THEN COALESCE($9,  offline_city)  ELSE offline_city  END
-     WHERE id = $10 AND user_id = $11
-     RETURNING *`,
-    [
-      layer ?? null, relation ?? null, contactFrequency ?? null, alwaysInTouch ?? null,
-      offlineName ?? null, offlinePhone ?? null, offlineEmail ?? null,
-      offlineDob ?? null, offlineCity ?? null,
-      req.params.id, req.userId,
-    ]
-  );
-  if (!connection) return res.status(404).json({ error: 'Connection not found' });
-  res.json({ data: connection });
+    const { rows: [connection] } = await db.query(
+      `UPDATE connections
+       SET
+         layer             = COALESCE($1,  layer),
+         relation          = COALESCE($2,  relation),
+         contact_frequency = COALESCE($3,  contact_frequency),
+         always_in_touch   = COALESCE($4,  always_in_touch),
+         -- Offline fields: only update when the connection is actually offline
+         offline_name  = CASE WHEN status = 'offline' THEN COALESCE($5,  offline_name)  ELSE offline_name  END,
+         offline_phone = CASE WHEN status = 'offline' THEN COALESCE($6,  offline_phone) ELSE offline_phone END,
+         offline_email = CASE WHEN status = 'offline' THEN COALESCE($7,  offline_email) ELSE offline_email END,
+         offline_dob   = CASE WHEN status = 'offline' THEN COALESCE($8::DATE, offline_dob) ELSE offline_dob END,
+         offline_city  = CASE WHEN status = 'offline' THEN COALESCE($9,  offline_city)  ELSE offline_city  END
+       WHERE id = $10 AND user_id = $11
+       RETURNING *`,
+      [
+        layer ?? null, relation ?? null, contactFrequency ?? null, alwaysInTouch ?? null,
+        offlineName ?? null, offlinePhone ?? null, offlineEmail ?? null,
+        offlineDob ?? null, offlineCity ?? null,
+        req.params.id, req.userId,
+      ]
+    );
+    if (!connection) return res.status(404).json({ error: 'Connection not found' });
+    res.json({ data: connection });
+  } catch (err) {
+    console.error('PATCH /connections/:id error:', err.message);
+    res.status(500).json({ error: 'Failed to update connection' });
+  }
 });
 
 // ── Connection requests ────────────────────────────────
@@ -823,9 +828,10 @@ app.post('/api/users/me/onboarding-suggestions', requireAuth, async (req, res) =
 });
 
 // POST /api/connections/sync-contacts
-// Receives array of { name, phoneNumber } from device
-// Matches against connections and updates phone numbers
+// Receives array of { name, phoneNumber, email } from device
+// Matches against connections and updates phone + email
 app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
+  try {
   const { contacts } = req.body;
   if (!Array.isArray(contacts)) {
     return res.status(400).json({ error: 'contacts array required' });
@@ -885,24 +891,39 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
     if (!bestMatch) continue;
 
     if (bestMatch.score === 1.0) {
-      // Perfect match — sync phone number automatically
+      // Perfect match — sync phone + email automatically
       if (connection.connected_user_id) {
         // Active/pending Roots user → update their profile
         await db.query(
-          'UPDATE users SET phone_number = $1 WHERE id = $2',
-          [bestMatch.contact.phoneNumber, connection.connected_user_id]
+          `UPDATE users
+           SET phone_number = COALESCE($1, phone_number),
+               email        = COALESCE($2, email)
+           WHERE id = $3`,
+          [
+            bestMatch.contact.phoneNumber ?? null,
+            bestMatch.contact.email ?? null,
+            connection.connected_user_id,
+          ]
         );
       } else {
         // Offline contact → update the connection row
         await db.query(
-          'UPDATE connections SET offline_phone = $1 WHERE id = $2',
-          [bestMatch.contact.phoneNumber, connection.id]
+          `UPDATE connections
+           SET offline_phone = COALESCE($1, offline_phone),
+               offline_email = COALESCE($2, offline_email)
+           WHERE id = $3`,
+          [
+            bestMatch.contact.phoneNumber ?? null,
+            bestMatch.contact.email ?? null,
+            connection.id,
+          ]
         );
       }
       matched.push({
         connectionId: connection.id,
         name: connection.display_name,
         phoneNumber: bestMatch.contact.phoneNumber,
+        email: bestMatch.contact.email,
       });
     } else if (bestMatch.score >= 0.65) {
       // Fuzzy match — present to user to confirm
@@ -919,6 +940,10 @@ app.post('/api/connections/sync-contacts', requireAuth, async (req, res) => {
   }
 
   res.json({ data: { matched, suggestions, total: contacts.length } });
+  } catch (err) {
+    console.error('POST /connections/sync-contacts error:', err.message);
+    res.status(500).json({ error: 'Sync failed' });
+  }
 });
 
 // POST /api/connections/confirm-contact-match

@@ -325,7 +325,7 @@ export const useUpdateConnection = () => {
 // Sync device contacts
 export const useSyncContacts = () =>
   useMutation({
-    mutationFn: async (contacts: Array<{ name: string; phoneNumber?: string }>) => {
+    mutationFn: async (contacts: Array<{ name: string; phoneNumber?: string; email?: string }>) => {
       const { data } = await api.post('/connections/sync-contacts', { contacts });
       return data.data as {
         matched: any[];
