@@ -52,3 +52,9 @@ CREATE INDEX IF NOT EXISTS conn_requests_to_idx ON connection_requests(to_user_i
 -- ── 7. connections: offline city field ─────────────────────────────────────────────────────
 ALTER TABLE connections
   ADD COLUMN IF NOT EXISTS offline_city TEXT;
+
+-- ── 8. events: offline participant connection IDs (Phase 5 prep) ─────────────────────────
+-- Offline contacts tagged in memories are stored here by connection_id.
+-- When they join Rooted In their id moves to participant_ids (claim mechanic — Phase 5).
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS offline_participant_connection_ids UUID[] NOT NULL DEFAULT '{}';

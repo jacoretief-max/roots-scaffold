@@ -41,7 +41,8 @@ const StepIndicator = ({ current }: { current: number }) => (
 
 // ── Participant pill ───────────────────────────────────
 interface Participant {
-  id?: string;           // real user ID if linked
+  id?: string;           // Roots user ID (active connections)
+  connectionId?: string; // connection ID for offline-only contacts
   name: string;
   avatarColour: string;
   isRootsUser: boolean;
@@ -192,12 +193,14 @@ const Step2 = ({
   ];
 
   const addFromSuggestion = (suggestion: any) => {
-    if (participants.find(p => p.id === suggestion.id)) return;
+    const uid = suggestion.isOffline ? suggestion.connectionId : suggestion.id;
+    if (participants.find(p => (p.id ?? p.connectionId) === uid)) return;
     setParticipants([...participants, {
-      id: suggestion.id,
-      name: suggestion.displayName,
-      avatarColour: suggestion.avatarColour,
-      isRootsUser: true,
+      id:           suggestion.isOffline ? undefined : suggestion.id,
+      connectionId: suggestion.isOffline ? suggestion.connectionId : undefined,
+      name:         suggestion.displayName,
+      avatarColour: suggestion.avatarColour ?? Colors.terracotta,
+      isRootsUser:  !suggestion.isOffline,
     }]);
     setQuery('');
   };
@@ -261,22 +264,27 @@ const Step2 = ({
           <Text style={styles.suggestionsLabel}>From your circle</Text>
           {suggestions.map((s: any) => (
             <TouchableOpacity
-              key={s.id}
+              key={s.isOffline ? s.connectionId : s.id}
               style={styles.suggestion}
               onPress={() => addFromSuggestion(s)}
             >
-              <View style={[styles.suggestionAvatar, { backgroundColor: s.avatarColour }]}>
+              <View style={[styles.suggestionAvatar, { backgroundColor: s.avatarColour ?? Colors.terracotta }]}>
                 <Text style={styles.suggestionAvatarText}>
                   {s.displayName.charAt(0).toUpperCase()}
                 </Text>
               </View>
               <View style={styles.suggestionInfo}>
                 <Text style={styles.suggestionName}>{s.displayName}</Text>
-                <Text style={styles.suggestionMeta}>{s.relation} · {s.city}</Text>
+                <Text style={styles.suggestionMeta}>
+                  {s.relation}{s.city ? ` · ${s.city}` : ''}
+                  {s.isOffline ? ' · not on Rooted In yet' : ''}
+                </Text>
               </View>
-              <View style={styles.rootsBadge}>
-                <Text style={styles.rootsBadgeText}>Roots</Text>
-              </View>
+              {!s.isOffline && (
+                <View style={styles.rootsBadge}>
+                  <Text style={styles.rootsBadgeText}>Roots</Text>
+                </View>
+              )}
             </TouchableOpacity>
           ))}
         </View>
@@ -487,6 +495,10 @@ export default function NewMemoryScreen() {
       ...participants.filter(p => p.isRootsUser && p.id).map(p => p.id!),
     ].filter(Boolean) as string[];
 
+    const offlineParticipantConnectionIds = participants
+      .filter(p => !p.isRootsUser && p.connectionId)
+      .map(p => p.connectionId!);
+
     try {
       const { event, entryId } = await createMemory({
         title: title.trim(),
@@ -494,6 +506,7 @@ export default function NewMemoryScreen() {
         location: location.trim() || undefined,
         visibility,
         participantIds,
+        offlineParticipantConnectionIds,
         memoryText: memoryText.trim() || undefined,
       });
 

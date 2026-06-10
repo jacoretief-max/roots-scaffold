@@ -40,7 +40,10 @@ export const useCreateMemory = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (
-      payload: Partial<MemoryEvent> & { memoryText?: string }
+      payload: Partial<MemoryEvent> & {
+        memoryText?: string;
+        offlineParticipantConnectionIds?: string[];
+      }
     ): Promise<{ event: MemoryEvent; entryId: string | null }> => {
       const { memoryText, ...eventPayload } = payload;
       // Step 1: create the event

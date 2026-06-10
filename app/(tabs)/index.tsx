@@ -303,7 +303,7 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
           {entryCount > 0 && (
             <View style={styles.perspectiveCount}>
               <Text style={styles.perspectiveCountText}>
-                {entryCount} {entryCount === 1 ? 'perspective' : 'perspectives'}
+                {entryCount === 1 ? '1 take' : `${entryCount} takes`}
               </Text>
             </View>
           )}

@@ -379,28 +379,56 @@ app.get('/api/users/:id/photo', async (req, res) => {
 // ── Connection routes ──────────────────────────────────
 
 // GET /api/connections/search?q=name
+// Returns both active Roots users and offline contacts from the caller's circle.
 app.get('/api/connections/search', requireAuth, async (req, res) => {
   const { q } = req.query;
   if (!q || q.length < 2) return res.json({ data: [] });
 
-  const { rows } = await db.query(
-    `SELECT
-       c.id as "connectionId",
-       c.layer,
-       c.relation,
-       u.id,
-       u.display_name as "displayName",
-       u.avatar_colour as "avatarColour",
-       u.city
-     FROM connections c
-     JOIN users u ON u.id = c.connected_user_id
-     WHERE c.user_id = $1
-     AND LOWER(u.display_name) LIKE LOWER($2)
-     ORDER BY c.score DESC
-     LIMIT 10`,
-    [req.userId, `%${q}%`]
-  );
-  res.json({ data: rows });
+  try {
+    const { rows } = await db.query(
+      `-- Active Roots connections
+       SELECT
+         c.id                    as "connectionId",
+         c.layer,
+         c.relation,
+         u.id                    as id,
+         u.display_name          as "displayName",
+         u.avatar_colour         as "avatarColour",
+         u.city,
+         false                   as "isOffline"
+       FROM connections c
+       JOIN users u ON u.id = c.connected_user_id
+       WHERE c.user_id = $1
+         AND c.status != 'offline'
+         AND LOWER(u.display_name) LIKE LOWER($2)
+
+       UNION ALL
+
+       -- Offline contacts
+       SELECT
+         c.id                    as "connectionId",
+         c.layer,
+         c.relation,
+         NULL                    as id,
+         c.offline_name          as "displayName",
+         '#C45A3A'               as "avatarColour",
+         NULL                    as city,
+         true                    as "isOffline"
+       FROM connections c
+       WHERE c.user_id = $1
+         AND c.status = 'offline'
+         AND c.offline_name IS NOT NULL
+         AND LOWER(c.offline_name) LIKE LOWER($2)
+
+       ORDER BY "isOffline" ASC, "displayName" ASC
+       LIMIT 10`,
+      [req.userId, `%${q}%`]
+    );
+    res.json({ data: rows });
+  } catch (err) {
+    console.error('GET /connections/search error:', err.message);
+    res.status(500).json({ error: 'Search failed' });
+  }
 });
 
 // GET /api/connections
@@ -1132,13 +1160,27 @@ app.get('/api/memories', requireAuth, async (req, res) => {
               '1970-01-01'::timestamptz))
        ) AS "newEntryCount",
        (SELECT EXISTS(SELECT 1 FROM memory_entries me WHERE me.event_id = e.id AND me.author_id = $1)) AS "hasMyEntry",
-       (SELECT COALESCE(json_agg(json_build_object(
-           'id', u.id,
-           'displayName', u.display_name,
-           'avatarColour', u.avatar_colour
-         )), '[]'::json)
-        FROM users u
-        WHERE u.id = ANY(e.participant_ids)
+       (SELECT COALESCE(json_agg(p), '[]'::json)
+        FROM (
+          SELECT json_build_object(
+            'id',           u.id,
+            'displayName',  u.display_name,
+            'avatarColour', u.avatar_colour,
+            'isOffline',    false
+          ) as p
+          FROM users u
+          WHERE u.id = ANY(e.participant_ids)
+          UNION ALL
+          SELECT json_build_object(
+            'id',           NULL,
+            'connectionId', c.id,
+            'displayName',  c.offline_name,
+            'avatarColour', '#C45A3A',
+            'isOffline',    true
+          ) as p
+          FROM connections c
+          WHERE c.id = ANY(e.offline_participant_connection_ids)
+        ) sub
        ) as participants,
        (SELECT COALESCE(json_agg(mm.url ORDER BY mm.created_at ASC), '[]'::json)
         FROM (SELECT url, created_at FROM memory_media WHERE event_id = e.id ORDER BY created_at ASC LIMIT 3) mm
@@ -1170,9 +1212,10 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
        title,
        to_char(date, 'YYYY-MM-DD') as date,
        location, lat, lng, music, visibility,
-       participant_ids      as "participantIds",
-       photo_urls           as "photoUrls",
-       created_by_user_id   as "createdByUserId",
+       participant_ids                       as "participantIds",
+       offline_participant_connection_ids    as "offlineParticipantConnectionIds",
+       photo_urls                            as "photoUrls",
+       created_by_user_id                    as "createdByUserId",
        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"
      FROM events
      WHERE id = $1 AND $2 = ANY(participant_ids)`,
@@ -1205,16 +1248,30 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
     [req.params.id, req.userId]
   );
 
-  // Hydrate participants
-  const { rows: participants } = await db.query(
+  // Hydrate participants — Roots users + offline contacts
+  const { rows: rootsParticipants } = await db.query(
     `SELECT id,
             display_name  as "displayName",
             avatar_colour as "avatarColour",
-            city
+            city,
+            false         as "isOffline"
      FROM users
      WHERE id = ANY($1::uuid[])`,
     [event.participantIds]
   );
+  const { rows: offlineParticipants } = event.offlineParticipantConnectionIds?.length
+    ? await db.query(
+        `SELECT id           as "connectionId",
+                offline_name as "displayName",
+                '#C45A3A'    as "avatarColour",
+                NULL         as city,
+                true         as "isOffline"
+         FROM connections
+         WHERE id = ANY($1::uuid[])`,
+        [event.offlineParticipantConnectionIds]
+      )
+    : { rows: [] };
+  const participants = [...rootsParticipants, ...offlineParticipants];
 
   // Fetch all media for this event (photos/videos added by any participant)
   const { rows: mediaRows } = await db.query(
@@ -1259,16 +1316,32 @@ app.patch('/api/memories/:id', requireAuth, async (req, res) => {
 
 // POST /api/memories
 app.post('/api/memories', requireAuth, async (req, res) => {
-  const { title, date, location, lat, lng, music, visibility, participantIds } = req.body;
-  const { rows: [event] } = await db.query(
-    `INSERT INTO events (title, date, location, lat, lng, music, visibility,
-                         participant_ids, created_by_user_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     RETURNING *`,
-    [title, date, location, lat, lng, music ? JSON.stringify(music) : null,
-     visibility ?? 'intimate', participantIds ?? [req.userId], req.userId]
-  );
-  res.status(201).json({ data: event });
+  try {
+    const {
+      title, date, location, lat, lng, music, visibility,
+      participantIds,
+      offlineParticipantConnectionIds,  // connection IDs for offline-only contacts
+    } = req.body;
+    const { rows: [event] } = await db.query(
+      `INSERT INTO events
+         (title, date, location, lat, lng, music, visibility,
+          participant_ids, offline_participant_connection_ids, created_by_user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [
+        title, date, location, lat, lng,
+        music ? JSON.stringify(music) : null,
+        visibility ?? 'intimate',
+        participantIds ?? [req.userId],
+        offlineParticipantConnectionIds ?? [],
+        req.userId,
+      ]
+    );
+    res.status(201).json({ data: event });
+  } catch (err) {
+    console.error('POST /memories error:', err.message);
+    res.status(500).json({ error: 'Failed to create memory' });
+  }
 });
 
 // POST /api/memories/:id/entries
