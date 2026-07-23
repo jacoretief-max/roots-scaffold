@@ -2,7 +2,7 @@ import { Tabs } from 'expo-router';
 import { View, StyleSheet } from 'react-native';
 import { Colors } from '@/constants/theme';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
-import { useMemories } from '@/api/hooks';
+import { useMemories, useConnectionRequests } from '@/api/hooks';
 
 // ── Icon components ────────────────────────────────────
 const IconBook = ({ color }: { color: string }) => (
@@ -47,6 +47,8 @@ const TabIcon = ({
 export default function TabLayout() {
   const { data: memories } = useMemories();
   const hasUnread = (memories ?? []).some(m => (m.newEntryCount ?? 0) > 0);
+  const { data: incomingRequests } = useConnectionRequests();
+  const hasPendingRequests = (incomingRequests ?? []).length > 0;
 
   return (
     <Tabs
@@ -68,7 +70,7 @@ export default function TabLayout() {
         name="circle"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon Icon={IconHeart} focused={focused} />
+            <TabIcon Icon={IconHeart} focused={focused} notify={hasPendingRequests} />
           ),
         }}
       />

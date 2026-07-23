@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS connections (
   connected_user_id     UUID REFERENCES users(id) ON DELETE CASCADE, -- NULL for offline contacts
   relation              TEXT,                          -- e.g. "best friend"
   layer                 TEXT NOT NULL CHECK (layer IN ('intimate','close','active','meaningful')),
-  since                 DATE,
+  since                 TEXT,                          -- freeform: "2015", "uni days", etc. — not a real date
   contact_frequency     INTEGER DEFAULT 14,            -- target days between contact
   score                 INTEGER NOT NULL DEFAULT 80 CHECK (score BETWEEN 0 AND 100),
   last_contact_at       TIMESTAMPTZ,

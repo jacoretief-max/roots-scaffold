@@ -32,6 +32,31 @@ const queryClient = new QueryClient({
   },
 });
 
+// ── Notification tap routing ──────────────────────────────────────────────────
+// Server tags connection-request pushes with `data.type` (see server.js). When
+// a user taps one of these, send them to the Circle tab where incoming
+// requests are reviewed/accepted — instead of just foregrounding the app with
+// no indication anything needs their attention.
+function handleNotificationData(data: unknown) {
+  const type = (data as { type?: string } | undefined)?.type;
+  if (type === 'connection_request' || type === 'connection_accepted') {
+    router.push('/(tabs)/circle');
+  }
+}
+
+// Cold start: the app may have been fully closed and launched by tapping a
+// notification. Call this right after landing on the tabs so a pending
+// connection-request notification still routes to Circle, not just the
+// default tab.
+async function checkPendingNotification() {
+  try {
+    const response = await Notifications.getLastNotificationResponseAsync();
+    if (response) handleNotificationData(response.notification.request.content.data);
+  } catch {
+    // no-op — worst case the user just lands on the default tab
+  }
+}
+
 // ── Branded splash / biometric prompt ─────────────────────────────────────────
 function SplashScreen({ onBiometricRetry }: { onBiometricRetry?: () => void }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -143,6 +168,7 @@ function RootNavigator() {
         } else {
           setPhase('ready');
           router.replace('/(tabs)');
+          checkPendingNotification();
         }
       } else {
         // Check if first-time user
@@ -166,11 +192,13 @@ function RootNavigator() {
       if (result.success) {
         setPhase('ready');
         router.replace('/(tabs)');
+        checkPendingNotification();
       }
       // If cancelled/failed — stay on biometric phase so user can retry
     } catch {
       setPhase('ready');
       router.replace('/(tabs)');
+      checkPendingNotification();
     }
   };
 
@@ -222,6 +250,16 @@ export default function RootLayout() {
         ensureFreshToken();
       }
       appState.current = nextAppState;
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // App already running (foreground or backgrounded, not cold-started) —
+  // route directly on tap. The cold-start equivalent is checkPendingNotification()
+  // above, called after initial auth routing settles.
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      handleNotificationData(response.notification.request.content.data);
     });
     return () => subscription.remove();
   }, []);

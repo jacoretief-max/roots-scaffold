@@ -600,6 +600,7 @@ app.post('/api/connections', requireAuth, async (req, res) => {
             to: tokens.map(t => t.token),
             title: 'New connection request',
             body: `${me.display_name} added you to their circle`,
+            data: { type: 'connection_request' },
           }),
         }).catch(() => {});
       }
@@ -763,6 +764,7 @@ app.post('/api/connection-requests/:id/accept', requireAuth, async (req, res) =>
           to: tokens.map(t => t.token),
           title: 'Connection accepted',
           body: `${me.display_name} accepted your connection request`,
+          data: { type: 'connection_accepted' },
         }),
       }).catch(() => {});
     }
