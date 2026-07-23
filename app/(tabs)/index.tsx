@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity,
   StyleSheet, ActivityIndicator, Animated,
@@ -6,7 +6,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { useMemories } from '@/api/hooks';
+import { useFocusEffect } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
+import { useMemories, QueryKeys } from '@/api/hooks';
 import { MemoryEvent } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 
@@ -378,6 +380,15 @@ const HomeFeed = ({ memories }: { memories: MemoryEvent[] }) => {
 export default function MemoriesScreen() {
   const [showAll, setShowAll] = useState(false);
   const { data: memories, isLoading } = useMemories();
+
+  // Safety net alongside the new-memory push invalidation in app/_layout.tsx —
+  // catches delayed/dropped pushes or notifications permission never granted.
+  const queryClient = useQueryClient();
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: QueryKeys.memories });
+    }, [queryClient])
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

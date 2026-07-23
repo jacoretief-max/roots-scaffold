@@ -1188,7 +1188,23 @@ app.get('/api/memories', requireAuth, async (req, res) => {
         FROM (SELECT url, created_at FROM memory_media WHERE event_id = e.id ORDER BY created_at ASC LIMIT 3) mm
        ) as media
      FROM events e
-     WHERE $1 = ANY(e.participant_ids)
+     WHERE e.created_by_user_id = $1
+        OR $1 = ANY(e.participant_ids)
+        OR (
+          e.visibility != 'onlyUs'
+          AND EXISTS (
+            SELECT 1 FROM connections c
+            WHERE c.user_id = e.created_by_user_id
+              AND c.connected_user_id = $1
+              AND c.status = 'active'
+              AND (
+                (e.visibility = 'intimate'   AND c.layer = 'intimate') OR
+                (e.visibility = 'close'      AND c.layer IN ('intimate','close')) OR
+                (e.visibility = 'active'     AND c.layer IN ('intimate','close','active')) OR
+                (e.visibility = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
+              )
+          )
+        )
      ORDER BY e.created_at DESC`,
     [req.userId]
   );
@@ -1220,7 +1236,26 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
        created_by_user_id                    as "createdByUserId",
        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"
      FROM events
-     WHERE id = $1 AND $2 = ANY(participant_ids)`,
+     WHERE id = $1
+       AND (
+         created_by_user_id = $2
+         OR $2 = ANY(participant_ids)
+         OR (
+           visibility != 'onlyUs'
+           AND EXISTS (
+             SELECT 1 FROM connections c
+             WHERE c.user_id = created_by_user_id
+               AND c.connected_user_id = $2
+               AND c.status = 'active'
+               AND (
+                 (visibility = 'intimate'   AND c.layer = 'intimate') OR
+                 (visibility = 'close'      AND c.layer IN ('intimate','close')) OR
+                 (visibility = 'active'     AND c.layer IN ('intimate','close','active')) OR
+                 (visibility = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
+               )
+           )
+         )
+       )`,
     [req.params.id, req.userId]
   );
   if (!event) return res.status(404).json({ error: 'Not found' });
@@ -1324,6 +1359,9 @@ app.post('/api/memories', requireAuth, async (req, res) => {
       participantIds,
       offlineParticipantConnectionIds,  // connection IDs for offline-only contacts
     } = req.body;
+    const finalParticipantIds = participantIds ?? [req.userId];
+    const finalVisibility = visibility ?? 'intimate';
+
     const { rows: [event] } = await db.query(
       `INSERT INTO events
          (title, date, location, lat, lng, music, visibility,
@@ -1333,12 +1371,58 @@ app.post('/api/memories', requireAuth, async (req, res) => {
       [
         title, date, location, lat, lng,
         music ? JSON.stringify(music) : null,
-        visibility ?? 'intimate',
-        participantIds ?? [req.userId],
+        finalVisibility,
+        finalParticipantIds,
         offlineParticipantConnectionIds ?? [],
         req.userId,
       ]
     );
+
+    // Notify everyone who can now see this memory — tagged participants plus
+    // anyone the creator has connected at a layer within the visibility tier
+    // (same nested-layer rule used to gate GET /api/memories).
+    try {
+      const taggedOthers = finalParticipantIds.filter((id) => id !== req.userId);
+      const { rows: tokens } = await db.query(
+        `SELECT DISTINCT pt.token
+         FROM push_tokens pt
+         WHERE pt.user_id != $1
+           AND pt.user_id IN (
+             SELECT unnest($2::uuid[])
+             UNION
+             SELECT c.connected_user_id
+             FROM connections c
+             WHERE c.user_id = $1
+               AND c.status = 'active'
+               AND (
+                 ($3 = 'intimate'   AND c.layer = 'intimate') OR
+                 ($3 = 'close'      AND c.layer IN ('intimate','close')) OR
+                 ($3 = 'active'     AND c.layer IN ('intimate','close','active')) OR
+                 ($3 = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
+               )
+           )`,
+        [req.userId, taggedOthers, finalVisibility]
+      );
+      if (tokens.length) {
+        const { rows: [me] } = await db.query(
+          'SELECT display_name FROM users WHERE id = $1', [req.userId]
+        );
+        fetch('https://exp.host/--/api/v2/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to: tokens.map(t => t.token),
+            title: 'New memory',
+            body: `${me.display_name} shared a new memory: "${event.title}"`,
+            data: { type: 'new_memory', eventId: event.id },
+          }),
+        }).catch(() => {});
+      }
+    } catch (pushErr) {
+      // Never let a notification failure block memory creation
+      console.error('Failed to send new-memory push:', pushErr.message);
+    }
+
     res.status(201).json({ data: event });
   } catch (err) {
     console.error('POST /memories error:', err.message);

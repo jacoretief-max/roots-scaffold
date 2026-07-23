@@ -40,22 +40,29 @@ const queryClient = new QueryClient({
 // Invalidating here (on receipt, not just on tap) means the connections list
 // updates itself the moment the push arrives, even if you're already sitting
 // on the Circle screen.
-function invalidateForNotification(data: unknown): string | undefined {
-  const type = (data as { type?: string } | undefined)?.type;
+function invalidateForNotification(data: unknown): { type?: string; eventId?: string } {
+  const parsed = (data as { type?: string; eventId?: string } | undefined) ?? {};
+  const { type, eventId } = parsed;
   if (type === 'connection_request' || type === 'connection_accepted') {
     queryClient.invalidateQueries({ queryKey: QueryKeys.connections });
     queryClient.invalidateQueries({ queryKey: ['connection_requests'] });
   }
-  return type;
+  if (type === 'new_memory') {
+    queryClient.invalidateQueries({ queryKey: QueryKeys.memories });
+    if (eventId) queryClient.invalidateQueries({ queryKey: QueryKeys.memory(eventId) });
+  }
+  return parsed;
 }
 
-// When a user taps one of these, send them to the Circle tab where incoming
-// requests are reviewed/accepted — instead of just foregrounding the app with
-// no indication anything needs their attention.
+// When a user taps one of these, send them to the relevant screen — Circle
+// for connection requests, straight into the memory for a new-memory alert —
+// instead of just foregrounding the app with no indication anything changed.
 function handleNotificationData(data: unknown) {
-  const type = invalidateForNotification(data);
+  const { type, eventId } = invalidateForNotification(data);
   if (type === 'connection_request' || type === 'connection_accepted') {
     router.push('/(tabs)/circle');
+  } else if (type === 'new_memory' && eventId) {
+    router.push(`/memory/${eventId}`);
   }
 }
 
