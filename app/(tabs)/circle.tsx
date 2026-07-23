@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
   StyleSheet, ScrollView, ActivityIndicator,
@@ -9,6 +9,8 @@ import Svg, { Path, Circle, Line } from 'react-native-svg';
 import * as Contacts from 'expo-contacts';
 import * as Calendar from 'expo-calendar';
 import { router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useConnections,
   useUserSearch,
@@ -20,6 +22,7 @@ import {
   useConnectionRequests,
   useAcceptRequest,
   useDeclineRequest,
+  QueryKeys,
 } from '@/api/hooks';
 import { Connection, DunbarLayer } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers, Shadows } from '@/constants/theme';
@@ -761,6 +764,18 @@ export default function CircleScreen() {
   const { data: filtered = [], isLoading: loadingFiltered } = useConnections(activeLayer ?? undefined);
   const { data: searchResults = [], isLoading: isSearching } = useUserSearch(query);
   const { data: incomingRequests = [] } = useConnectionRequests();
+
+  // Safety net alongside the push-driven invalidation in app/_layout.tsx —
+  // catches the case where a push was delayed, dropped, or notifications
+  // permission was never granted. Every time this tab gains focus, treat the
+  // connections data as stale so it re-checks the server.
+  const queryClient = useQueryClient();
+  useFocusEffect(
+    useCallback(() => {
+      queryClient.invalidateQueries({ queryKey: QueryKeys.connections });
+      queryClient.invalidateQueries({ queryKey: ['connection_requests'] });
+    }, [queryClient])
+  );
   const { mutate: addConnection } = useAddConnection();
   const { mutate: syncContacts } = useSyncContacts();
   const { mutate: confirmMatch } = useConfirmContactMatch();

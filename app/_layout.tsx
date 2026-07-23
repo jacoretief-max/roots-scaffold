@@ -10,7 +10,7 @@ import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '@/store/authStore';
 import { Colors, Typography, Spacing } from '@/constants/theme';
-import { useRegisterPushToken } from '@/api/hooks';
+import { useRegisterPushToken, QueryKeys } from '@/api/hooks';
 
 const BIOMETRICS_KEY = 'rootedin_biometrics_enabled';
 const ONBOARDING_KEY = 'rootedin_seen_onboarding';
@@ -32,13 +32,28 @@ const queryClient = new QueryClient({
   },
 });
 
-// ── Notification tap routing ──────────────────────────────────────────────────
-// Server tags connection-request pushes with `data.type` (see server.js). When
-// a user taps one of these, send them to the Circle tab where incoming
+// ── Notification-driven cache invalidation + routing ──────────────────────────
+// Server tags connection-request pushes with `data.type` (see server.js).
+// Connection state lives in each device's own React Query cache — when David
+// accepts on his phone, that only clears the "pending" flag in HIS cache.
+// Jaco's app has no idea anything changed until something tells it to refetch.
+// Invalidating here (on receipt, not just on tap) means the connections list
+// updates itself the moment the push arrives, even if you're already sitting
+// on the Circle screen.
+function invalidateForNotification(data: unknown): string | undefined {
+  const type = (data as { type?: string } | undefined)?.type;
+  if (type === 'connection_request' || type === 'connection_accepted') {
+    queryClient.invalidateQueries({ queryKey: QueryKeys.connections });
+    queryClient.invalidateQueries({ queryKey: ['connection_requests'] });
+  }
+  return type;
+}
+
+// When a user taps one of these, send them to the Circle tab where incoming
 // requests are reviewed/accepted — instead of just foregrounding the app with
 // no indication anything needs their attention.
 function handleNotificationData(data: unknown) {
-  const type = (data as { type?: string } | undefined)?.type;
+  const type = invalidateForNotification(data);
   if (type === 'connection_request' || type === 'connection_accepted') {
     router.push('/(tabs)/circle');
   }
@@ -260,6 +275,17 @@ export default function RootLayout() {
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener(response => {
       handleNotificationData(response.notification.request.content.data);
+    });
+    return () => subscription.remove();
+  }, []);
+
+  // Notification arrives while the app is already open (foreground) — refresh
+  // the relevant data immediately, without requiring the user to tap it or
+  // navigate anywhere. This is what fixes "still shows pending until I
+  // restart the app".
+  useEffect(() => {
+    const subscription = Notifications.addNotificationReceivedListener(notification => {
+      invalidateForNotification(notification.request.content.data);
     });
     return () => subscription.remove();
   }, []);
