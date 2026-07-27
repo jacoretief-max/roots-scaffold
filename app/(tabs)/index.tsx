@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
-  View, Text, FlatList, TouchableOpacity,
+  View, Text, TextInput, FlatList, TouchableOpacity,
   StyleSheet, ActivityIndicator, Animated,
   Dimensions, ScrollView, Image,
 } from 'react-native';
@@ -8,9 +8,37 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useQueryClient } from '@tanstack/react-query';
+import Svg, { Circle, Line } from 'react-native-svg';
 import { useMemories, QueryKeys } from '@/api/hooks';
+import { useAuthStore } from '@/store/authStore';
 import { MemoryEvent } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
+
+// ── Search icon ─────────────────────────────────────────
+const IconSearch = ({ color }: { color: string }) => (
+  <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <Circle cx={11} cy={11} r={7} />
+    <Line x1={21} y1={21} x2={16.65} y2={16.65} />
+  </Svg>
+);
+
+// Fields searched: heading, location, date, and tagged people — deliberately
+// NOT the memory-entry/"take" text, per product decision.
+const matchesSearch = (event: MemoryEvent, query: string): boolean => {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const dateLabel = new Date(event.date).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  }).toLowerCase();
+  const haystacks = [
+    event.title,
+    event.location,
+    dateLabel,
+    event.date,
+    ...(event.participants ?? []).map((p: any) => p.displayName ?? ''),
+  ];
+  return haystacks.some(h => (h ?? '').toLowerCase().includes(q));
+};
 
 // Generates a consistent warm palette from a string (title + id)
 const WARM_PALETTES = [
@@ -99,18 +127,21 @@ const GridCard = ({ event, width }: { event: MemoryEvent; width: number }) => {
 };
 
 // ── All Memories grid ───────────────────────────────────
-const AllMemoriesGrid = ({ memories }: { memories: MemoryEvent[] }) => {
+// groupByDate=false renders a single flat grid with no month headers — used
+// for search results, where grouping a handful of scattered matches by month
+// tends to look sparse rather than helpful.
+const AllMemoriesGrid = ({ memories, groupByDate = true }: { memories: MemoryEvent[]; groupByDate?: boolean }) => {
   const screenWidth = Dimensions.get('window').width;
   const padding = Spacing.lg * 2;
   const gap = Spacing.sm;
   const colWidth = (screenWidth - padding - gap) / 2;
-  const monthGroups = groupByMonth(memories);
+  const monthGroups = groupByDate ? groupByMonth(memories) : [{ label: '', events: memories }];
 
   return (
     <ScrollView showsVerticalScrollIndicator={false}>
       {monthGroups.map(({ label, events }) => (
-        <View key={label} style={styles.monthGroup}>
-          <Text style={styles.monthGroupHeader}>{label}</Text>
+        <View key={label || 'flat'} style={styles.monthGroup}>
+          {!!label && <Text style={styles.monthGroupHeader}>{label}</Text>}
           <View style={styles.twoColGrid}>
             {events.map(event => (
               <GridCard key={event.id} event={event} width={colWidth} />
@@ -379,7 +410,11 @@ const HomeFeed = ({ memories }: { memories: MemoryEvent[] }) => {
 // ── Memories screen ────────────────────────────────────
 export default function MemoriesScreen() {
   const [showAll, setShowAll] = useState(false);
+  const [viewMode, setViewMode] = useState<'mine' | 'all'>('all');
+  const [searchActive, setSearchActive] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const { data: memories, isLoading } = useMemories();
+  const currentUserId = useAuthStore((s) => s.user?.id);
 
   // Safety net alongside the new-memory push invalidation in app/_layout.tsx —
   // catches delayed/dropped pushes or notifications permission never granted.
@@ -390,12 +425,35 @@ export default function MemoriesScreen() {
     }, [queryClient])
   );
 
+  const handleOpenTimeline = () => setShowAll(true);
+  const handleBackFromTimeline = () => {
+    setShowAll(false);
+    setSearchActive(false);
+    setSearchQuery('');
+    setViewMode('all');
+  };
+
+  const timelineMemories = useMemo(() => {
+    let list = memories ?? [];
+    if (viewMode === 'mine' && currentUserId) {
+      list = list.filter(
+        (m) => m.createdByUserId === currentUserId || (m.participantIds ?? []).includes(currentUserId)
+      );
+    }
+    if (searchQuery.trim()) {
+      list = list.filter((m) => matchesSearch(m, searchQuery));
+    }
+    return list;
+  }, [memories, viewMode, searchQuery, currentUserId]);
+
+  const isFiltering = !!searchQuery.trim();
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
         {showAll ? (
-          <TouchableOpacity onPress={() => setShowAll(false)} style={styles.backBtn}>
+          <TouchableOpacity onPress={handleBackFromTimeline} style={styles.backBtn}>
             <Text style={styles.backBtnText}>← Memories</Text>
           </TouchableOpacity>
         ) : (
@@ -406,10 +464,10 @@ export default function MemoriesScreen() {
           {!showAll && (
             <TouchableOpacity
               style={styles.allBtn}
-              onPress={() => setShowAll(true)}
+              onPress={handleOpenTimeline}
               activeOpacity={0.7}
             >
-              <Text style={styles.allBtnText}>All</Text>
+              <Text style={styles.allBtnText}>Timeline</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -422,17 +480,81 @@ export default function MemoriesScreen() {
         </View>
       </View>
 
+      {/* Timeline toolbar — Mine/All toggle + search, only on the Timeline screen */}
+      {showAll && (
+        <View style={styles.timelineToolbar}>
+          {searchActive ? (
+            <View style={styles.searchRow}>
+              <IconSearch color={Colors.textLight} />
+              <TextInput
+                style={styles.searchInput}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                placeholder="Search by person, place, date, or title"
+                placeholderTextColor={Colors.textLight}
+                autoFocus
+              />
+              <TouchableOpacity
+                onPress={() => { setSearchActive(false); setSearchQuery(''); }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.searchCancel}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.toolbarRow}>
+              <View style={styles.viewToggle}>
+                <TouchableOpacity
+                  style={[styles.viewToggleOption, viewMode === 'mine' && styles.viewToggleOptionActive]}
+                  onPress={() => setViewMode('mine')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.viewToggleText, viewMode === 'mine' && styles.viewToggleTextActive]}>
+                    Mine
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.viewToggleOption, viewMode === 'all' && styles.viewToggleOptionActive]}
+                  onPress={() => setViewMode('all')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.viewToggleText, viewMode === 'all' && styles.viewToggleTextActive]}>
+                    All
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={styles.searchIconBtn}
+                onPress={() => setSearchActive(true)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <IconSearch color={Colors.terracotta} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+
       {isLoading ? (
         <ActivityIndicator color={Colors.terracotta} style={{ marginTop: 40 }} />
       ) : showAll ? (
         <View style={{ flex: 1, paddingHorizontal: Spacing.lg }}>
-          {(memories ?? []).length === 0 ? (
+          {timelineMemories.length === 0 ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>No memories yet.</Text>
-              <Text style={styles.emptySubText}>Tap the + button to create your first.</Text>
+              <Text style={styles.emptyText}>
+                {isFiltering
+                  ? 'No memories match your search.'
+                  : viewMode === 'mine'
+                  ? "You haven't created or been tagged in any memories yet."
+                  : 'No memories yet.'}
+              </Text>
+              {!isFiltering && viewMode === 'all' && (
+                <Text style={styles.emptySubText}>Tap the + button to create your first.</Text>
+              )}
             </View>
           ) : (
-            <AllMemoriesGrid memories={memories ?? []} />
+            <AllMemoriesGrid memories={timelineMemories} groupByDate={!isFiltering} />
           )}
         </View>
       ) : (
@@ -501,6 +623,62 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     includeFontPadding: false,
     textAlignVertical: 'center',
+  },
+
+  // ── Timeline toolbar (Mine/All toggle + search) ───────
+  timelineToolbar: {
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.sm,
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    gap: Spacing.xs,
+  },
+  viewToggleOption: {
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    borderRadius: BorderRadius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  viewToggleOptionActive: {
+    backgroundColor: Colors.terracotta + '18',
+    borderColor: Colors.terracotta,
+  },
+  viewToggleText: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+  },
+  viewToggleTextActive: {
+    color: Colors.terracotta,
+    fontWeight: '600',
+  },
+  searchIconBtn: {
+    padding: 6,
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: Typography.body,
+    fontFamily: Typography.fontFamily,
+    color: Colors.textDark,
+    paddingVertical: 6,
+  },
+  searchCancel: {
+    fontSize: 13,
+    fontFamily: Typography.fontFamily,
+    color: Colors.terracotta,
+    fontWeight: '600',
   },
 
   list: { padding: Spacing.lg, gap: Spacing.md },

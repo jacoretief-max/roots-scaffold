@@ -34,6 +34,10 @@ yarn-error.*
 .env
 .env*.local
 
+# DB backups / one-off admin scripts — never commit real data
+*.sql
+_tmp_*.js
+
 # typescript
 *.tsbuildinfo
 
