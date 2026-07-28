@@ -100,6 +100,20 @@ export const useDeleteMemoryEntry = (eventId: string) => {
   });
 };
 
+export const useDeleteMedia = (eventId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (mediaId: string) => {
+      const { data } = await api.delete(`/media/${mediaId}`);
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QueryKeys.memory(eventId) });
+      qc.invalidateQueries({ queryKey: QueryKeys.memories }); // card thumbnails
+    },
+  });
+};
+
 export const useUpdateMemory = () => {
   const qc = useQueryClient();
   return useMutation({

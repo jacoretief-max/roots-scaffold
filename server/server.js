@@ -1312,12 +1312,16 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
 
   // Fetch all media for this event (photos/videos added by any participant)
   const { rows: mediaRows } = await db.query(
-    `SELECT url FROM memory_media WHERE event_id = $1 ORDER BY created_at ASC`,
+    `SELECT id, user_id as "userId", url FROM memory_media WHERE event_id = $1 ORDER BY created_at ASC`,
     [req.params.id]
   );
   const media = mediaRows.map(r => r.url);
+  // Richer form alongside `media` — carries id + uploader so the client can
+  // filter "your photos" and offer per-photo delete. `media` (plain URLs)
+  // stays as-is for the gallery/lightbox, which don't need either.
+  const mediaItems = mediaRows;
 
-  res.json({ data: { ...event, entries, participants, media } });
+  res.json({ data: { ...event, entries, participants, media, mediaItems } });
 });
 
 // PATCH /api/memories/:id — creator only: update event details
@@ -1544,6 +1548,32 @@ app.post('/api/media/confirm', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Media confirm error:', err);
     res.status(500).json({ error: 'Failed to confirm media' });
+  }
+});
+
+// DELETE /api/media/:mediaId — remove a single photo from a memory.
+// Creator acts as admin (can remove any photo on their memory); everyone
+// else can only remove their own upload. Mirrors the same permission model
+// as DELETE /api/memories/:eventId/entries/:entryId.
+app.delete('/api/media/:mediaId', requireAuth, async (req, res) => {
+  try {
+    const { rows: [media] } = await db.query(
+      `SELECT mm.id, mm.user_id as "userId", mm.event_id as "eventId",
+              e.created_by_user_id as "creatorId"
+       FROM memory_media mm
+       JOIN events e ON e.id = mm.event_id
+       WHERE mm.id = $1`,
+      [req.params.mediaId]
+    );
+    if (!media) return res.status(404).json({ error: 'Not found' });
+    if (media.userId !== req.userId && media.creatorId !== req.userId) {
+      return res.status(403).json({ error: 'Not authorised to delete this photo' });
+    }
+    await db.query('DELETE FROM memory_media WHERE id = $1', [req.params.mediaId]);
+    res.json({ data: { ok: true } });
+  } catch (err) {
+    console.error('Media delete error:', err);
+    res.status(500).json({ error: 'Failed to delete photo' });
   }
 });
 

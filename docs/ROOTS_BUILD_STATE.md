@@ -177,7 +177,7 @@ Tab bar reduced from 5 tabs to 3:
 - ⬜ **Voice notes** — record audio for contact events and memories
 - ⬜ **ID verification** — upload driver's licence/passport, extract DOB only
 - ⬜ **2FA** — TOTP authenticator app setup
-- ⬜ **Phone number verification** — SMS OTP
+- ⬜ **Phone number verification** — SMS OTP via Twilio Verify (new Twilio account, from scratch). Chosen over email verification specifically as a bot-prevention gate at signup — email is trivially automatable, phone carries real cost/friction. Also fixes phone-based contact matching, which currently trusts an unverified number. **Blocking: must ship before final Apple review submission.**
 - ⬜ **Shared memories on Person screen** — show memories tagged with this person
 - ⬜ **Memory anniversary notifications**
 - ⬜ **TestFlight distribution**
@@ -220,10 +220,11 @@ Tab bar reduced from 5 tabs to 3:
 8. ⬜ **EAS setup + first internal build** — create `eas.json`, fix `app.json` bundle identifier + clean up unused permissions, run first build, verify pipeline works
 9. ⬜ **Onboarding experience** — see plan below; must be done before external testers or App Store submission
 10. ⬜ **App Store assets** — icon, screenshots, description, privacy policy URL
-11. ⬜ **App Store submission** — iOS and Google Play
-12. ⬜ **2FA + phone verification**
-13. ⬜ **ID verification**
-14. ⬜ **WhatsApp message frequency** — once Meta approval received
+11. ⬜ **Phone number verification (SMS OTP, Twilio Verify)** — bot-prevention gate at signup. Requires new Twilio account + A2P 10DLC business registration (can take 1-2 days for approval — start early). **Must ship before step 12.**
+12. ⬜ **App Store submission** — iOS and Google Play
+13. ⬜ **2FA**
+14. ⬜ **ID verification**
+15. ⬜ **WhatsApp message frequency** — once Meta approval received
 
 ---
 

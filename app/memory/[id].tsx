@@ -13,6 +13,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   useMemory, useAddMemoryEntry, useUpdateMemoryEntry,
   useDeleteMemoryEntry, useUpdateMemory, useConnectionSearch,
+  useDeleteMedia,
   QueryKeys,
 } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
@@ -491,6 +492,7 @@ export default function MemoryEventScreen() {
   const { mutate: updateEntry, isPending: isUpdating } = useUpdateMemoryEntry(id);
   const { mutate: deleteEntry } = useDeleteMemoryEntry(id);
   const { mutate: updateMemory, isPending: isSavingMemory } = useUpdateMemory();
+  const { mutate: deleteMedia } = useDeleteMedia(id);
 
   if (isLoading) {
     return (
@@ -513,9 +515,33 @@ export default function MemoryEventScreen() {
 
   const isCreator = event.createdByUserId === user?.id;
 
+  // Can this viewer add a take / photo? Being able to SEE a memory (per
+  // visibility layer) is separate from being a tagged participant — only
+  // participants (or the creator) can actually contribute to it. Without
+  // this check, non-participants who can view a memory would still see the
+  // compose box even though the server rejects their attempt to post.
+  const canContribute = isCreator || (event.participantIds ?? []).includes(user?.id ?? '');
+
   // S3 photos from the API, plus any locally-picked photos not yet in the API response
   const s3Media = event.media ?? [];
   const allPhotos = [...new Set([...s3Media, ...localPhotos])];
+
+  // Photos this specific user uploaded — shown (with delete) in their own
+  // "Edit your take" strip. Deletion permission itself is enforced
+  // server-side (uploader or creator), but the strip only ever shows your
+  // own uploads, matching "photos you already added" to your take.
+  const myMediaItems = (event.mediaItems ?? []).filter(m => m.userId === user?.id);
+
+  const handleDeleteMedia = (mediaId: string) => {
+    Alert.alert(
+      'Remove photo?',
+      'This will remove it from the memory for everyone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Remove', style: 'destructive', onPress: () => deleteMedia(mediaId) },
+      ]
+    );
+  };
 
   const openEditPerspective = () => {
     const myEntry = event.entries?.find(e => e.authorId === user?.id);
@@ -631,20 +657,25 @@ export default function MemoryEventScreen() {
         />
       </ScrollView>
 
-      {/* Bottom action bar */}
-      {myEntry ? (
-        <View style={styles.alreadyAdded}>
-          <Text style={styles.alreadyAddedText}>You've added your take</Text>
-          <TouchableOpacity
-            onPress={pickPhoto}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            style={styles.cameraBtn}
-          >
-            <IconCamera color={Colors.terracotta} size={24} />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <AddPerspective eventId={id} onPickPhoto={pickPhoto} />
+      {/* Bottom action bar — only shown to people who can actually contribute.
+          Being able to view a memory (per visibility layer) doesn't mean
+          you're a tagged participant; showing the compose box to someone
+          who isn't would look like it works and then just fail. */}
+      {canContribute && (
+        myEntry ? (
+          <View style={styles.alreadyAdded}>
+            <Text style={styles.alreadyAddedText}>You've added your take</Text>
+            <TouchableOpacity
+              onPress={pickPhoto}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={styles.cameraBtn}
+            >
+              <IconCamera color={Colors.terracotta} size={24} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <AddPerspective eventId={id} onPickPhoto={pickPhoto} />
+        )
       )}
 
       {/* Action sheet menu */}
@@ -676,12 +707,6 @@ export default function MemoryEventScreen() {
               <Text style={styles.menuItemText}>Edit your take</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity
-            style={styles.menuItem}
-            onPress={() => { setMenuVisible(false); pickPhoto(); }}
-          >
-            <Text style={styles.menuItemText}>Add photos</Text>
-          </TouchableOpacity>
           {isCreator && (
             <TouchableOpacity
               style={[styles.menuItem, styles.menuItemDestructive]}
@@ -761,12 +786,24 @@ export default function MemoryEventScreen() {
                 <Text style={styles.editPhotoPickerIcon}>📷</Text>
                 <Text style={styles.editPhotoPickerLabel}>Add photos</Text>
               </TouchableOpacity>
-              {allPhotos.length > 0 && (
+              {myMediaItems.length > 0 && (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.editPhotoStrip}>
-                  {allPhotos.map((uri, i) => (
-                    <TouchableOpacity key={uri} onPress={() => openLightbox(i)} activeOpacity={0.85}>
-                      <Image source={{ uri }} style={styles.editPhotoStripThumb} resizeMode="cover" />
-                    </TouchableOpacity>
+                  {myMediaItems.map((item) => (
+                    <View key={item.id} style={styles.editPhotoThumbWrap}>
+                      <TouchableOpacity
+                        onPress={() => openLightbox(allPhotos.indexOf(item.url))}
+                        activeOpacity={0.85}
+                      >
+                        <Image source={{ uri: item.url }} style={styles.editPhotoStripThumb} resizeMode="cover" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => handleDeleteMedia(item.id)}
+                        style={styles.editPhotoDeleteBtn}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Text style={styles.editPhotoDeleteBtnText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
                   ))}
                 </ScrollView>
               )}
@@ -1164,6 +1201,29 @@ const styles = StyleSheet.create({
     height: 64,
     borderRadius: BorderRadius.md,
     marginRight: Spacing.sm,
+  },
+  editPhotoThumbWrap: {
+    marginRight: Spacing.sm,
+  },
+  editPhotoDeleteBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -2,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: Colors.textDark,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: Colors.card,
+  },
+  editPhotoDeleteBtnText: {
+    color: Colors.white,
+    fontSize: 13,
+    lineHeight: 14,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
 
   // Edit modal (shared by perspective + memory edit)

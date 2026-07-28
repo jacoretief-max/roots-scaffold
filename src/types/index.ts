@@ -70,8 +70,16 @@ export interface MemoryEvent {
   entries?: MemoryEntry[];
   participants?: User[];
   media?: string[];           // S3 photo/video URLs for this event
+  mediaItems?: MemoryMediaItem[]; // same photos, with id + uploader — detail view only
   newEntryCount?: number;     // unread perspectives since last visit
   hasMyEntry?: boolean;       // current user has already added a perspective
+}
+
+// ── Memory Media (detail view — id + uploader for delete/ownership) ──
+export interface MemoryMediaItem {
+  id: string;
+  userId: string;
+  url: string;
 }
 
 // ── Memory Entries ────────────────────────────────────
