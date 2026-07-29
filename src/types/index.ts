@@ -20,6 +20,7 @@ export interface User {
   lat: number;
   lng: number;
   settings: UserSettings;
+  showDobToConnections?: boolean; // if true, connections can see your date of birth
   createdAt: string;
 }
 

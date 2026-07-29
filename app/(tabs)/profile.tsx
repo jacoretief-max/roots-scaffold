@@ -106,12 +106,8 @@ export default function ProfileScreen() {
         <SectionHeader title="Privacy" />
         <View style={styles.sectionCard}>
           <SettingsRow
-            label="Privacy & Cookies"
-            onPress={() => router.push('/profile/privacy')}
-          />
-          <SettingsRow
-            label="Verification"
-            value={user?.dateOfBirth ? `Born ${dayjs(user.dateOfBirth).format('D MMM YYYY')}` : 'Not verified'}
+            label="Date of birth"
+            value={user?.dateOfBirth ? dayjs(user.dateOfBirth).format('D MMM YYYY') : 'Not set'}
             onPress={() => router.push('/profile/verification')}
           />
         </View>
@@ -119,8 +115,7 @@ export default function ProfileScreen() {
         <SectionHeader title="Security" />
         <View style={styles.sectionCard}>
           <SettingsRow
-            label="Authentication"
-            value={(user as any)?.whatsappOptedIn ? 'WhatsApp on' : 'Notifications & 2FA'}
+            label="Authentication & Notifications"
             onPress={() => router.push('/profile/security')}
           />
         </View>
@@ -132,6 +127,15 @@ export default function ProfileScreen() {
             onPress={handleLogout}
             destructive
           />
+        </View>
+
+        <View style={{ marginTop: Spacing.xl }}>
+          <View style={styles.sectionCard}>
+            <SettingsRow
+              label="Privacy & Cookies"
+              onPress={() => router.push('/profile/privacy')}
+            />
+          </View>
         </View>
 
         <Text style={styles.version}>Rooted In v1.0</Text>

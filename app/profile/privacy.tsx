@@ -76,11 +76,7 @@ export default function PrivacyScreen() {
         </Section>
 
         <Section title="Your rights">
-          You can request a copy of all your data at any time by contacting privacy@yourroots.app. You can delete your account at any time — all your data will be permanently removed within 30 days.
-        </Section>
-
-        <Section title="Compliance">
-          Roots complies with GDPR (EU), COPPA (USA), and POPIA (South Africa). Our legal basis for processing your data is the contract between you and Roots when you create an account.
+          You can request a copy of all your data at any time by contacting info@rooikatlabs.com. You can delete your account at any time — all your data will be permanently removed within 30 days.
         </Section>
 
         {/* Account deletion */}
@@ -95,7 +91,7 @@ export default function PrivacyScreen() {
         </View>
 
         <Text style={styles.footer}>
-          Last updated: March 2026 · privacy@yourroots.app
+          Last updated: July 2026 · info@rooikatlabs.com
         </Text>
 
         <View style={{ height: 40 }} />

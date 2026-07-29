@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   }'::jsonb,
   whatsapp_number   TEXT,
   whatsapp_opted_in BOOLEAN NOT NULL DEFAULT false,
+  show_dob_to_connections BOOLEAN NOT NULL DEFAULT false,
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -322,7 +322,7 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, display_name, email, phone_number, avatar_colour,
             avatar_url, date_of_birth, city, lat, lng, settings,
-            whatsapp_number, whatsapp_opted_in, created_at
+            whatsapp_number, whatsapp_opted_in, show_dob_to_connections, created_at
      FROM users WHERE id = $1`,
     [req.userId]
   );
@@ -342,6 +342,7 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
     settings: u.settings,
     whatsappNumber: u.whatsapp_number,
     whatsappOptedIn: u.whatsapp_opted_in,
+    showDobToConnections: u.show_dob_to_connections,
     createdAt: u.created_at,
   }});
 });
@@ -350,19 +351,26 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
 // Note: phoneNumber is intentionally NOT accepted here — changing it requires
 // OTP re-verification via /api/users/me/phone/send-code + PATCH /api/users/me/phone.
 app.patch('/api/users/me', requireAuth, async (req, res) => {
-  const { displayName, city, avatarColour, avatarUrl, email } = req.body;
+  const { displayName, city, avatarColour, avatarUrl, email, showDobToConnections } = req.body;
   try {
     const { rows: [u] } = await db.query(
       `UPDATE users SET
-         display_name    = COALESCE($1, display_name),
-         city            = COALESCE($2, city),
-         avatar_colour   = COALESCE($3, avatar_colour),
-         avatar_url      = COALESCE($4, avatar_url),
-         email           = COALESCE($5, email)
-       WHERE id = $6
+         display_name            = COALESCE($1, display_name),
+         city                    = COALESCE($2, city),
+         avatar_colour           = COALESCE($3, avatar_colour),
+         avatar_url              = COALESCE($4, avatar_url),
+         email                   = COALESCE($5, email),
+         show_dob_to_connections = COALESCE($6, show_dob_to_connections)
+       WHERE id = $7
        RETURNING id, display_name, email, phone_number, avatar_colour,
-                 avatar_url, date_of_birth, city, lat, lng, settings, created_at`,
-      [displayName, city, avatarColour, avatarUrl, email ? email.toLowerCase() : null, req.userId]
+                 avatar_url, date_of_birth, city, lat, lng, settings,
+                 show_dob_to_connections, created_at`,
+      [
+        displayName, city, avatarColour, avatarUrl,
+        email ? email.toLowerCase() : null,
+        typeof showDobToConnections === 'boolean' ? showDobToConnections : null,
+        req.userId,
+      ]
     );
     res.json({ data: {
       id: u.id,
@@ -376,6 +384,7 @@ app.patch('/api/users/me', requireAuth, async (req, res) => {
       lat: u.lat,
       lng: u.lng,
       settings: u.settings,
+      showDobToConnections: u.show_dob_to_connections,
       createdAt: u.created_at,
     }});
   } catch (err) {
@@ -635,7 +644,8 @@ app.get('/api/connections/:id', requireAuth, async (req, res) => {
            'displayName', u.display_name,
            'avatarColour', u.avatar_colour,
            'city', u.city,
-           'phoneNumber', u.phone_number
+           'phoneNumber', u.phone_number,
+           'dateOfBirth', CASE WHEN u.show_dob_to_connections THEN u.date_of_birth ELSE NULL END
          )
          ELSE json_build_object(
            'id', null,

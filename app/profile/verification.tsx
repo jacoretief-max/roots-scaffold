@@ -1,18 +1,36 @@
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Switch, Alert, Linking } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
+import { useUpdateProfile } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import dayjs from 'dayjs';
 
+const SUPPORT_EMAIL = 'info@rooikatlabs.com';
+
 export default function VerificationScreen() {
   const { user } = useAuthStore();
+  const { mutate: updateProfile, isPending } = useUpdateProfile();
 
-  const dob = user?.dateOfBirth
-    ? dayjs(user.dateOfBirth)
-    : null;
+  const [showDob, setShowDob] = useState<boolean>(user?.showDobToConnections ?? false);
 
-  const age = dob ? dayjs().diff(dob, 'year') : null;
+  const dob = user?.dateOfBirth ? dayjs(user.dateOfBirth) : null;
+
+  const handleToggle = (value: boolean) => {
+    setShowDob(value);
+    updateProfile(
+      { showDobToConnections: value },
+      { onError: () => {
+        setShowDob(!value);
+        Alert.alert('Error', 'Could not update this setting. Please try again.');
+      }}
+    );
+  };
+
+  const handleContactSupport = () => {
+    Linking.openURL(`mailto:${SUPPORT_EMAIL}?subject=Date of birth correction`);
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
@@ -20,41 +38,52 @@ export default function VerificationScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.headerBack}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Verification</Text>
+        <Text style={styles.headerTitle}>Date of birth</Text>
         <View style={{ width: 60 }} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
 
-        {/* Age verification status */}
         <View style={styles.statusCard}>
-          <View style={styles.statusRow}>
-            <View style={[styles.statusDot, { backgroundColor: Colors.statusAvailable }]} />
-            <Text style={styles.statusText}>Age verified</Text>
-          </View>
-          {dob && (
+          {dob ? (
             <>
-              <Text style={styles.dobText}>
-                {dob.format('D MMMM YYYY')}
-              </Text>
-              <Text style={styles.ageText}>Age {age}</Text>
+              <Text style={styles.dobText}>{dob.format('D MMMM YYYY')}</Text>
+              <Text style={styles.ageText}>Age {dayjs().diff(dob, 'year')}</Text>
             </>
+          ) : (
+            <Text style={styles.dobText}>Not set</Text>
           )}
         </View>
 
-        <Text style={styles.sectionLabel}>Why we verify age</Text>
         <Text style={styles.body}>
-          Rooted In is for adults aged 18 and over. We ask for your date of birth during registration and enforce this server-side. It's a firm policy — not a guideline — and it applies to every account on the platform.
+          Rooted In is for people 18 years and older. We ask for your date of birth during
+          registration and enforce this server-side.
         </Text>
 
-        {/* Compliance */}
-        <Text style={styles.sectionLabel}>Compliance</Text>
-        <View style={styles.complianceRow}>
-          {['COPPA (USA)', 'GDPR (EU)', 'POPIA (South Africa)'].map(c => (
-            <View key={c} style={styles.complianceBadge}>
-              <Text style={styles.complianceBadgeText}>{c}</Text>
+        <TouchableOpacity onPress={handleContactSupport}>
+          <Text style={styles.contactLink}>
+            This date is incorrect — contact us to fix it
+          </Text>
+        </TouchableOpacity>
+
+        <Text style={styles.sectionLabel}>Sharing</Text>
+        <View style={styles.sectionCard}>
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleInfo}>
+              <Text style={styles.toggleLabel}>Show my date of birth</Text>
+              <Text style={styles.toggleDesc}>
+                When on, people you're connected with can see your full date of birth.
+                Turn this off any time — your connections will still get a prompt to reach out on your birthday either way.
+              </Text>
             </View>
-          ))}
+            <Switch
+              value={showDob}
+              onValueChange={handleToggle}
+              disabled={isPending}
+              trackColor={{ false: Colors.tan, true: Colors.terracotta }}
+              thumbColor={Colors.white}
+            />
+          </View>
         </View>
 
         <View style={{ height: 40 }} />
@@ -84,27 +113,33 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderWidth: 0.5,
     borderColor: Colors.tan,
-    marginBottom: Spacing.xl,
+    marginBottom: Spacing.md,
     gap: Spacing.xs,
   },
-  statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  statusDot: { width: 10, height: 10, borderRadius: 5 },
-  statusText: {
-    fontSize: Typography.body,
+  dobText: {
+    fontSize: Typography.heading.sm,
     fontFamily: Typography.fontFamily,
     fontWeight: '700',
-    color: Colors.statusAvailable,
-  },
-  dobText: {
-    fontSize: Typography.body,
-    fontFamily: Typography.fontFamily,
     color: Colors.textDark,
-    marginTop: Spacing.xs,
   },
   ageText: {
     fontSize: 13,
     color: Colors.textLight,
     fontFamily: Typography.fontFamily,
+  },
+
+  body: {
+    fontSize: 14,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 22,
+    marginBottom: Spacing.sm,
+  },
+  contactLink: {
+    fontSize: 13,
+    color: Colors.terracottaDark,
+    fontFamily: Typography.fontFamily,
+    marginBottom: Spacing.md,
   },
 
   sectionLabel: {
@@ -116,32 +151,32 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginTop: Spacing.lg,
   },
-  body: {
-    fontSize: 14,
-    color: Colors.textLight,
-    fontFamily: Typography.fontFamily,
-    lineHeight: 22,
-    marginBottom: Spacing.md,
-  },
-
-  complianceRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-    marginTop: Spacing.sm,
-  },
-  complianceBadge: {
+  sectionCard: {
     backgroundColor: Colors.card,
-    borderRadius: BorderRadius.pill,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
+    borderRadius: BorderRadius.md,
     borderWidth: 0.5,
     borderColor: Colors.tan,
+    overflow: 'hidden',
   },
-  complianceBadgeText: {
-    fontSize: 12,
-    color: Colors.textDark,
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Spacing.md,
+    gap: Spacing.md,
+  },
+  toggleInfo: { flex: 1 },
+  toggleLabel: {
+    fontSize: Typography.body,
     fontFamily: Typography.fontFamily,
     fontWeight: '600',
+    color: Colors.textDark,
+  },
+  toggleDesc: {
+    fontSize: 12,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    marginTop: 2,
+    lineHeight: 17,
   },
 });

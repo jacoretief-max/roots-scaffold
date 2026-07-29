@@ -404,6 +404,7 @@ export const useUpdateProfile = () => {
       avatarColour?: string;
       avatarUrl?: string;
       email?: string;
+      showDobToConnections?: boolean;
     }) => {
       const { data } = await api.patch('/users/me', payload);
       return data.data;

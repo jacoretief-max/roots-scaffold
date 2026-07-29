@@ -614,6 +614,9 @@ export default function PersonScreen() {
   const avatarColour = isOffline ? Colors.tan : (connection.connectedUser?.avatarColour ?? Colors.terracotta);
   const city = connection.connectedUser?.city ?? '';
   const phoneNumber = connection.connectedUser?.phoneNumber ?? (connection as any).offlinePhone;
+  const sharedDob = connection.connectedUser?.dateOfBirth
+    ? dayjs(connection.connectedUser.dateOfBirth)
+    : null;
   const inviteSentAt = (connection as any).inviteSentAt;
   const score = connection.score ?? 80;
   const layer = DunbarLayers.find(l => l.key === connection.layer);
@@ -838,6 +841,9 @@ export default function PersonScreen() {
 
           {connection.since && (
             <Text style={styles.since}>Since {connection.since}</Text>
+          )}
+          {sharedDob && (
+            <Text style={styles.since}>Born {sharedDob.format('D MMMM YYYY')}</Text>
           )}
         </View>
 
