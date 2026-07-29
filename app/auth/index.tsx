@@ -125,52 +125,140 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
   );
 };
 
-// ── Register form with 18+ DOB gate ───────────────────
+// ── Register form with 18+ DOB gate + phone verification ──
 const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [phone, setPhone] = useState('');
   const [dob, setDob] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [loading, setLoading] = useState(false);
   const { setUser, setTokens } = useAuthStore();
 
+  // Phone verification step ('form' | 'code')
+  const [step, setStep] = useState<'form' | 'code'>('form');
+  const [code, setCode] = useState('');
+  const [codeLoading, setCodeLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
   const lastNameRef  = useRef<TextInput>(null);
   const emailRef     = useRef<TextInput>(null);
   const passwordRef  = useRef<TextInput>(null);
+  const phoneRef     = useRef<TextInput>(null);
 
   const isOver18 = dob
     ? dayjs().diff(dayjs(dob), 'year') >= 18
     : null;
 
-  const handleRegister = async () => {
-    if (!firstName || !lastName || !email || !password || !dob) {
-      Alert.alert('Missing fields', 'Please fill in all fields.');
+  const startResendCooldown = () => {
+    setResendCooldown(30);
+    const timer = setInterval(() => {
+      setResendCooldown(s => {
+        if (s <= 1) { clearInterval(timer); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const handleSendCode = async () => {
+    if (!firstName || !lastName || !email || !password || !dob || !phone) {
+      Alert.alert('Missing fields', 'Please fill in all fields, including your phone number.');
       return;
     }
     if (!isOver18) {
       Alert.alert('Age requirement', 'Rooted In is designed for adults aged 18 and over.');
       return;
     }
+    if (!/^\+[1-9]\d{6,14}$/.test(phone)) {
+      Alert.alert('Phone number', 'Please enter your phone number in international format, e.g. +14155552671.');
+      return;
+    }
     setLoading(true);
+    try {
+      await api.post('/auth/phone/send-code', { phoneNumber: phone });
+      setStep('code');
+      startResendCooldown();
+    } catch (err: any) {
+      Alert.alert('Could not send code', err?.response?.data?.error ?? 'Please check your phone number and try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0) return;
+    setCodeLoading(true);
+    try {
+      await api.post('/auth/phone/send-code', { phoneNumber: phone });
+      startResendCooldown();
+    } catch {
+      Alert.alert('Could not resend code', 'Please try again shortly.');
+    } finally {
+      setCodeLoading(false);
+    }
+  };
+
+  const handleVerifyAndRegister = async () => {
+    if (!code || code.length < 4) {
+      Alert.alert('Enter code', 'Please enter the verification code we texted you.');
+      return;
+    }
+    setCodeLoading(true);
     try {
       const response = await api.post('/auth/register', {
         displayName: `${firstName.trim()} ${lastName.trim()}`,
         email,
         password,
         dateOfBirth: dayjs(dob).format('YYYY-MM-DD'),
+        phoneNumber: phone,
+        code,
       });
       const { user, tokens } = response.data.data;
       await setTokens(tokens);
       setUser(user);
       router.replace("/onboarding/enroll");
-    } catch {
-      Alert.alert('Registration failed', 'Please try again or use a different email.');
+    } catch (err: any) {
+      Alert.alert('Registration failed', err?.response?.data?.error ?? 'Please check the code and try again.');
     } finally {
-      setLoading(false);
+      setCodeLoading(false);
     }
   };
+
+  if (step === 'code') {
+    return (
+      <View style={styles.form}>
+        <Text style={styles.formTitle}>Verify your phone</Text>
+        <Text style={styles.policy}>
+          We sent a code by text to {phone}. Enter it below to finish creating your account.
+        </Text>
+        <Input
+          label="Verification code"
+          value={code}
+          onChangeText={setCode}
+          keyboardType="default"
+          returnKeyType="done"
+          onSubmitEditing={handleVerifyAndRegister}
+        />
+        <TouchableOpacity
+          style={[styles.btn, codeLoading && styles.btnDisabled]}
+          onPress={handleVerifyAndRegister}
+          disabled={codeLoading}
+        >
+          <Text style={styles.btnText}>{codeLoading ? 'Verifying…' : 'Verify & create account'}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleResendCode} style={styles.switchLink} disabled={resendCooldown > 0}>
+          <Text style={styles.switchText}>
+            {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend code'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => setStep('form')} style={styles.switchLink}>
+          <Text style={styles.switchText}>Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.form}>
@@ -217,9 +305,22 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
         secureTextEntry
         showToggle
         inputRef={passwordRef}
+        returnKeyType="next"
+        onSubmitEditing={() => phoneRef.current?.focus()}
+      />
+      <Input
+        label="Phone number"
+        value={phone}
+        onChangeText={setPhone}
+        placeholder="+14155552671"
+        keyboardType="phone-pad"
+        inputRef={phoneRef}
         returnKeyType="done"
         onSubmitEditing={() => setShowPicker(true)}
       />
+      <Text style={styles.dobFeedback}>
+        Used to verify you're a real person — include your country code.
+      </Text>
 
       {/* Date of birth picker — 18+ gate */}
       <View style={styles.inputWrap}>
@@ -262,10 +363,10 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
 
       <TouchableOpacity
         style={[styles.btn, (loading || !isOver18) && styles.btnDisabled]}
-        onPress={handleRegister}
+        onPress={handleSendCode}
         disabled={loading || !isOver18}
       >
-        <Text style={styles.btnText}>{loading ? 'Creating account…' : 'Create account'}</Text>
+        <Text style={styles.btnText}>{loading ? 'Sending code…' : 'Continue'}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={onSwitch} style={styles.switchLink}>

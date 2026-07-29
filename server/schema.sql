@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   display_name      TEXT NOT NULL,
   email             TEXT NOT NULL UNIQUE,
   password_hash     TEXT NOT NULL,
-  phone_number      TEXT,
+  phone_number      TEXT UNIQUE,
   avatar_colour     TEXT NOT NULL DEFAULT '#C45A3A',
   date_of_birth     DATE NOT NULL,
   city              TEXT,

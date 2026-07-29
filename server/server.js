@@ -13,6 +13,15 @@ const multer = require('multer');
 const { runNudgeEngine } = require('./nudgeEngine');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+const twilio = require('twilio');
+
+// ── Twilio client (SMS OTP for phone verification) ─────
+const twilioClient = twilio(
+  process.env.TWILIO_API_KEY_SID,
+  process.env.TWILIO_API_KEY_SECRET,
+  { accountSid: process.env.TWILIO_ACCOUNT_SID }
+);
+const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
 
 // ── AWS S3 client ──────────────────────────────────────
 const s3 = new S3Client({
@@ -141,10 +150,27 @@ app.get('/health', (_, res) => res.json({ status: 'ok' }));
 
 // ── Auth routes ────────────────────────────────────────
 
+// POST /api/auth/phone/send-code — sends a Twilio Verify SMS OTP to a phone number
+app.post('/api/auth/phone/send-code', async (req, res) => {
+  const { phoneNumber } = req.body;
+  if (!phoneNumber || !/^\+[1-9]\d{6,14}$/.test(phoneNumber)) {
+    return res.status(400).json({ error: 'A valid phone number in international format (e.g. +14155552671) is required.' });
+  }
+  try {
+    const verification = await twilioClient.verify.v2
+      .services(TWILIO_VERIFY_SERVICE_SID)
+      .verifications.create({ to: phoneNumber, channel: 'sms' });
+    res.json({ data: { status: verification.status } });
+  } catch (err) {
+    console.error('Twilio send-code error:', err.message);
+    res.status(400).json({ error: 'Could not send verification code. Check the number and try again.' });
+  }
+});
+
 // POST /api/auth/register
 app.post('/api/auth/register', async (req, res) => {
-  const { displayName, email, password, dateOfBirth, phoneNumber, inviteToken } = req.body;
-  if (!displayName || !email || !password || !dateOfBirth) {
+  const { displayName, email, password, dateOfBirth, phoneNumber, code, inviteToken } = req.body;
+  if (!displayName || !email || !password || !dateOfBirth || !phoneNumber || !code) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -154,6 +180,19 @@ app.post('/api/auth/register', async (req, res) => {
   const ageYears = ageDiff / (1000 * 60 * 60 * 24 * 365.25);
   if (ageYears < 18) {
     return res.status(400).json({ error: 'Roots is for adults aged 18 and over.' });
+  }
+
+  // Verify the SMS code with Twilio before creating the account (bot-prevention gate)
+  try {
+    const check = await twilioClient.verify.v2
+      .services(TWILIO_VERIFY_SERVICE_SID)
+      .verificationChecks.create({ to: phoneNumber, code });
+    if (check.status !== 'approved') {
+      return res.status(400).json({ error: 'Invalid or expired verification code.' });
+    }
+  } catch (err) {
+    console.error('Twilio verification check error:', err.message);
+    return res.status(400).json({ error: 'Invalid or expired verification code.' });
   }
 
   try {
@@ -205,6 +244,9 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(201).json({ data: { user, tokens } });
   } catch (err) {
     if (err.code === '23505') {
+      if (err.constraint && err.constraint.includes('phone')) {
+        return res.status(409).json({ error: 'This phone number is already registered to an account.' });
+      }
       return res.status(409).json({ error: 'Email already registered' });
     }
     console.error(err);
