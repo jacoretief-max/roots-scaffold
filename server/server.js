@@ -347,34 +347,117 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
 });
 
 // PATCH /api/users/me — update profile
+// Note: phoneNumber is intentionally NOT accepted here — changing it requires
+// OTP re-verification via /api/users/me/phone/send-code + PATCH /api/users/me/phone.
 app.patch('/api/users/me', requireAuth, async (req, res) => {
-  const { displayName, city, avatarColour, avatarUrl, phoneNumber } = req.body;
-  const { rows: [u] } = await db.query(
-    `UPDATE users SET
-       display_name    = COALESCE($1, display_name),
-       city            = COALESCE($2, city),
-       avatar_colour   = COALESCE($3, avatar_colour),
-       avatar_url      = COALESCE($4, avatar_url),
-       phone_number    = COALESCE($5, phone_number)
-     WHERE id = $6
-     RETURNING id, display_name, email, phone_number, avatar_colour,
-               avatar_url, date_of_birth, city, lat, lng, settings, created_at`,
-    [displayName, city, avatarColour, avatarUrl, phoneNumber, req.userId]
-  );
-  res.json({ data: {
-    id: u.id,
-    displayName: u.display_name,
-    email: u.email,
-    phoneNumber: u.phone_number,
-    avatarColour: u.avatar_colour,
-    avatarUrl: u.avatar_url,
-    dateOfBirth: u.date_of_birth,
-    city: u.city,
-    lat: u.lat,
-    lng: u.lng,
-    settings: u.settings,
-    createdAt: u.created_at,
-  }});
+  const { displayName, city, avatarColour, avatarUrl, email } = req.body;
+  try {
+    const { rows: [u] } = await db.query(
+      `UPDATE users SET
+         display_name    = COALESCE($1, display_name),
+         city            = COALESCE($2, city),
+         avatar_colour   = COALESCE($3, avatar_colour),
+         avatar_url      = COALESCE($4, avatar_url),
+         email           = COALESCE($5, email)
+       WHERE id = $6
+       RETURNING id, display_name, email, phone_number, avatar_colour,
+                 avatar_url, date_of_birth, city, lat, lng, settings, created_at`,
+      [displayName, city, avatarColour, avatarUrl, email ? email.toLowerCase() : null, req.userId]
+    );
+    res.json({ data: {
+      id: u.id,
+      displayName: u.display_name,
+      email: u.email,
+      phoneNumber: u.phone_number,
+      avatarColour: u.avatar_colour,
+      avatarUrl: u.avatar_url,
+      dateOfBirth: u.date_of_birth,
+      city: u.city,
+      lat: u.lat,
+      lng: u.lng,
+      settings: u.settings,
+      createdAt: u.created_at,
+    }});
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'That email is already in use by another account.' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Profile update failed' });
+  }
+});
+
+// POST /api/users/me/phone/send-code — send an OTP to a NEW phone number
+// the authenticated user wants to switch to (does not touch the DB yet)
+app.post('/api/users/me/phone/send-code', requireAuth, async (req, res) => {
+  const { phoneNumber } = req.body;
+  if (!phoneNumber || !/^\+[1-9]\d{6,14}$/.test(phoneNumber)) {
+    return res.status(400).json({ error: 'A valid phone number in international format (e.g. +14155552671) is required.' });
+  }
+  try {
+    const { rows: [existing] } = await db.query(
+      'SELECT id FROM users WHERE phone_number = $1 AND id != $2',
+      [phoneNumber, req.userId]
+    );
+    if (existing) {
+      return res.status(409).json({ error: 'This phone number is already registered to another account.' });
+    }
+    const verification = await twilioClient.verify.v2
+      .services(TWILIO_VERIFY_SERVICE_SID)
+      .verifications.create({ to: phoneNumber, channel: 'sms' });
+    res.json({ data: { status: verification.status } });
+  } catch (err) {
+    console.error('Twilio send-code error:', err.message);
+    res.status(400).json({ error: 'Could not send verification code. Check the number and try again.' });
+  }
+});
+
+// PATCH /api/users/me/phone — confirm the OTP and commit the new phone number
+app.patch('/api/users/me/phone', requireAuth, async (req, res) => {
+  const { phoneNumber, code } = req.body;
+  if (!phoneNumber || !code) {
+    return res.status(400).json({ error: 'Phone number and code are required.' });
+  }
+  try {
+    const check = await twilioClient.verify.v2
+      .services(TWILIO_VERIFY_SERVICE_SID)
+      .verificationChecks.create({ to: phoneNumber, code });
+    if (check.status !== 'approved') {
+      return res.status(400).json({ error: 'Invalid or expired verification code.' });
+    }
+  } catch (err) {
+    console.error('Twilio verification check error:', err.message);
+    return res.status(400).json({ error: 'Invalid or expired verification code.' });
+  }
+
+  try {
+    const { rows: [u] } = await db.query(
+      `UPDATE users SET phone_number = $1 WHERE id = $2
+       RETURNING id, display_name, email, phone_number, avatar_colour,
+                 avatar_url, date_of_birth, city, lat, lng, settings, created_at`,
+      [phoneNumber, req.userId]
+    );
+    res.json({ data: {
+      id: u.id,
+      displayName: u.display_name,
+      email: u.email,
+      phoneNumber: u.phone_number,
+      avatarColour: u.avatar_colour,
+      avatarUrl: u.avatar_url,
+      dateOfBirth: u.date_of_birth,
+      city: u.city,
+      lat: u.lat,
+      lng: u.lng,
+      settings: u.settings,
+      createdAt: u.created_at,
+    }});
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'This phone number is already registered to another account.' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Phone update failed' });
+  }
 });
 
 // PATCH /api/users/me/password

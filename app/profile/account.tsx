@@ -13,25 +13,39 @@ export default function AccountScreen() {
   const { user } = useAuthStore();
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [city, setCity] = useState(user?.city ?? '');
+  const [email, setEmail] = useState(user?.email ?? '');
   const { mutate: updateProfile, isPending } = useUpdateProfile();
 
   const hasChanges =
     displayName.trim() !== (user?.displayName ?? '') ||
-    city.trim() !== (user?.city ?? '');
+    city.trim() !== (user?.city ?? '') ||
+    email.trim().toLowerCase() !== (user?.email ?? '').toLowerCase();
 
   const handleSave = () => {
     if (!displayName.trim()) {
       Alert.alert('Name required', 'Please enter your display name.');
       return;
     }
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      Alert.alert('Invalid email', 'Please enter a valid email address.');
+      return;
+    }
+    const emailChanged = trimmedEmail !== (user?.email ?? '').toLowerCase();
     updateProfile(
-      { displayName: displayName.trim(), city: city.trim() || undefined },
+      {
+        displayName: displayName.trim(),
+        city: city.trim() || undefined,
+        email: emailChanged ? trimmedEmail : undefined,
+      },
       {
         onSuccess: () => {
           Alert.alert('Saved', 'Your profile has been updated.');
           router.back();
         },
-        onError: () => Alert.alert('Error', 'Failed to save. Please try again.'),
+        onError: (err: any) => {
+          Alert.alert('Error', err?.response?.data?.error ?? 'Failed to save. Please try again.');
+        },
       }
     );
   };
@@ -84,10 +98,17 @@ export default function AccountScreen() {
         </Text>
 
         <Text style={styles.sectionLabel}>Email address</Text>
-        <View style={[styles.input, styles.inputReadOnly]}>
-          <Text style={styles.inputReadOnlyText}>{user?.email}</Text>
-        </View>
-        <Text style={styles.hint}>Email cannot be changed at this time.</Text>
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="you@example.com"
+          placeholderTextColor={Colors.textLight}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+        <Text style={styles.hint}>Used to sign in and for account notices.</Text>
 
         <Text style={styles.sectionLabel}>Date of birth</Text>
         <View style={[styles.input, styles.inputReadOnly]}>

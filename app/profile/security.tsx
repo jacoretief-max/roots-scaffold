@@ -8,7 +8,7 @@ import { router } from 'expo-router';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '@/store/authStore';
-import { useWhatsAppOptIn } from '@/api/hooks';
+import { useWhatsAppOptIn, useSendPhoneChangeCode, useConfirmPhoneChange } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
 const BIOMETRICS_KEY = 'rootedin_biometrics_enabled';
@@ -28,6 +28,67 @@ export default function SecurityScreen() {
   const [waSaved, setWaSaved]       = useState(false);
 
   const { mutate: saveWhatsApp, isPending: waSaving } = useWhatsAppOptIn();
+
+  // Phone number re-verification state
+  const [phoneStep, setPhoneStep]   = useState<'idle' | 'code'>('idle');
+  const [newPhone, setNewPhone]     = useState(user?.phoneNumber ?? '');
+  const [phoneCode, setPhoneCode]   = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const { mutate: sendPhoneCode, isPending: sendingCode } = useSendPhoneChangeCode();
+  const { mutate: confirmPhone, isPending: confirmingPhone } = useConfirmPhoneChange();
+
+  const startResendCooldown = () => {
+    setResendCooldown(30);
+    const timer = setInterval(() => {
+      setResendCooldown(s => {
+        if (s <= 1) { clearInterval(timer); return 0; }
+        return s - 1;
+      });
+    }, 1000);
+  };
+
+  const handleSendPhoneCode = () => {
+    const cleaned = newPhone.trim().replace(/\s+/g, '');
+    if (!/^\+[1-9]\d{6,14}$/.test(cleaned)) {
+      Alert.alert('Phone number', 'Enter your phone number in international format, e.g. +14155552671.');
+      return;
+    }
+    sendPhoneCode(cleaned, {
+      onSuccess: () => {
+        setNewPhone(cleaned);
+        setPhoneStep('code');
+        startResendCooldown();
+      },
+      onError: (err: any) => {
+        Alert.alert('Could not send code', err?.response?.data?.error ?? 'Please check the number and try again.');
+      },
+    });
+  };
+
+  const handleResendPhoneCode = () => {
+    if (resendCooldown > 0) return;
+    sendPhoneCode(newPhone, {
+      onSuccess: () => startResendCooldown(),
+      onError: () => Alert.alert('Could not resend code', 'Please try again shortly.'),
+    });
+  };
+
+  const handleConfirmPhone = () => {
+    if (!phoneCode || phoneCode.length < 4) {
+      Alert.alert('Enter code', 'Please enter the verification code we texted you.');
+      return;
+    }
+    confirmPhone({ phoneNumber: newPhone, code: phoneCode }, {
+      onSuccess: () => {
+        setPhoneStep('idle');
+        setPhoneCode('');
+        Alert.alert('Phone number verified', 'Your phone number has been updated.');
+      },
+      onError: (err: any) => {
+        Alert.alert('Verification failed', err?.response?.data?.error ?? 'Please check the code and try again.');
+      },
+    });
+  };
 
   useEffect(() => {
     (async () => {
@@ -204,18 +265,72 @@ export default function SecurityScreen() {
         {/* ── Phone number ───────────────────────────── */}
         <Text style={styles.sectionLabel}>Phone number</Text>
         <View style={styles.sectionCard}>
-          <TouchableOpacity
-            style={styles.row}
-            onPress={() => Alert.alert('Phone verification', 'SMS OTP verification is coming in Phase 4.')}
-          >
-            <View style={styles.rowInfo}>
-              <Text style={styles.rowLabel}>Verify phone number</Text>
-              <Text style={styles.rowDesc}>Used for account recovery and 2FA</Text>
+          {phoneStep === 'idle' ? (
+            <View style={styles.waNumberRow}>
+              <Text style={styles.waNumberLabel}>Verified phone number</Text>
+              <Text style={styles.waNumberHint}>
+                Used for account recovery and future 2FA. Changing it sends a new code — include your country code.
+              </Text>
+              <View style={styles.waInputRow}>
+                <TextInput
+                  style={styles.waInput}
+                  value={newPhone}
+                  onChangeText={setNewPhone}
+                  placeholder="+14155552671"
+                  placeholderTextColor={Colors.textLight}
+                  keyboardType="phone-pad"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  style={[styles.waSaveBtn, sendingCode && styles.waSaveBtnDisabled]}
+                  onPress={handleSendPhoneCode}
+                  disabled={sendingCode || newPhone.trim() === (user?.phoneNumber ?? '')}
+                >
+                  {sendingCode
+                    ? <ActivityIndicator color={Colors.white} size="small" />
+                    : <Text style={styles.waSaveBtnText}>Send code</Text>
+                  }
+                </TouchableOpacity>
+              </View>
             </View>
-            <View style={styles.comingSoonBadge}>
-              <Text style={styles.comingSoonText}>Phase 4</Text>
+          ) : (
+            <View style={styles.waNumberRow}>
+              <Text style={styles.waNumberLabel}>Enter verification code</Text>
+              <Text style={styles.waNumberHint}>
+                We texted a code to {newPhone}.
+              </Text>
+              <View style={styles.waInputRow}>
+                <TextInput
+                  style={styles.waInput}
+                  value={phoneCode}
+                  onChangeText={setPhoneCode}
+                  placeholder="123456"
+                  placeholderTextColor={Colors.textLight}
+                  keyboardType="number-pad"
+                />
+                <TouchableOpacity
+                  style={[styles.waSaveBtn, confirmingPhone && styles.waSaveBtnDisabled]}
+                  onPress={handleConfirmPhone}
+                  disabled={confirmingPhone}
+                >
+                  {confirmingPhone
+                    ? <ActivityIndicator color={Colors.white} size="small" />
+                    : <Text style={styles.waSaveBtnText}>Confirm</Text>
+                  }
+                </TouchableOpacity>
+              </View>
+              <View style={styles.phoneCodeActions}>
+                <TouchableOpacity onPress={handleResendPhoneCode} disabled={resendCooldown > 0}>
+                  <Text style={styles.phoneCodeLink}>
+                    {resendCooldown > 0 ? `Resend code (${resendCooldown}s)` : 'Resend code'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => { setPhoneStep('idle'); setPhoneCode(''); }}>
+                  <Text style={styles.phoneCodeLink}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </TouchableOpacity>
+          )}
         </View>
 
         <Text style={styles.hint}>
@@ -356,6 +471,16 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
   },
 
+  phoneCodeActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing.sm,
+  },
+  phoneCodeLink: {
+    fontSize: 13,
+    color: Colors.terracottaDark,
+    fontFamily: Typography.fontFamily,
+  },
   comingSoonBadge: {
     backgroundColor: Colors.tan,
     borderRadius: BorderRadius.pill,

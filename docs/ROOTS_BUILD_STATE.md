@@ -220,11 +220,13 @@ Tab bar reduced from 5 tabs to 3:
 8. ⬜ **EAS setup + first internal build** — create `eas.json`, fix `app.json` bundle identifier + clean up unused permissions, run first build, verify pipeline works
 9. ⬜ **Onboarding experience** — see plan below; must be done before external testers or App Store submission
 10. ⬜ **App Store assets** — icon, screenshots, description, privacy policy URL
-11. ⬜ **Phone number verification (SMS OTP, Twilio Verify)** — bot-prevention gate at signup. Requires new Twilio account + A2P 10DLC business registration (can take 1-2 days for approval — start early). **Must ship before step 12.**
+11. ✅ **Phone number verification (SMS OTP, Twilio Verify)** — bot-prevention gate at signup. Registration form collects phone, sends code via `POST /api/auth/phone/send-code`, verifies via Twilio before `POST /api/auth/register` creates the account. `phone_number` is UNIQUE in schema.
 12. ⬜ **App Store submission** — iOS and Google Play
 13. ⬜ **2FA**
 14. ⬜ **ID verification**
 15. ⬜ **WhatsApp message frequency** — once Meta approval received
+16. ⬜ **Vertical photo gallery** — memory detail `PhotoSection` currently swipes horizontally; change to full-width vertical stack (agreed design, not started). Single tap still opens lightbox; need a separate gesture (e.g. double-tap) to open lightbox from the vertical stack since single tap is used for scroll-through browsing.
+17. ⬜ **Per-photo captions** — new `caption` column on the memory media table; edit via pencil icon tapped on an individual photo (not a forced prompt at upload time); editable both at add-time and later via edit-take. Agreed design, not started.
 
 ---
 

@@ -403,7 +403,7 @@ export const useUpdateProfile = () => {
       city?: string;
       avatarColour?: string;
       avatarUrl?: string;
-      phoneNumber?: string;
+      email?: string;
     }) => {
       const { data } = await api.patch('/users/me', payload);
       return data.data;
@@ -425,6 +425,29 @@ export const useChangePassword = () =>
       return data.data;
     },
   });
+
+// ── Phone number change (OTP re-verification) ─────────
+export const useSendPhoneChangeCode = () =>
+  useMutation({
+    mutationFn: async (phoneNumber: string) => {
+      const { data } = await api.post('/users/me/phone/send-code', { phoneNumber });
+      return data.data;
+    },
+  });
+
+export const useConfirmPhoneChange = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ phoneNumber, code }: { phoneNumber: string; code: string }) => {
+      const { data } = await api.patch('/users/me/phone', { phoneNumber, code });
+      return data.data;
+    },
+    onSuccess: (user) => {
+      useAuthStore.getState().setUser(user);
+      qc.invalidateQueries({ queryKey: QueryKeys.me });
+    },
+  });
+};
 
 export const useRegisterPushToken = () =>
   useMutation({
