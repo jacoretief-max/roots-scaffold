@@ -5,7 +5,16 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// Postgres DATE columns (oid 1082) default to being parsed into JS Date
+// objects, which then get serialized with a timezone-dependent instant
+// (midnight UTC) and can render as the wrong calendar day on a device in
+// a different timezone (e.g. a DOB of 1972-04-12 showing as 11 April).
+// Returning the raw 'YYYY-MM-DD' string instead sidesteps that entirely —
+// applies to every DATE column read anywhere in this file (date_of_birth,
+// offline_dob, etc.), including `SELECT *` queries.
+types.setTypeParser(1082, (val) => val);
 const redis = require('redis');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');

@@ -107,7 +107,7 @@ export default function ProfileScreen() {
         <View style={styles.sectionCard}>
           <SettingsRow
             label="Date of birth"
-            value={user?.dateOfBirth ? dayjs(user.dateOfBirth).format('D MMM YYYY') : 'Not set'}
+            value={user?.dateOfBirth ? dayjs(user.dateOfBirth, 'YYYY-MM-DD').format('D MMM YYYY') : 'Not set'}
             onPress={() => router.push('/profile/verification')}
           />
         </View>

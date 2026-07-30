@@ -38,30 +38,45 @@ const extractName = (text) => {
     .replace(/^(last\s+\w+|yesterday|this morning|this afternoon|this evening|tonight|today|just now)\s+/i, '')
     .trim();
 
+  // Every pattern is anchored to the start of the message (^). Without the
+  // anchor, a pattern like "had ... with NAME" could latch onto an unrelated
+  // "had dinner with him" clause buried later in a longer message instead of
+  // the actual lead clause — e.g. "Caught up with David Krige last week and
+  // had dinner with him July 22." would incorrectly match on "him July 22"
+  // instead of "David Krige". Anchoring forces matching on the real subject.
   const patterns = [
     // "had [anything] with NAME"  — catches braai, bbq, pool day, beers, etc.
-    /(?:just |finally )?had\s+.+?\s+with\s+([A-Z][^,\.!?]+)/i,
+    /^(?:just |finally )?had\s+.+?\s+with\s+(.+)/i,
     // "spoke/chatted/talked with/to NAME"
-    /(?:just |finally )?(?:spoke|chatted|talked) (?:with|to)\s+(.+)/i,
+    /^(?:just |finally )?(?:spoke|chatted|talked) (?:with|to)\s+(.+)/i,
     // "called/phoned/rang NAME"
-    /(?:just |finally )?(?:called|phoned|rang)\s+(.+)/i,
+    /^(?:just |finally )?(?:called|phoned|rang)\s+(.+)/i,
     // "caught up/connected with NAME"
-    /(?:just |finally )?(?:caught up|connected) with\s+(.+)/i,
+    /^(?:just |finally )?(?:caught up|connected) with\s+(.+)/i,
     // "met/saw/visited NAME"
-    /(?:just |finally )?(?:met|saw|visited)\s+(.+)/i,
+    /^(?:just |finally )?(?:met|saw|visited)\s+(.+)/i,
     // "had a chat/braai/bbq/drinks with NAME"
-    /(?:just |finally )?had (?:a )?(?:chat|braai|bbq|drinks|beers|coffee|lunch|dinner|breakfast|brunch|call|meeting|catch-?up) with\s+(.+)/i,
+    /^(?:just |finally )?had (?:a )?(?:chat|braai|bbq|drinks|beers|coffee|lunch|dinner|breakfast|brunch|call|meeting|catch-?up) with\s+(.+)/i,
     // "log/logged/noting NAME"
-    /(?:logged|log|noting|note)(?: a catch-?up)? with\s+(.+)/i,
+    /^(?:logged|log|noting|note)(?: a catch-?up)? with\s+(.+)/i,
   ];
 
   for (const pattern of patterns) {
     const match = cleaned.match(pattern);
     if (match) {
-      // Trim trailing filler — stop at "it was", "and", comma, or end of name
       const raw = match[1].trim();
-      const name = raw
-        .replace(/\s+(it was|and then|we |they |which|that|who|,).*/i, '')
+
+      // Names are capitalized; everything after them in natural sentences
+      // ("...David Krige last week and had dinner with him July 22.") is not.
+      // Take only the leading run of Title-Case word(s) as the name so trailing
+      // clauses — dates, "last week", "and then", etc. — never get swept in.
+      const titleCaseRun = raw.match(/^[A-Z][A-Za-z'-]*(?:\s+[A-Z][A-Za-z'-]*)*/);
+      const trimmedToTitleCase = titleCaseRun ? titleCaseRun[0] : raw;
+
+      // Still apply the filler-phrase trim as a second pass (covers lowercase
+      // names and cases the Title-Case heuristic doesn't fully catch).
+      const name = trimmedToTitleCase
+        .replace(/\s+(it was|and then|we |they |which|that|who|,|last\s|yesterday|today|tonight).*/i, '')
         .replace(/[.!?]+$/, '')
         .trim();
       if (name.length > 1) return name;

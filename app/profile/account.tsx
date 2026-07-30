@@ -2,12 +2,14 @@ import { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, ActivityIndicator,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { useUpdateProfile } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
+import dayjs from 'dayjs';
 
 export default function AccountScreen() {
   const { user } = useAuthStore();
@@ -71,6 +73,11 @@ export default function AccountScreen() {
         </TouchableOpacity>
       </View>
 
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
       <ScrollView style={styles.content} keyboardShouldPersistTaps="handled">
 
         <Text style={styles.sectionLabel}>Display name</Text>
@@ -114,15 +121,14 @@ export default function AccountScreen() {
         <View style={[styles.input, styles.inputReadOnly]}>
           <Text style={styles.inputReadOnlyText}>
             {user?.dateOfBirth
-              ? new Date(user.dateOfBirth).toLocaleDateString('en-GB', {
-                  day: 'numeric', month: 'long', year: 'numeric'
-                })
+              ? dayjs(user.dateOfBirth, 'YYYY-MM-DD').format('D MMMM YYYY')
               : 'Not set'}
           </Text>
         </View>
         <Text style={styles.hint}>Date of birth cannot be changed after registration.</Text>
 
       </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

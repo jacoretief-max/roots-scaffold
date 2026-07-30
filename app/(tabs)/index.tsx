@@ -348,10 +348,15 @@ const MemoryCard = ({ item }: { item: MemoryEvent }) => {
 };
 
 // ── Home feed (Your turn + Recent) ──────────────────────
-const HomeFeed = ({ memories }: { memories: MemoryEvent[] }) => {
-  // "Your turn": participant memories where someone else has added a perspective but I haven't yet
+const HomeFeed = ({ memories, currentUserId }: { memories: MemoryEvent[]; currentUserId?: string }) => {
+  // "Your turn": memories you're actually tagged in (or created) where someone else
+  // has added a perspective but you haven't yet. Memories you can only see via
+  // connection-layer visibility (not tagged) never belong here — you can't add a
+  // take to those, so they'd sit here forever unresolved.
   const yourTurn = memories.filter(m =>
-    !m.hasMyEntry && ((m as any).entryCount ?? 0) > 0
+    !m.hasMyEntry &&
+    ((m as any).entryCount ?? 0) > 0 &&
+    (m.createdByUserId === currentUserId || (m.participantIds ?? []).includes(currentUserId ?? ''))
   );
 
   // Sort: unread first, then by server order (already createdAt desc)
@@ -558,7 +563,7 @@ export default function MemoriesScreen() {
           )}
         </View>
       ) : (
-        <HomeFeed memories={memories ?? []} />
+        <HomeFeed memories={memories ?? []} currentUserId={currentUserId} />
       )}
     </SafeAreaView>
   );

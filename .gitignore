@@ -38,6 +38,9 @@ yarn-error.*
 *.sql
 _tmp_*.js
 
+# Claude Code worktree checkouts — local/ephemeral, never commit
+.claude/worktrees/
+
 # typescript
 *.tsbuildinfo
 

@@ -15,7 +15,9 @@ export default function VerificationScreen() {
 
   const [showDob, setShowDob] = useState<boolean>(user?.showDobToConnections ?? false);
 
-  const dob = user?.dateOfBirth ? dayjs(user.dateOfBirth) : null;
+  // Parse with an explicit format so dayjs treats this as a plain local
+  // calendar date rather than a UTC instant (avoids an off-by-one-day bug).
+  const dob = user?.dateOfBirth ? dayjs(user.dateOfBirth, 'YYYY-MM-DD') : null;
 
   const handleToggle = (value: boolean) => {
     setShowDob(value);
