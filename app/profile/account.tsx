@@ -9,6 +9,7 @@ import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { useUpdateProfile } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
+import { BIO_TEMPLATE, BIO_MAX_LENGTH } from '@/constants/bio';
 import dayjs from 'dayjs';
 
 export default function AccountScreen() {
@@ -16,12 +17,14 @@ export default function AccountScreen() {
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [city, setCity] = useState(user?.city ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
+  const [bio, setBio] = useState(user?.bio ?? '');
   const { mutate: updateProfile, isPending } = useUpdateProfile();
 
   const hasChanges =
     displayName.trim() !== (user?.displayName ?? '') ||
     city.trim() !== (user?.city ?? '') ||
-    email.trim().toLowerCase() !== (user?.email ?? '').toLowerCase();
+    email.trim().toLowerCase() !== (user?.email ?? '').toLowerCase() ||
+    bio.trim() !== (user?.bio ?? '');
 
   const handleSave = () => {
     if (!displayName.trim()) {
@@ -34,11 +37,13 @@ export default function AccountScreen() {
       return;
     }
     const emailChanged = trimmedEmail !== (user?.email ?? '').toLowerCase();
+    const bioChanged = bio.trim() !== (user?.bio ?? '');
     updateProfile(
       {
         displayName: displayName.trim(),
         city: city.trim() || undefined,
         email: emailChanged ? trimmedEmail : undefined,
+        bio: bioChanged ? bio.trim() : undefined,
       },
       {
         onSuccess: () => {
@@ -117,6 +122,21 @@ export default function AccountScreen() {
         />
         <Text style={styles.hint}>Used to sign in and for account notices.</Text>
 
+        <Text style={styles.sectionLabel}>Short bio</Text>
+        <TextInput
+          style={[styles.input, styles.bioInput]}
+          value={bio}
+          onChangeText={(t) => setBio(t.slice(0, BIO_MAX_LENGTH))}
+          placeholder={BIO_TEMPLATE}
+          placeholderTextColor={Colors.textLight}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+        />
+        <Text style={styles.hint}>
+          Shown to people when you send or receive a connection request.
+        </Text>
+
         <Text style={styles.sectionLabel}>Date of birth</Text>
         <View style={[styles.input, styles.inputReadOnly]}>
           <Text style={styles.inputReadOnlyText}>
@@ -182,6 +202,7 @@ const styles = StyleSheet.create({
     fontFamily: Typography.fontFamily,
     color: Colors.textDark,
   },
+  bioInput: { minHeight: 90, lineHeight: 20 },
   inputReadOnly: { backgroundColor: Colors.tan + '44' },
   inputReadOnlyText: {
     fontSize: Typography.body,

@@ -11,6 +11,7 @@ import dayjs from 'dayjs';
 import api from '@/api/client';
 import { useAuthStore } from '@/store/authStore';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
+import { BIO_TEMPLATE } from '@/constants/bio';
 import { AuthTokens, User } from '@/types';
 
 // ── Shared input component ─────────────────────────────
@@ -132,6 +133,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [bio, setBio] = useState('');
   const [dob, setDob] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -214,6 +216,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
         dateOfBirth: dayjs(dob).format('YYYY-MM-DD'),
         phoneNumber: phone,
         code,
+        bio: bio.trim() || undefined,
       });
       const { user, tokens } = response.data.data;
       await setTokens(tokens);
@@ -356,6 +359,23 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
         )}
       </View>
 
+      <View style={styles.inputWrap}>
+        <Text style={styles.inputLabel}>Short bio (optional)</Text>
+        <TextInput
+          style={[styles.input, styles.bioInput]}
+          value={bio}
+          onChangeText={(t) => setBio(t.slice(0, 300))}
+          placeholder={BIO_TEMPLATE}
+          placeholderTextColor={Colors.textLight}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+        />
+        <Text style={styles.dobFeedback}>
+          Shown to people when you send or receive a connection request. Skip this if you'd rather add it later.
+        </Text>
+      </View>
+
       <Text style={styles.policy}>
         By creating an account you agree to our Privacy Policy.{'\n'}
         No ads. No public posts. Your data stays yours.
@@ -478,6 +498,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   dobInput: { justifyContent: 'center' },
+  bioInput: { minHeight: 90, lineHeight: 20 },
   dobFeedback: { fontSize: 12, marginTop: 2 },
 
   policy: {

@@ -26,6 +26,7 @@ import {
 } from '@/api/hooks';
 import { Connection, DunbarLayer } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers, Shadows } from '@/constants/theme';
+import { useAuthStore } from '@/store/authStore';
 
 // ── Add person modal modes ─────────────────────────────
 //
@@ -220,6 +221,7 @@ const SearchResult = ({
     displayName: string;
     avatarColour: string;
     city?: string;
+    bio?: string;
     status?: 'active' | 'pending_sent' | 'pending_received' | null;
     inCircle?: boolean;
     requestId?: string;
@@ -259,6 +261,7 @@ const SearchResult = ({
       <View style={styles.resultInfo}>
         <Text style={styles.resultName}>{person.displayName}</Text>
         {person.city && <Text style={styles.resultCity}>{person.city}</Text>}
+        {person.bio && <Text style={styles.resultBio} numberOfLines={2}>{person.bio}</Text>}
       </View>
       {isInCircle ? (
         <View style={styles.inCircleBadge}>
@@ -355,6 +358,7 @@ const AddPersonModal = ({
   visible,
   person,
   mode,
+  currentUserBio,
   onClose,
   onAdd,
   onAccept,
@@ -366,9 +370,12 @@ const AddPersonModal = ({
     displayName: string;
     avatarColour?: string;
     city?: string;
+    bio?: string;
+    message?: string; // personal note attached to an incoming request
     requestId?: string;
   } | null;
   mode: AddPersonMode;
+  currentUserBio?: string; // shown as a preview of what the recipient will see
   onClose: () => void;
   onAdd: (payload: any) => void;
   onAccept?: (requestId: string, payload: { relation: string; layer: string; contactFrequency: number; since?: string }) => void;
@@ -381,6 +388,7 @@ const AddPersonModal = ({
   const [offlineName, setOfflineName] = useState('');
   const [offlinePhone, setOfflinePhone] = useState('');
   const [offlineDob, setOfflineDob] = useState('');
+  const [message, setMessage] = useState('');
 
   const reset = () => {
     setRelation('');
@@ -390,6 +398,7 @@ const AddPersonModal = ({
     setOfflineName('');
     setOfflinePhone('');
     setOfflineDob('');
+    setMessage('');
   };
 
   // Parses DD/MM or DD/MM/YYYY → ISO string, using 1900 as sentinel year if omitted.
@@ -423,6 +432,7 @@ const AddPersonModal = ({
         layer,
         since: since || undefined,
         contactFrequency,
+        message: message.trim() || undefined,
       });
     } else if (mode === 'offline') {
       const name = offlineName.trim() || person!.displayName;
@@ -529,6 +539,17 @@ const AddPersonModal = ({
               </View>
             </View>
 
+            {(person?.bio || person?.message) && (
+              <View style={styles.bioCard}>
+                {person?.bio && <Text style={styles.bioText}>{person.bio}</Text>}
+                {person?.message && (
+                  <Text style={[styles.bioText, styles.bioNote]}>
+                    "{person.message}"
+                  </Text>
+                )}
+              </View>
+            )}
+
             <Text style={styles.sectionLabel}>How do you know them?</Text>
             <View style={styles.chipGrid}>
               {RELATIONS.map(r => (
@@ -627,15 +648,44 @@ const AddPersonModal = ({
           keyboardShouldPersistTaps="handled"
         >
           {mode === 'roots' && person && (
-            <View style={styles.personSummary}>
-              <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
-                <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+            <>
+              <View style={styles.personSummary}>
+                <View style={[styles.personAvatar, { backgroundColor: avatarColour }]}>
+                  <Text style={styles.personAvatarText}>{displayName.charAt(0).toUpperCase()}</Text>
+                </View>
+                <View>
+                  <Text style={styles.personName}>{displayName}</Text>
+                  {person.city && <Text style={styles.personCity}>{person.city}</Text>}
+                </View>
               </View>
-              <View>
-                <Text style={styles.personName}>{displayName}</Text>
-                {person.city && <Text style={styles.personCity}>{person.city}</Text>}
-              </View>
-            </View>
+
+              {person.bio && (
+                <View style={styles.bioCard}>
+                  <Text style={styles.bioText}>{person.bio}</Text>
+                </View>
+              )}
+
+              {currentUserBio && (
+                <>
+                  <Text style={styles.sectionLabel}>Your bio (they'll see this)</Text>
+                  <View style={styles.bioCard}>
+                    <Text style={styles.bioText}>{currentUserBio}</Text>
+                  </View>
+                </>
+              )}
+
+              <Text style={styles.sectionLabel}>Add a personal note (optional)</Text>
+              <TextInput
+                style={[styles.input, styles.noteInput]}
+                value={message}
+                onChangeText={(t) => setMessage(t.slice(0, 300))}
+                placeholder="e.g. Hey! We met at Sarah's braai last month — would love to keep in touch."
+                placeholderTextColor={Colors.textLight}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </>
           )}
 
           {mode === 'offline' && (
@@ -764,6 +814,7 @@ export default function CircleScreen() {
   const { data: filtered = [], isLoading: loadingFiltered } = useConnections(activeLayer ?? undefined);
   const { data: searchResults = [], isLoading: isSearching } = useUserSearch(query);
   const { data: incomingRequests = [] } = useConnectionRequests();
+  const currentUser = useAuthStore((s) => s.user);
 
   // Safety net alongside the push-driven invalidation in app/_layout.tsx —
   // catches the case where a push was delayed, dropped, or notifications
@@ -930,6 +981,8 @@ export default function CircleScreen() {
       displayName: request.fromUser.displayName,
       avatarColour: request.fromUser.avatarColour,
       city: request.fromUser.city,
+      bio: request.fromUser.bio,
+      message: request.message,
       requestId: request.id,
     });
     setModalMode('pending_received');
@@ -1219,6 +1272,7 @@ export default function CircleScreen() {
         visible={modalVisible}
         person={selectedPerson}
         mode={modalMode}
+        currentUserBio={currentUser?.bio}
         onClose={() => { setModalVisible(false); setSelectedPerson(null); }}
         onAdd={handleConfirmAdd}
         onAccept={handleAccept}
@@ -1376,6 +1430,7 @@ const styles = StyleSheet.create({
   resultInfo: { flex: 1 },
   resultName: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '600', color: Colors.textDark },
   resultCity: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily },
+  resultBio: { fontSize: 12, color: Colors.textLight, fontFamily: Typography.fontFamily, marginTop: 2, lineHeight: 16 },
   inCircleBadge: { backgroundColor: Colors.terracotta + '18', borderRadius: BorderRadius.pill, paddingHorizontal: 10, paddingVertical: 4 },
   inCircleBadgeText: { fontSize: 12, color: Colors.terracotta, fontWeight: '600', fontFamily: Typography.fontFamily },
   addBtn: { backgroundColor: Colors.terracotta, borderRadius: BorderRadius.pill, paddingHorizontal: 14, paddingVertical: 6 },
@@ -1451,6 +1506,17 @@ const styles = StyleSheet.create({
   personAvatarText: { fontSize: 20, color: Colors.white, fontWeight: '600' },
   personName: { fontSize: Typography.body, fontFamily: Typography.fontFamily, fontWeight: '700', color: Colors.textDark },
   personCity: { fontSize: 13, color: Colors.textLight, fontFamily: Typography.fontFamily },
+  bioCard: {
+    backgroundColor: Colors.card,
+    borderRadius: BorderRadius.md,
+    borderWidth: 0.5,
+    borderColor: Colors.tan,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  bioText: { fontSize: 13, color: Colors.textDark, fontFamily: Typography.fontFamily, lineHeight: 19 },
+  bioNote: { fontStyle: 'italic', marginTop: Spacing.xs, color: Colors.textLight },
+  noteInput: { minHeight: 80, lineHeight: 19, marginBottom: Spacing.md },
   pendingHint: {
     fontSize: Typography.body,
     color: Colors.textLight,

@@ -20,6 +20,7 @@ export interface User {
   lat: number;
   lng: number;
   settings: UserSettings;
+  bio?: string;                   // short optional bio, shown when sending/reviewing connection requests
   showDobToConnections?: boolean; // if true, connections can see your date of birth
   createdAt: string;
 }
@@ -145,4 +146,5 @@ export interface RegisterPayload {
   password: string;
   dateOfBirth: string;        // ISO date — server validates 18+
   phoneNumber?: string;
+  bio?: string;
 }

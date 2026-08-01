@@ -211,6 +211,7 @@ export const useAddConnection = () => {
       layer: string;
       since?: string;
       contactFrequency?: number;
+      message?: string; // optional personal note shown alongside the request (Roots-user path only)
     }): Promise<{ data?: any; suggestion?: boolean; matchedUser?: any }> => {
       const { data } = await api.post('/connections', payload);
       return data;
@@ -230,8 +231,9 @@ export const useConnectionRequests = () =>
         fromUserId: string;
         layer: string;
         relation?: string;
+        message?: string;
         createdAt: string;
-        fromUser: { id: string; displayName: string; avatarColour: string; city?: string };
+        fromUser: { id: string; displayName: string; avatarColour: string; city?: string; bio?: string };
       }>;
     },
     staleTime: 1000 * 60,
@@ -405,6 +407,7 @@ export const useUpdateProfile = () => {
       avatarUrl?: string;
       email?: string;
       showDobToConnections?: boolean;
+      bio?: string;
     }) => {
       const { data } = await api.patch('/users/me', payload);
       return data.data;

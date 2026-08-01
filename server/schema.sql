@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
   whatsapp_number   TEXT,
   whatsapp_opted_in BOOLEAN NOT NULL DEFAULT false,
   show_dob_to_connections BOOLEAN NOT NULL DEFAULT false,
+  bio               TEXT,                    -- short optional bio, ~300 chars, shown when sending/reviewing connection requests
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS connection_requests (
   to_user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   layer         TEXT,
   relation      TEXT,
+  message       TEXT,                    -- optional personal note the sender adds before sending
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(from_user_id, to_user_id)
 );

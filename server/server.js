@@ -178,7 +178,7 @@ app.post('/api/auth/phone/send-code', async (req, res) => {
 
 // POST /api/auth/register
 app.post('/api/auth/register', async (req, res) => {
-  const { displayName, email, password, dateOfBirth, phoneNumber, code, inviteToken } = req.body;
+  const { displayName, email, password, dateOfBirth, phoneNumber, code, inviteToken, bio } = req.body;
   if (!displayName || !email || !password || !dateOfBirth || !phoneNumber || !code) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
@@ -206,18 +206,19 @@ app.post('/api/auth/register', async (req, res) => {
 
   try {
     const hash = await bcrypt.hash(password, 12);
+    const trimmedBio = typeof bio === 'string' ? bio.trim().slice(0, 300) : null;
     const { rows } = await db.query(
-      `INSERT INTO users (display_name, email, password_hash, date_of_birth, phone_number)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (display_name, email, password_hash, date_of_birth, phone_number, bio)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING
          id,
          display_name as "displayName",
          email,
          avatar_colour as "avatarColour",
          date_of_birth as "dateOfBirth",
-         city, lat, lng,
+         city, lat, lng, bio,
          to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"`,
-      [displayName, email.toLowerCase(), hash, dateOfBirth, phoneNumber ?? null]
+      [displayName, email.toLowerCase(), hash, dateOfBirth, phoneNumber ?? null, trimmedBio || null]
     );
     const user = rows[0];
 
@@ -296,8 +297,10 @@ app.post('/api/auth/login', async (req, res) => {
       lat: user.lat,
       lng: user.lng,
       settings: user.settings,
+      bio: user.bio,
       whatsappNumber: user.whatsapp_number,
       whatsappOptedIn: user.whatsapp_opted_in,
+      showDobToConnections: user.show_dob_to_connections,
       createdAt: user.created_at,
     };
     res.json({ data: { user: safeUser, tokens } });
@@ -330,7 +333,7 @@ app.post('/api/auth/refresh', async (req, res) => {
 app.get('/api/users/me', requireAuth, async (req, res) => {
   const { rows } = await db.query(
     `SELECT id, display_name, email, phone_number, avatar_colour,
-            avatar_url, date_of_birth, city, lat, lng, settings,
+            avatar_url, date_of_birth, city, lat, lng, settings, bio,
             whatsapp_number, whatsapp_opted_in, show_dob_to_connections, created_at
      FROM users WHERE id = $1`,
     [req.userId]
@@ -349,6 +352,7 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
     lat: u.lat,
     lng: u.lng,
     settings: u.settings,
+    bio: u.bio,
     whatsappNumber: u.whatsapp_number,
     whatsappOptedIn: u.whatsapp_opted_in,
     showDobToConnections: u.show_dob_to_connections,
@@ -360,7 +364,11 @@ app.get('/api/users/me', requireAuth, async (req, res) => {
 // Note: phoneNumber is intentionally NOT accepted here — changing it requires
 // OTP re-verification via /api/users/me/phone/send-code + PATCH /api/users/me/phone.
 app.patch('/api/users/me', requireAuth, async (req, res) => {
-  const { displayName, city, avatarColour, avatarUrl, email, showDobToConnections } = req.body;
+  const { displayName, city, avatarColour, avatarUrl, email, showDobToConnections, bio } = req.body;
+  // bio uses `undefined` (omitted) to mean "leave unchanged" and '' to mean
+  // "clear it" — both are distinct from a real bio string, so we can't use
+  // a plain COALESCE the way the other text fields do.
+  const bioParam = typeof bio === 'string' ? bio.trim().slice(0, 300) : undefined;
   try {
     const { rows: [u] } = await db.query(
       `UPDATE users SET
@@ -369,15 +377,18 @@ app.patch('/api/users/me', requireAuth, async (req, res) => {
          avatar_colour           = COALESCE($3, avatar_colour),
          avatar_url              = COALESCE($4, avatar_url),
          email                   = COALESCE($5, email),
-         show_dob_to_connections = COALESCE($6, show_dob_to_connections)
-       WHERE id = $7
+         show_dob_to_connections = COALESCE($6, show_dob_to_connections),
+         bio                     = CASE WHEN $8 THEN $7 ELSE bio END
+       WHERE id = $9
        RETURNING id, display_name, email, phone_number, avatar_colour,
-                 avatar_url, date_of_birth, city, lat, lng, settings,
+                 avatar_url, date_of_birth, city, lat, lng, settings, bio,
                  show_dob_to_connections, created_at`,
       [
         displayName, city, avatarColour, avatarUrl,
         email ? email.toLowerCase() : null,
         typeof showDobToConnections === 'boolean' ? showDobToConnections : null,
+        bioParam ?? null,
+        bioParam !== undefined,
         req.userId,
       ]
     );
@@ -393,6 +404,7 @@ app.patch('/api/users/me', requireAuth, async (req, res) => {
       lat: u.lat,
       lng: u.lng,
       settings: u.settings,
+      bio: u.bio,
       showDobToConnections: u.show_dob_to_connections,
       createdAt: u.created_at,
     }});
@@ -685,6 +697,7 @@ app.get('/api/users/search', requireAuth, async (req, res) => {
        u.display_name as "displayName",
        u.avatar_colour as "avatarColour",
        u.city,
+       u.bio,
        CASE WHEN c.id IS NOT NULL THEN true ELSE false END as "inCircle"
      FROM users u
      LEFT JOIN connections c
@@ -702,8 +715,9 @@ app.get('/api/users/search', requireAuth, async (req, res) => {
 // Three paths: (1) add Roots user → pending request, (2) add offline contact with phone → check for match, (3) add offline contact
 app.post('/api/connections', requireAuth, async (req, res) => {
   const { connectedUserId, relation, layer, since, contactFrequency,
-          offlineName, offlinePhone, offlineEmail, offlineDob } = req.body;
+          offlineName, offlinePhone, offlineEmail, offlineDob, message } = req.body;
   if (!layer) return res.status(400).json({ error: 'layer required' });
+  const trimmedMessage = typeof message === 'string' ? message.trim().slice(0, 300) : null;
 
   try {
     // ── Path 1: Adding an existing Roots user ──────────────
@@ -716,10 +730,10 @@ app.post('/api/connections', requireAuth, async (req, res) => {
 
       // Create request record
       await db.query(
-        `INSERT INTO connection_requests (from_user_id, to_user_id, layer, relation)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO connection_requests (from_user_id, to_user_id, layer, relation, message)
+         VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (from_user_id, to_user_id) DO NOTHING`,
-        [req.userId, connectedUserId, layer, relation ?? null]
+        [req.userId, connectedUserId, layer, relation ?? null, trimmedMessage || null]
       );
       // Create pending connection on sender's side
       const { rows: [connection] } = await db.query(
@@ -847,12 +861,14 @@ app.get('/api/connection-requests', requireAuth, async (req, res) => {
        cr.from_user_id as "fromUserId",
        cr.layer,
        cr.relation,
+       cr.message,
        to_char(cr.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt",
        json_build_object(
          'id', u.id,
          'displayName', u.display_name,
          'avatarColour', u.avatar_colour,
-         'city', u.city
+         'city', u.city,
+         'bio', u.bio
        ) as "fromUser"
      FROM connection_requests cr
      JOIN users u ON u.id = cr.from_user_id
