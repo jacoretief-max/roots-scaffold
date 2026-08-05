@@ -9,8 +9,10 @@ Status: **query/API layer built 2026-08-04** (server.js + migration file), not y
 - `src/types/index.ts` — `MemoryEvent.myVisibility` added.
 - `src/api/hooks.ts` — `useAddMemoryEntry` now also accepts `{ text, visibility }`; new `useUpdateMyMemoryVisibility(eventId)` hook.
 - `src/api/upload.ts` — `confirmMedia`/`uploadMedia` take an optional trailing `visibility` param, backward compatible (all existing call sites in `new-memory.tsx`, `memory/[id].tsx`, `person/[id].tsx`, `personalise.tsx` are unaffected — verified via `tsc --noEmit`, no new type errors introduced).
-- **Not done yet**: no UI for setting "your visibility" when adding an entry/photo, and no UI showing `myVisibility` on the memory screen. The API is ready for that wiring whenever it's picked up.
-- **Sequencing reminder**: run the migration before any of this new query logic can work — until then, `memory_author_visibility` doesn't exist and these endpoints will error.
+- **Migration run against live Railway Postgres** — confirmed by you 2026-08-05.
+- **UI wired (2026-08-05)**: `app/memory/[id].tsx` — a "Your visibility: {label} ›" pill in the event meta section (shown to any contributor, i.e. creator or tagged participant), opening a new `MyVisibilityModal` with the same radio-list pattern as the existing creator-only "Edit memory details" visibility picker. Deliberately kept separate and clearly labeled from that creator control, since they're now two different things: the event's default visibility vs. what *you* as a contributor have chosen. Saving calls `useUpdateMyMemoryVisibility`, which hits `PATCH /api/memories/:id/my-visibility` and invalidates the memory query so the pill updates immediately.
+- Not wired into the add-entry/add-photo flow itself — visibility is set once via the pill/modal and applies to everything that contributor adds, rather than being asked on every entry or photo (matches the "one visibility per (event, author)" decision, no per-item prompts).
+- Typechecked clean (`tsc --noEmit`) — no new errors introduced in `app/memory/[id].tsx` or any file touched in this pass.
 
 ## Why this matters
 

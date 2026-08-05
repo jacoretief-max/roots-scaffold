@@ -13,7 +13,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   useMemory, useAddMemoryEntry, useUpdateMemoryEntry,
   useDeleteMemoryEntry, useUpdateMemory, useConnectionSearch,
-  useDeleteMedia, useUpdateMediaCaption,
+  useDeleteMedia, useUpdateMediaCaption, useUpdateMyMemoryVisibility,
   QueryKeys,
 } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
@@ -506,6 +506,83 @@ const EditMemoryModal = ({
   );
 };
 
+// ── Your visibility modal (any contributor — independent of the creator) ──
+// Sets memory_author_visibility for the current user: who beyond the tagged
+// participants can see the perspective and photos *they* add to this
+// memory. Separate from "Edit memory details" (creator-only, event default).
+const MyVisibilityModal = ({
+  visible,
+  currentVisibility,
+  isSaving,
+  onClose,
+  onSave,
+}: {
+  visible: boolean;
+  currentVisibility: VisibilityLevel;
+  isSaving: boolean;
+  onClose: () => void;
+  onSave: (visibility: VisibilityLevel) => void;
+}) => {
+  const [visibility, setVisibility] = useState<VisibilityLevel>(currentVisibility);
+
+  // Reset local selection whenever the modal is (re)opened, so it reflects
+  // the latest saved value rather than a stale choice from last time.
+  useEffect(() => {
+    if (visible) setVisibility(currentVisibility);
+  }, [visible, currentVisibility]);
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView style={styles.editModal} edges={['top', 'bottom']}>
+        <View style={styles.editHeader}>
+          <TouchableOpacity onPress={onClose}>
+            <Text style={styles.editCancel}>Cancel</Text>
+          </TouchableOpacity>
+          <Text style={styles.editTitle}>Your visibility</Text>
+          <TouchableOpacity onPress={() => onSave(visibility)} disabled={isSaving}>
+            <Text style={[styles.editSave, isSaving && styles.editSaveDisabled]}>
+              {isSaving ? 'Saving…' : 'Save'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.editScroll}>
+          <Text style={styles.myVisibilityIntro}>
+            Who — beyond the people tagged in this memory — can see the perspective
+            and photos you add here. Everyone tagged always sees everything, no
+            matter what you choose.
+          </Text>
+
+          {VISIBILITY_OPTIONS.map(opt => (
+            <TouchableOpacity
+              key={opt.key}
+              style={[styles.visibilityOption, visibility === opt.key && styles.visibilityOptionActive]}
+              onPress={() => setVisibility(opt.key)}
+            >
+              <View style={styles.visibilityRadio}>
+                {visibility === opt.key && <View style={styles.visibilityRadioInner} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.visibilityLabel, visibility === opt.key && styles.visibilityLabelActive]}>
+                  {opt.label}
+                </Text>
+                <Text style={styles.visibilityDesc}>{opt.desc}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
+  );
+};
+
 // ── Event screen ───────────────────────────────────────
 export default function MemoryEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -517,6 +594,7 @@ export default function MemoryEventScreen() {
   const [editText, setEditText] = useState('');
   const [editEntryId, setEditEntryId] = useState('');
   const [editMemoryVisible, setEditMemoryVisible] = useState(false);
+  const [myVisibilityModalVisible, setMyVisibilityModalVisible] = useState(false);
   const [localPhotos, setLocalPhotos] = useState<string[]>([]);
   const [lightboxVisible, setLightboxVisible] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -573,6 +651,7 @@ export default function MemoryEventScreen() {
   const { mutate: updateMemory, isPending: isSavingMemory } = useUpdateMemory();
   const { mutate: deleteMedia } = useDeleteMedia(id);
   const { mutate: updateMediaCaption } = useUpdateMediaCaption(id);
+  const { mutate: updateMyVisibility, isPending: isSavingMyVisibility } = useUpdateMyMemoryVisibility(id);
 
   if (isLoading) {
     return (
@@ -676,7 +755,16 @@ export default function MemoryEventScreen() {
     );
   };
 
+  const handleSaveMyVisibility = (visibility: VisibilityLevel) => {
+    updateMyVisibility(visibility, {
+      onSuccess: () => setMyVisibilityModalVisible(false),
+      onError: () => Alert.alert('Error', 'Could not update your visibility. Please try again.'),
+    });
+  };
+
   const myEntry = event.entries?.find(e => e.authorId === user?.id);
+  const myVisibility = event.myVisibility ?? event.visibility;
+  const myVisibilityLabel = VISIBILITY_OPTIONS.find(o => o.key === myVisibility)?.label ?? 'Only us';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -735,6 +823,20 @@ export default function MemoryEventScreen() {
               </View>
             )}
           </View>
+
+          {/* Your own visibility for this memory — independent of the
+              creator's default, and of who created it. */}
+          {canContribute && (
+            <TouchableOpacity
+              style={styles.myVisibilityPill}
+              onPress={() => setMyVisibilityModalVisible(true)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            >
+              <Text style={styles.myVisibilityPillText}>
+                Your visibility: {myVisibilityLabel} ›
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Photos */}
@@ -916,6 +1018,17 @@ export default function MemoryEventScreen() {
         />
       )}
 
+      {/* Your visibility modal — any contributor, not just the creator */}
+      {canContribute && myVisibilityModalVisible && (
+        <MyVisibilityModal
+          visible={myVisibilityModalVisible}
+          currentVisibility={myVisibility}
+          isSaving={isSavingMyVisibility}
+          onClose={() => setMyVisibilityModalVisible(false)}
+          onSave={handleSaveMyVisibility}
+        />
+      )}
+
       {/* Lightbox */}
       <Lightbox
         photos={allPhotos}
@@ -1061,6 +1174,26 @@ const styles = StyleSheet.create({
     borderColor: Colors.card,
   },
   participantAvatarText: { fontSize: 11, color: Colors.white, fontWeight: '600' },
+  myVisibilityPill: {
+    marginTop: Spacing.sm,
+    alignSelf: 'flex-start',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.tan,
+  },
+  myVisibilityPillText: {
+    fontSize: 12,
+    color: Colors.textDark,
+    fontFamily: Typography.fontFamily,
+  },
+  myVisibilityIntro: {
+    fontSize: 13,
+    color: Colors.textLight,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 19,
+    marginBottom: Spacing.md,
+  },
 
   // Photo section
   photoSection: {
