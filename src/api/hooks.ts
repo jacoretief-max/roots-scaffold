@@ -64,11 +64,29 @@ export const useCreateMemory = () => {
 export const useAddMemoryEntry = (eventId: string) => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (text: string): Promise<MemoryEntry> => {
+    // Pass a plain string for the common case, or { text, visibility } the
+    // first time a contributor wants to set their own visibility layer for
+    // this memory (see memory_author_visibility / shared-memory-visibility-design.md).
+    mutationFn: async (payload: string | { text: string; visibility?: string }): Promise<MemoryEntry> => {
+      const body = typeof payload === 'string' ? { text: payload } : payload;
       const { data } = await api.post<ApiResponse<MemoryEntry>>(
         `/memories/${eventId}/entries`,
-        { text }
+        body
       );
+      return data.data;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.memory(eventId) }),
+  });
+};
+
+// Set/change your own visibility layer for a shared memory — independent of
+// who created it. Lets a co-author widen or narrow who beyond the two of you
+// sees their specific contributions.
+export const useUpdateMyMemoryVisibility = (eventId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (visibility: string) => {
+      const { data } = await api.patch(`/memories/${eventId}/my-visibility`, { visibility });
       return data.data;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: QueryKeys.memory(eventId) }),

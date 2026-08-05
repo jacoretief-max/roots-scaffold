@@ -51,9 +51,12 @@ export async function uploadToS3(
 export async function confirmMedia(
   publicUrl: string,
   type: 'avatar' | 'memory' | 'contact-audio',
-  referenceId?: string
+  referenceId?: string,
+  // Only meaningful for type === 'memory' — sets/updates the uploader's own
+  // visibility layer for that memory (see memory_author_visibility).
+  visibility?: string
 ): Promise<void> {
-  await api.post('/media/confirm', { publicUrl, type, referenceId });
+  await api.post('/media/confirm', { publicUrl, type, referenceId, visibility });
 }
 
 /**
@@ -65,10 +68,11 @@ export async function uploadMedia(
   contentType: string,
   folder: 'memories' | 'avatars' | 'contact-audio',
   type: 'avatar' | 'memory' | 'contact-audio',
-  referenceId?: string
+  referenceId?: string,
+  visibility?: string
 ): Promise<string> {
   const presign = await presignMedia(contentType, folder);
   await uploadToS3(localUri, presign.uploadUrl, contentType);
-  await confirmMedia(presign.publicUrl, type, referenceId);
+  await confirmMedia(presign.publicUrl, type, referenceId, visibility);
   return presign.publicUrl;
 }

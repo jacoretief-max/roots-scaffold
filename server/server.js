@@ -1350,20 +1350,30 @@ app.get('/api/memories', requireAuth, async (req, res) => {
      FROM events e
      WHERE e.created_by_user_id = $1
         OR $1 = ANY(e.participant_ids)
-        OR (
-          e.visibility != 'onlyUs'
-          AND EXISTS (
-            SELECT 1 FROM connections c
-            WHERE c.user_id = e.created_by_user_id
-              AND c.connected_user_id = $1
-              AND c.status = 'active'
-              AND (
-                (e.visibility = 'intimate'   AND c.layer = 'intimate') OR
-                (e.visibility = 'close'      AND c.layer IN ('intimate','close')) OR
-                (e.visibility = 'active'     AND c.layer IN ('intimate','close','active')) OR
-                (e.visibility = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
-              )
-          )
+        OR EXISTS (
+          -- Per-author visibility: the event is visible if the viewer qualifies
+          -- for AT LEAST ONE contributor's chosen layer (memory_author_visibility),
+          -- falling back to the event's own visibility for any author who hasn't
+          -- set a preference yet. See docs/shared-memory-visibility-design.md.
+          SELECT 1
+          FROM (
+            SELECT e.created_by_user_id AS author_id
+            UNION SELECT me.author_id FROM memory_entries me WHERE me.event_id = e.id
+            UNION SELECT mm.user_id    FROM memory_media  mm WHERE mm.event_id = e.id
+          ) authors
+          LEFT JOIN memory_author_visibility mav
+            ON mav.event_id = e.id AND mav.user_id = authors.author_id
+          JOIN connections c
+            ON c.user_id = authors.author_id
+           AND c.connected_user_id = $1
+           AND c.status = 'active'
+          WHERE COALESCE(mav.visibility, e.visibility) != 'onlyUs'
+            AND (
+              (COALESCE(mav.visibility, e.visibility) = 'intimate'   AND c.layer = 'intimate') OR
+              (COALESCE(mav.visibility, e.visibility) = 'close'      AND c.layer IN ('intimate','close')) OR
+              (COALESCE(mav.visibility, e.visibility) = 'active'     AND c.layer IN ('intimate','close','active')) OR
+              (COALESCE(mav.visibility, e.visibility) = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
+            )
         )
      ORDER BY e.created_at DESC`,
     [req.userId]
@@ -1386,40 +1396,60 @@ app.post('/api/memories/:id/view', requireAuth, async (req, res) => {
 app.get('/api/memories/:id', requireAuth, async (req, res) => {
   const { rows: [event] } = await db.query(
     `SELECT
-       id,
-       title,
-       to_char(date, 'YYYY-MM-DD') as date,
-       location, lat, lng, music, visibility,
-       participant_ids                       as "participantIds",
-       offline_participant_connection_ids    as "offlineParticipantConnectionIds",
-       photo_urls                            as "photoUrls",
-       created_by_user_id                    as "createdByUserId",
-       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"
-     FROM events
-     WHERE id = $1
+       e.id,
+       e.title,
+       to_char(e.date, 'YYYY-MM-DD') as date,
+       e.location, e.lat, e.lng, e.music, e.visibility,
+       e.participant_ids                       as "participantIds",
+       e.offline_participant_connection_ids    as "offlineParticipantConnectionIds",
+       e.photo_urls                            as "photoUrls",
+       e.created_by_user_id                    as "createdByUserId",
+       to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"
+     FROM events e
+     WHERE e.id = $1
        AND (
-         created_by_user_id = $2
-         OR $2 = ANY(participant_ids)
-         OR (
-           visibility != 'onlyUs'
-           AND EXISTS (
-             SELECT 1 FROM connections c
-             WHERE c.user_id = created_by_user_id
-               AND c.connected_user_id = $2
-               AND c.status = 'active'
-               AND (
-                 (visibility = 'intimate'   AND c.layer = 'intimate') OR
-                 (visibility = 'close'      AND c.layer IN ('intimate','close')) OR
-                 (visibility = 'active'     AND c.layer IN ('intimate','close','active')) OR
-                 (visibility = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
-               )
-           )
+         e.created_by_user_id = $2
+         OR $2 = ANY(e.participant_ids)
+         OR EXISTS (
+           -- Same per-author visibility rule as GET /api/memories — see
+           -- docs/shared-memory-visibility-design.md.
+           SELECT 1
+           FROM (
+             SELECT e.created_by_user_id AS author_id
+             UNION SELECT me.author_id FROM memory_entries me WHERE me.event_id = e.id
+             UNION SELECT mm.user_id    FROM memory_media  mm WHERE mm.event_id = e.id
+           ) authors
+           LEFT JOIN memory_author_visibility mav
+             ON mav.event_id = e.id AND mav.user_id = authors.author_id
+           JOIN connections c
+             ON c.user_id = authors.author_id
+            AND c.connected_user_id = $2
+            AND c.status = 'active'
+           WHERE COALESCE(mav.visibility, e.visibility) != 'onlyUs'
+             AND (
+               (COALESCE(mav.visibility, e.visibility) = 'intimate'   AND c.layer = 'intimate') OR
+               (COALESCE(mav.visibility, e.visibility) = 'close'      AND c.layer IN ('intimate','close')) OR
+               (COALESCE(mav.visibility, e.visibility) = 'active'     AND c.layer IN ('intimate','close','active')) OR
+               (COALESCE(mav.visibility, e.visibility) = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
+             )
          )
        )`,
     [req.params.id, req.userId]
   );
   if (!event) return res.status(404).json({ error: 'Not found' });
 
+  // The viewer's own visibility setting for this memory (if they're a
+  // contributor), for the client to show "your visibility" in the UI.
+  const { rows: [myVisRow] } = await db.query(
+    `SELECT visibility FROM memory_author_visibility WHERE event_id = $1 AND user_id = $2`,
+    [req.params.id, req.userId]
+  );
+  const myVisibility = myVisRow?.visibility ?? event.visibility;
+
+  // Entries and media are filtered per-author: visible to the author
+  // themself, to any tagged participant, or to a viewer whose connection to
+  // that specific author clears that author's own chosen layer (falling
+  // back to the event's own visibility if the author hasn't set one).
   const { rows: entries } = await db.query(
     `SELECT
        me.id,
@@ -1440,9 +1470,27 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
        ) as author
      FROM memory_entries me
      JOIN users u ON u.id = me.author_id
+     LEFT JOIN memory_author_visibility mav
+       ON mav.event_id = me.event_id AND mav.user_id = me.author_id
      WHERE me.event_id = $1
+       AND (
+         me.author_id = $2
+         OR $2 = ANY($3::uuid[])
+         OR EXISTS (
+           SELECT 1 FROM connections c
+           WHERE c.user_id = me.author_id
+             AND c.connected_user_id = $2
+             AND c.status = 'active'
+             AND (
+               (COALESCE(mav.visibility, $4) = 'intimate'   AND c.layer = 'intimate') OR
+               (COALESCE(mav.visibility, $4) = 'close'      AND c.layer IN ('intimate','close')) OR
+               (COALESCE(mav.visibility, $4) = 'active'     AND c.layer IN ('intimate','close','active')) OR
+               (COALESCE(mav.visibility, $4) = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
+             )
+         )
+       )
      ORDER BY me.created_at ASC`,
-    [req.params.id, req.userId]
+    [req.params.id, req.userId, event.participantIds, event.visibility]
   );
 
   // Hydrate participants — Roots users + offline contacts
@@ -1470,10 +1518,31 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
     : { rows: [] };
   const participants = [...rootsParticipants, ...offlineParticipants];
 
-  // Fetch all media for this event (photos/videos added by any participant)
+  // Fetch media for this event, filtered per-author the same way as entries.
   const { rows: mediaRows } = await db.query(
-    `SELECT id, user_id as "userId", url, caption FROM memory_media WHERE event_id = $1 ORDER BY created_at ASC`,
-    [req.params.id]
+    `SELECT mm.id, mm.user_id as "userId", mm.url, mm.caption
+     FROM memory_media mm
+     LEFT JOIN memory_author_visibility mav
+       ON mav.event_id = mm.event_id AND mav.user_id = mm.user_id
+     WHERE mm.event_id = $1
+       AND (
+         mm.user_id = $2
+         OR $2 = ANY($3::uuid[])
+         OR EXISTS (
+           SELECT 1 FROM connections c
+           WHERE c.user_id = mm.user_id
+             AND c.connected_user_id = $2
+             AND c.status = 'active'
+             AND (
+               (COALESCE(mav.visibility, $4) = 'intimate'   AND c.layer = 'intimate') OR
+               (COALESCE(mav.visibility, $4) = 'close'      AND c.layer IN ('intimate','close')) OR
+               (COALESCE(mav.visibility, $4) = 'active'     AND c.layer IN ('intimate','close','active')) OR
+               (COALESCE(mav.visibility, $4) = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
+             )
+         )
+       )
+     ORDER BY mm.created_at ASC`,
+    [req.params.id, req.userId, event.participantIds, event.visibility]
   );
   const media = mediaRows.map(r => r.url);
   // Richer form alongside `media` — carries id + uploader so the client can
@@ -1481,7 +1550,7 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
   // stays as-is for the gallery/lightbox, which don't need either.
   const mediaItems = mediaRows;
 
-  res.json({ data: { ...event, entries, participants, media, mediaItems } });
+  res.json({ data: { ...event, myVisibility, entries, participants, media, mediaItems } });
 });
 
 // PATCH /api/memories/:id — creator only: update event details
@@ -1594,15 +1663,53 @@ app.post('/api/memories', requireAuth, async (req, res) => {
   }
 });
 
+const MEMORY_VISIBILITY_VALUES = ['onlyUs', 'intimate', 'close', 'active', 'meaningful'];
+
+// Upsert the caller's own visibility choice for a memory. Called from the
+// entries/media routes when a `visibility` field is provided, and from
+// PATCH /api/memories/:id/my-visibility below.
+async function setMyMemoryVisibility(eventId, userId, visibility) {
+  await db.query(
+    `INSERT INTO memory_author_visibility (event_id, user_id, visibility)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (event_id, user_id) DO UPDATE SET visibility = $3, updated_at = NOW()`,
+    [eventId, userId, visibility]
+  );
+}
+
+// PATCH /api/memories/:id/my-visibility — any contributor sets their own
+// visibility layer for a shared memory, independent of who created it.
+app.patch('/api/memories/:id/my-visibility', requireAuth, async (req, res) => {
+  const { visibility } = req.body;
+  if (!MEMORY_VISIBILITY_VALUES.includes(visibility)) {
+    return res.status(400).json({ error: `visibility must be one of ${MEMORY_VISIBILITY_VALUES.join(', ')}` });
+  }
+  const { rows: [event] } = await db.query(
+    'SELECT id FROM events WHERE id = $1 AND ($2 = ANY(participant_ids) OR created_by_user_id = $2)',
+    [req.params.id, req.userId]
+  );
+  if (!event) return res.status(403).json({ error: 'Not a participant in this memory' });
+
+  await setMyMemoryVisibility(req.params.id, req.userId, visibility);
+  res.json({ data: { eventId: req.params.id, userId: req.userId, visibility } });
+});
+
 // POST /api/memories/:id/entries
 app.post('/api/memories/:id/entries', requireAuth, async (req, res) => {
-  const { text } = req.body;
+  const { text, visibility } = req.body;
+  if (visibility && !MEMORY_VISIBILITY_VALUES.includes(visibility)) {
+    return res.status(400).json({ error: `visibility must be one of ${MEMORY_VISIBILITY_VALUES.join(', ')}` });
+  }
   // Verify the caller is a participant
   const { rows: [event] } = await db.query(
     'SELECT id FROM events WHERE id = $1 AND $2 = ANY(participant_ids)',
     [req.params.id, req.userId]
   );
   if (!event) return res.status(403).json({ error: 'Not a participant in this memory' });
+
+  if (visibility) {
+    await setMyMemoryVisibility(req.params.id, req.userId, visibility);
+  }
 
   const { rows: [entry] } = await db.query(
     `INSERT INTO memory_entries (event_id, author_id, text)
@@ -1685,8 +1792,11 @@ app.post('/api/media/presign', requireAuth, async (req, res) => {
 // Body: { publicUrl, key, type: 'avatar' | 'memory', referenceId? }
 app.post('/api/media/confirm', requireAuth, async (req, res) => {
   try {
-    const { publicUrl, type, referenceId } = req.body;
+    const { publicUrl, type, referenceId, visibility } = req.body;
     if (!publicUrl || !type) return res.status(400).json({ error: 'publicUrl and type required' });
+    if (visibility && !MEMORY_VISIBILITY_VALUES.includes(visibility)) {
+      return res.status(400).json({ error: `visibility must be one of ${MEMORY_VISIBILITY_VALUES.join(', ')}` });
+    }
 
     if (type === 'avatar') {
       await db.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [publicUrl, req.userId]);
@@ -1697,6 +1807,9 @@ app.post('/api/media/confirm', requireAuth, async (req, res) => {
          ON CONFLICT DO NOTHING`,
         [referenceId, req.userId, publicUrl]
       );
+      if (visibility) {
+        await setMyMemoryVisibility(referenceId, req.userId, visibility);
+      }
     } else if (type === 'contact-audio' && referenceId) {
       await db.query(
         `UPDATE contact_events SET audio_url = $1 WHERE id = $2 AND user_id = $3`,

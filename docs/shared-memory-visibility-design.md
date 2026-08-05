@@ -1,6 +1,16 @@
 # Shared Memory Visibility — Per-Author Design
 
-Status: design phase, decisions locked 2026-08-04. This is the scoping follow-up to the "Related open question" flagged in `find-my-150-design.md` and the addendum in `roots-handoff-monetization-and-memories.md`.
+Status: **query/API layer built 2026-08-04** (server.js + migration file), not yet run against the live DB, and no client UI wired up yet. This is the scoping follow-up to the "Related open question" flagged in `find-my-150-design.md` and the addendum in `roots-handoff-monetization-and-memories.md`.
+
+## Implementation status
+
+- `server/migrate_phase5_memory_visibility.sql` — ready, not yet run (holding per decision to build query/API first).
+- `server.js` — `GET /api/memories`, `GET /api/memories/:id` rewritten to the per-author query below; new `PATCH /api/memories/:id/my-visibility`; `POST /api/memories/:id/entries` and `POST /api/media/confirm` (type `'memory'`) accept an optional `visibility` field that upserts the caller's `memory_author_visibility` row via a shared `setMyMemoryVisibility()` helper. Syntax-checked (`node --check`), not yet exercised against a real database — the `memory_author_visibility` table doesn't exist until the migration runs.
+- `src/types/index.ts` — `MemoryEvent.myVisibility` added.
+- `src/api/hooks.ts` — `useAddMemoryEntry` now also accepts `{ text, visibility }`; new `useUpdateMyMemoryVisibility(eventId)` hook.
+- `src/api/upload.ts` — `confirmMedia`/`uploadMedia` take an optional trailing `visibility` param, backward compatible (all existing call sites in `new-memory.tsx`, `memory/[id].tsx`, `person/[id].tsx`, `personalise.tsx` are unaffected — verified via `tsc --noEmit`, no new type errors introduced).
+- **Not done yet**: no UI for setting "your visibility" when adding an entry/photo, and no UI showing `myVisibility` on the memory screen. The API is ready for that wiring whenever it's picked up.
+- **Sequencing reminder**: run the migration before any of this new query logic can work — until then, `memory_author_visibility` doesn't exist and these endpoints will error.
 
 ## Why this matters
 

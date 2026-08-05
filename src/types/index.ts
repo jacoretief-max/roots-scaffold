@@ -75,6 +75,8 @@ export interface MemoryEvent {
   mediaItems?: MemoryMediaItem[]; // same photos, with id + uploader — detail view only
   newEntryCount?: number;     // unread perspectives since last visit
   hasMyEntry?: boolean;       // current user has already added a perspective
+  myVisibility?: VisibilityLevel; // current user's own visibility layer for this memory
+                                   // (falls back to the event's own visibility if unset)
 }
 
 // ── Memory Media (detail view — id + uploader for delete/ownership) ──
