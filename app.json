@@ -21,7 +21,7 @@
       "infoPlist": {
         "NSContactsUsageDescription": "Roots reads your contacts to help identify the people who matter most to you.",
         "NSCameraUsageDescription": "Roots uses your camera to capture photos for memories.",
-        "NSPhotoLibraryUsageDescription": "Roots accesses your photo library so you can add photos to memories.",
+        "NSPhotoLibraryUsageDescription": "Roots uses your photo library to let you attach photos to memories, and — only if you turn it on — to look through your photos from time to time and suggest people you may want to add to your circle. Find My 150 is entirely optional, runs on your device only, and no photo ever leaves your phone or reaches our servers.",
         "NSMicrophoneUsageDescription": "Roots uses the microphone to record voice notes for contact logs and memories.",
         "NSCalendarsUsageDescription": "Roots reads your calendar to detect shared events with connections.",
         "NSFaceIDUsageDescription": "Rooted In uses Face ID so you can sign in without typing your password.",
