@@ -13,13 +13,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   useMemory, useAddMemoryEntry, useUpdateMemoryEntry,
   useDeleteMemoryEntry, useUpdateMemory, useConnectionSearch,
-  useDeleteMedia,
+  useDeleteMedia, useUpdateMediaCaption,
   QueryKeys,
 } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
 import api from '@/api/client';
 import { useAuthStore } from '@/store/authStore';
-import { MemoryEntry, MemoryEvent, VisibilityLevel } from '@/types';
+import { MemoryEntry, MemoryEvent, MemoryMediaItem, VisibilityLevel } from '@/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/theme';
 
 const { width, height } = Dimensions.get('window');
@@ -33,6 +33,9 @@ const IconCamera = ({ color, size = 24 }: { color: string; size?: number }) => (
 );
 
 // ── Photo section (hero + strip) ──────────────────────
+// Tapping a strip tile swaps that photo into the big spot up top (strip
+// stays put, just re-highlights). Tapping the big photo opens the lightbox
+// at whichever photo is currently selected.
 const PhotoSection = ({
   photos,
   onPress,
@@ -40,25 +43,36 @@ const PhotoSection = ({
   photos: string[];
   onPress: (index: number) => void;
 }) => {
-  const stripPhotos = photos.slice(1);
+  const [selected, setSelected] = useState(0);
+
+  // Reset to the first photo if the set of photos changes underneath us
+  // (e.g. a new upload lands) so `selected` never points past the end.
+  useEffect(() => {
+    if (selected >= photos.length) setSelected(0);
+  }, [photos.length]);
+
   return (
     <View style={styles.photoSection}>
-      <TouchableOpacity onPress={() => onPress(0)} activeOpacity={0.92}>
-        <Image source={{ uri: photos[0] }} style={styles.photoHero} resizeMode="cover" />
+      <TouchableOpacity onPress={() => onPress(selected)} activeOpacity={0.92}>
+        <Image source={{ uri: photos[selected] }} style={styles.photoHero} resizeMode="cover" />
       </TouchableOpacity>
-      {stripPhotos.length > 0 && (
+      {photos.length > 1 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.photoStrip}
         >
-          {stripPhotos.map((uri, i) => (
+          {photos.map((uri, i) => (
             <TouchableOpacity
               key={uri}
-              onPress={() => onPress(i + 1)}
+              onPress={() => setSelected(i)}
               activeOpacity={0.9}
             >
-              <Image source={{ uri }} style={styles.photoStripThumb} resizeMode="cover" />
+              <Image
+                source={{ uri }}
+                style={[styles.photoStripThumb, i === selected && styles.photoStripThumbActive]}
+                resizeMode="cover"
+              />
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -68,22 +82,49 @@ const PhotoSection = ({
 };
 
 // ── Lightbox ───────────────────────────────────────────
+// Captions: added later via the pencil icon, never forced at upload time.
+// Only the photo's uploader or the memory's creator can add/edit one —
+// mirrors the delete-photo permission model.
 const Lightbox = ({
   photos,
+  mediaByUrl,
+  currentUserId,
+  isCreator,
   startIndex,
   visible,
   onClose,
+  onSaveCaption,
 }: {
   photos: string[];
+  mediaByUrl: Record<string, MemoryMediaItem | undefined>;
+  currentUserId: string;
+  isCreator: boolean;
   startIndex: number;
   visible: boolean;
   onClose: () => void;
+  onSaveCaption: (mediaId: string, caption: string) => void;
 }) => {
   const [current, setCurrent] = useState(startIndex);
+  const [editingCaption, setEditingCaption] = useState(false);
+  const [captionDraft, setCaptionDraft] = useState('');
 
   useEffect(() => {
     if (visible) setCurrent(startIndex);
+    setEditingCaption(false);
   }, [visible, startIndex]);
+
+  const currentMedia = mediaByUrl[photos[current]];
+  const canCaption = !!currentMedia && (isCreator || currentMedia.userId === currentUserId);
+
+  const handleStartEdit = () => {
+    setCaptionDraft(currentMedia?.caption ?? '');
+    setEditingCaption(true);
+  };
+
+  const handleSaveCaption = () => {
+    if (currentMedia) onSaveCaption(currentMedia.id, captionDraft.trim());
+    setEditingCaption(false);
+  };
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -102,6 +143,7 @@ const Lightbox = ({
           getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
           onMomentumScrollEnd={(e) => {
             setCurrent(Math.round(e.nativeEvent.contentOffset.x / width));
+            setEditingCaption(false);
           }}
           renderItem={({ item }) => (
             <View style={{ width, height, justifyContent: 'center', alignItems: 'center' }}>
@@ -115,6 +157,43 @@ const Lightbox = ({
             {photos.map((_, i) => (
               <View key={i} style={[styles.lightboxDot, i === current && styles.lightboxDotActive]} />
             ))}
+          </View>
+        )}
+
+        {/* Caption — view, edit, or the pencil to add one */}
+        {editingCaption ? (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.lightboxCaptionEditWrap}
+          >
+            <TextInput
+              style={styles.lightboxCaptionInput}
+              value={captionDraft}
+              onChangeText={(t) => setCaptionDraft(t.slice(0, 150))}
+              placeholder="Add a short caption…"
+              placeholderTextColor={Colors.textLight}
+              autoFocus
+              multiline
+            />
+            <View style={styles.lightboxCaptionActions}>
+              <TouchableOpacity onPress={() => setEditingCaption(false)}>
+                <Text style={styles.lightboxCaptionCancel}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSaveCaption}>
+                <Text style={styles.lightboxCaptionSave}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
+        ) : (
+          <View style={styles.lightboxCaptionBar}>
+            {currentMedia?.caption ? (
+              <Text style={styles.lightboxCaptionText} numberOfLines={2}>{currentMedia.caption}</Text>
+            ) : <View />}
+            {canCaption && (
+              <TouchableOpacity onPress={handleStartEdit} style={styles.lightboxPencilBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Text style={styles.lightboxPencilText}>✎</Text>
+              </TouchableOpacity>
+            )}
           </View>
         )}
       </View>
@@ -493,6 +572,7 @@ export default function MemoryEventScreen() {
   const { mutate: deleteEntry } = useDeleteMemoryEntry(id);
   const { mutate: updateMemory, isPending: isSavingMemory } = useUpdateMemory();
   const { mutate: deleteMedia } = useDeleteMedia(id);
+  const { mutate: updateMediaCaption } = useUpdateMediaCaption(id);
 
   if (isLoading) {
     return (
@@ -531,6 +611,20 @@ export default function MemoryEventScreen() {
   // server-side (uploader or creator), but the strip only ever shows your
   // own uploads, matching "photos you already added" to your take.
   const myMediaItems = (event.mediaItems ?? []).filter(m => m.userId === user?.id);
+
+  // URL → media item lookup, so the Lightbox can show/edit a caption for
+  // whichever photo is currently on screen. Locally-picked photos not yet
+  // confirmed by the server won't have an entry here — captioning is
+  // unavailable for those until the upload completes.
+  const mediaByUrl: Record<string, MemoryMediaItem | undefined> = {};
+  for (const m of event.mediaItems ?? []) mediaByUrl[m.url] = m;
+
+  const handleSaveCaption = (mediaId: string, caption: string) => {
+    updateMediaCaption(
+      { mediaId, caption },
+      { onError: () => Alert.alert('Error', 'Could not save the caption. Please try again.') }
+    );
+  };
 
   const handleDeleteMedia = (mediaId: string) => {
     Alert.alert(
@@ -825,9 +919,13 @@ export default function MemoryEventScreen() {
       {/* Lightbox */}
       <Lightbox
         photos={allPhotos}
+        mediaByUrl={mediaByUrl}
+        currentUserId={user?.id ?? ''}
+        isCreator={isCreator}
         startIndex={lightboxIndex}
         visible={lightboxVisible}
         onClose={() => setLightboxVisible(false)}
+        onSaveCaption={handleSaveCaption}
       />
     </SafeAreaView>
   );
@@ -983,6 +1081,11 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: BorderRadius.sm,
     marginRight: Spacing.sm,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  photoStripThumbActive: {
+    borderColor: Colors.terracotta,
   },
 
   // Perspectives container
@@ -1097,6 +1200,58 @@ const styles = StyleSheet.create({
     width: 20,
     backgroundColor: Colors.white,
   },
+
+  // Lightbox caption
+  lightboxCaptionBar: {
+    position: 'absolute',
+    left: Spacing.lg,
+    right: Spacing.lg,
+    bottom: 48,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  lightboxCaptionText: {
+    flex: 1,
+    fontSize: 13,
+    color: Colors.white,
+    fontFamily: Typography.fontFamily,
+    lineHeight: 18,
+  },
+  lightboxPencilBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxPencilText: { fontSize: 15, color: Colors.white },
+  lightboxCaptionEditWrap: {
+    position: 'absolute',
+    left: Spacing.lg,
+    right: Spacing.lg,
+    bottom: 40,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+  },
+  lightboxCaptionInput: {
+    color: Colors.white,
+    fontSize: 14,
+    fontFamily: Typography.fontFamily,
+    minHeight: 40,
+    maxHeight: 80,
+  },
+  lightboxCaptionActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: Spacing.lg,
+    marginTop: Spacing.sm,
+  },
+  lightboxCaptionCancel: { color: Colors.tan, fontSize: 13, fontFamily: Typography.fontFamily },
+  lightboxCaptionSave: { color: Colors.white, fontWeight: '700', fontSize: 13, fontFamily: Typography.fontFamily },
 
   // Photo picker button
   photoPickerBtn: {

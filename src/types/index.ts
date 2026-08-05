@@ -82,6 +82,7 @@ export interface MemoryMediaItem {
   id: string;
   userId: string;
   url: string;
+  caption?: string;
 }
 
 // ── Memory Entries ────────────────────────────────────

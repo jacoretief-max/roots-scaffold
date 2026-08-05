@@ -1472,7 +1472,7 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
 
   // Fetch all media for this event (photos/videos added by any participant)
   const { rows: mediaRows } = await db.query(
-    `SELECT id, user_id as "userId", url FROM memory_media WHERE event_id = $1 ORDER BY created_at ASC`,
+    `SELECT id, user_id as "userId", url, caption FROM memory_media WHERE event_id = $1 ORDER BY created_at ASC`,
     [req.params.id]
   );
   const media = mediaRows.map(r => r.url);
@@ -1734,6 +1734,37 @@ app.delete('/api/media/:mediaId', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Media delete error:', err);
     res.status(500).json({ error: 'Failed to delete photo' });
+  }
+});
+
+// PATCH /api/media/:mediaId — add or edit a photo's caption.
+// Same permission model as delete: the person who uploaded the photo, or
+// the memory's creator (acting as admin), can set/change its caption.
+app.patch('/api/media/:mediaId', requireAuth, async (req, res) => {
+  const { caption } = req.body;
+  try {
+    const { rows: [media] } = await db.query(
+      `SELECT mm.id, mm.user_id as "userId", mm.event_id as "eventId",
+              e.created_by_user_id as "creatorId"
+       FROM memory_media mm
+       JOIN events e ON e.id = mm.event_id
+       WHERE mm.id = $1`,
+      [req.params.mediaId]
+    );
+    if (!media) return res.status(404).json({ error: 'Not found' });
+    if (media.userId !== req.userId && media.creatorId !== req.userId) {
+      return res.status(403).json({ error: 'Not authorised to caption this photo' });
+    }
+    const trimmedCaption = typeof caption === 'string' ? caption.trim().slice(0, 150) : null;
+    const { rows: [updated] } = await db.query(
+      `UPDATE memory_media SET caption = $1 WHERE id = $2
+       RETURNING id, user_id as "userId", url, caption`,
+      [trimmedCaption || null, req.params.mediaId]
+    );
+    res.json({ data: updated });
+  } catch (err) {
+    console.error('Media caption error:', err);
+    res.status(500).json({ error: 'Failed to update caption' });
   }
 });
 

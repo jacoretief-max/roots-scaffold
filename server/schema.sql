@@ -140,6 +140,7 @@ CREATE TABLE IF NOT EXISTS memory_media (
   event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
   user_id     UUID NOT NULL REFERENCES users(id),
   url         TEXT NOT NULL,
+  caption     TEXT,                    -- optional short caption, added later via pencil icon (not at upload time)
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(event_id, url)
 );

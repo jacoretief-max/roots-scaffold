@@ -114,6 +114,19 @@ export const useDeleteMedia = (eventId: string) => {
   });
 };
 
+export const useUpdateMediaCaption = (eventId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ mediaId, caption }: { mediaId: string; caption: string }) => {
+      const { data } = await api.patch(`/media/${mediaId}`, { caption });
+      return data.data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: QueryKeys.memory(eventId) });
+    },
+  });
+};
+
 export const useUpdateMemory = () => {
   const qc = useQueryClient();
   return useMutation({
