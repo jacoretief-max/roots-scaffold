@@ -32,6 +32,21 @@ const twilioClient = twilio(
 );
 const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
 
+// Startup check: report which Twilio env vars are present (never prints values)
+{
+  const twilioVars = ['TWILIO_ACCOUNT_SID', 'TWILIO_API_KEY_SID', 'TWILIO_API_KEY_SECRET', 'TWILIO_VERIFY_SERVICE_SID'];
+  const missing = twilioVars.filter(k => !process.env[k]);
+  if (missing.length) console.error('[verify] startup: MISSING env vars:', missing.join(', '));
+  else console.log('[verify] startup: all Twilio env vars present', {
+    account: process.env.TWILIO_ACCOUNT_SID.slice(0, 6) + '…',
+    service: TWILIO_VERIFY_SERVICE_SID.slice(0, 6) + '…',
+  });
+}
+
+// Mask phone numbers in logs (keep country code area, hide last 4)
+const maskPhone = (n) => (typeof n === 'string' && n.length > 4 ? n.slice(0, -4) + '****' : '****');
+const twilioErr = (err) => ({ code: err.code, status: err.status, message: err.message, moreInfo: err.moreInfo });
+
 // ── AWS S3 client ──────────────────────────────────────
 const s3 = new S3Client({
   region: process.env.AWS_REGION ?? 'us-east-1',
@@ -169,9 +184,10 @@ app.post('/api/auth/phone/send-code', async (req, res) => {
     const verification = await twilioClient.verify.v2
       .services(TWILIO_VERIFY_SERVICE_SID)
       .verifications.create({ to: phoneNumber, channel: 'sms' });
+    console.log('[verify] send-code ok', { route: req.path, to: maskPhone(phoneNumber), sid: verification.sid, status: verification.status });
     res.json({ data: { status: verification.status } });
   } catch (err) {
-    console.error('Twilio send-code error:', err.message);
+    console.error('[verify] send-code FAILED', { route: req.path, to: maskPhone(phoneNumber), ...twilioErr(err) });
     res.status(400).json({ error: 'Could not send verification code. Check the number and try again.' });
   }
 });
@@ -197,10 +213,12 @@ app.post('/api/auth/register', async (req, res) => {
       .services(TWILIO_VERIFY_SERVICE_SID)
       .verificationChecks.create({ to: phoneNumber, code });
     if (check.status !== 'approved') {
+      console.warn('[verify] check NOT approved', { route: req.path, to: maskPhone(phoneNumber), status: check.status });
       return res.status(400).json({ error: 'Invalid or expired verification code.' });
     }
+    console.log('[verify] check ok', { route: req.path, to: maskPhone(phoneNumber), status: check.status });
   } catch (err) {
-    console.error('Twilio verification check error:', err.message);
+    console.error('[verify] check FAILED', { route: req.path, to: maskPhone(phoneNumber), ...twilioErr(err) });
     return res.status(400).json({ error: 'Invalid or expired verification code.' });
   }
 
@@ -435,9 +453,10 @@ app.post('/api/users/me/phone/send-code', requireAuth, async (req, res) => {
     const verification = await twilioClient.verify.v2
       .services(TWILIO_VERIFY_SERVICE_SID)
       .verifications.create({ to: phoneNumber, channel: 'sms' });
+    console.log('[verify] send-code ok', { route: req.path, to: maskPhone(phoneNumber), sid: verification.sid, status: verification.status });
     res.json({ data: { status: verification.status } });
   } catch (err) {
-    console.error('Twilio send-code error:', err.message);
+    console.error('[verify] send-code FAILED', { route: req.path, to: maskPhone(phoneNumber), ...twilioErr(err) });
     res.status(400).json({ error: 'Could not send verification code. Check the number and try again.' });
   }
 });
@@ -453,10 +472,12 @@ app.patch('/api/users/me/phone', requireAuth, async (req, res) => {
       .services(TWILIO_VERIFY_SERVICE_SID)
       .verificationChecks.create({ to: phoneNumber, code });
     if (check.status !== 'approved') {
+      console.warn('[verify] check NOT approved', { route: req.path, to: maskPhone(phoneNumber), status: check.status });
       return res.status(400).json({ error: 'Invalid or expired verification code.' });
     }
+    console.log('[verify] check ok', { route: req.path, to: maskPhone(phoneNumber), status: check.status });
   } catch (err) {
-    console.error('Twilio verification check error:', err.message);
+    console.error('[verify] check FAILED', { route: req.path, to: maskPhone(phoneNumber), ...twilioErr(err) });
     return res.status(400).json({ error: 'Invalid or expired verification code.' });
   }
 
