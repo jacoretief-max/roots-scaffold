@@ -146,3 +146,21 @@ CREATE TABLE IF NOT EXISTS memory_media (
 );
 
 CREATE INDEX IF NOT EXISTS memory_media_event_idx ON memory_media(event_id);
+
+-- ── SMS consent evidence (see migrate_phase6_sms_consent.sql) ──
+CREATE TABLE IF NOT EXISTS sms_consents (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- NULL at signup until the account is created; then linked by /api/auth/register.
+  -- SET NULL on account deletion so the consent evidence is retained.
+  user_id          UUID REFERENCES users(id) ON DELETE SET NULL,
+  phone_number     TEXT NOT NULL,
+  purpose          TEXT NOT NULL CHECK (purpose IN ('signup', 'change_phone')),
+  consent_version  TEXT NOT NULL,          -- version of the disclosure shown in the app
+  consent_text     TEXT NOT NULL,          -- exact disclosure text for that version
+  ip_address       TEXT,
+  user_agent       TEXT,
+  consented_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS sms_consents_phone_idx ON sms_consents(phone_number);
+CREATE INDEX IF NOT EXISTS sms_consents_user_idx  ON sms_consents(user_id);

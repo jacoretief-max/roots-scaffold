@@ -6,6 +6,7 @@ import {
   User, PaginatedResponse, ApiResponse
 } from '@/types';
 import { useAuthStore } from '@/store/authStore';
+import { smsConsentPayload } from '@/constants/smsConsent';
 
 // ── Query keys ─────────────────────────────────────────
 export const QueryKeys = {
@@ -465,7 +466,7 @@ export const useChangePassword = () =>
 export const useSendPhoneChangeCode = () =>
   useMutation({
     mutationFn: async (phoneNumber: string) => {
-      const { data } = await api.post('/users/me/phone/send-code', { phoneNumber });
+      const { data } = await api.post('/users/me/phone/send-code', { phoneNumber, ...smsConsentPayload() });
       return data.data;
     },
   });

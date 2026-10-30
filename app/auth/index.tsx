@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, Platform,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -13,6 +13,8 @@ import { useAuthStore } from '@/store/authStore';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 import { BIO_TEMPLATE } from '@/constants/bio';
 import { AuthTokens, User } from '@/types';
+import SmsConsentNotice from '@/components/SmsConsentNotice';
+import { smsConsentPayload, LEGAL_URL, LEGAL_LINK_LABEL } from '@/constants/smsConsent';
 
 // ── Shared input component ─────────────────────────────
 const Input = ({
@@ -133,6 +135,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
+  const [smsConsent, setSmsConsent] = useState(false);
   const [bio, setBio] = useState('');
   const [dob, setDob] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState(false);
@@ -177,9 +180,13 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
       Alert.alert('Phone number', 'Please enter your phone number in international format, e.g. +14155552671.');
       return;
     }
+    if (!smsConsent) {
+      Alert.alert('Verification code', 'Please tick the box to agree to receive a one-time security code by text.');
+      return;
+    }
     setLoading(true);
     try {
-      await api.post('/auth/phone/send-code', { phoneNumber: phone });
+      await api.post('/auth/phone/send-code', { phoneNumber: phone, ...smsConsentPayload() });
       setStep('code');
       startResendCooldown();
     } catch (err: any) {
@@ -193,7 +200,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
     if (resendCooldown > 0) return;
     setCodeLoading(true);
     try {
-      await api.post('/auth/phone/send-code', { phoneNumber: phone });
+      await api.post('/auth/phone/send-code', { phoneNumber: phone, ...smsConsentPayload() });
       startResendCooldown();
     } catch {
       Alert.alert('Could not resend code', 'Please try again shortly.');
@@ -324,6 +331,7 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
       <Text style={styles.dobFeedback}>
         Used to verify you're a real person — include your country code.
       </Text>
+      <SmsConsentNotice checked={smsConsent} onToggle={() => setSmsConsent(v => !v)} />
 
       {/* Date of birth picker — 18+ gate */}
       <View style={styles.inputWrap}>
@@ -377,14 +385,17 @@ const RegisterForm = ({ onSwitch }: { onSwitch: () => void }) => {
       </View>
 
       <Text style={styles.policy}>
-        By creating an account you agree to our Privacy Policy.{'\n'}
+        By creating an account you agree to our{' '}
+        <Text style={{ textDecorationLine: 'underline' }} onPress={() => Linking.openURL(LEGAL_URL)}>
+          {LEGAL_LINK_LABEL}
+        </Text>.{'\n'}
         No ads. No public posts. Your data stays yours.
       </Text>
 
       <TouchableOpacity
-        style={[styles.btn, (loading || !isOver18) && styles.btnDisabled]}
+        style={[styles.btn, (loading || !isOver18 || !smsConsent) && styles.btnDisabled]}
         onPress={handleSendCode}
-        disabled={loading || !isOver18}
+        disabled={loading || !isOver18 || !smsConsent}
       >
         <Text style={styles.btnText}>{loading ? 'Sending code…' : 'Continue'}</Text>
       </TouchableOpacity>

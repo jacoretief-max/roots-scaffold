@@ -47,6 +47,31 @@ const TWILIO_VERIFY_SERVICE_SID = process.env.TWILIO_VERIFY_SERVICE_SID;
 const maskPhone = (n) => (typeof n === 'string' && n.length > 4 ? n.slice(0, -4) + '****' : '****');
 const twilioErr = (err) => ({ code: err.code, status: err.status, message: err.message, moreInfo: err.moreInfo });
 
+// ── SMS consent (Twilio Verify / CTIA) ─────────────────
+// Disclosure text shown in the app, keyed by version. When the app copy
+// changes, add a new version here (keep the old ones — they're evidence).
+// Must match src/constants/smsConsent.ts.
+const SMS_CONSENT_TEXTS = {
+  '2026-10-30': "I agree to receive a one-time security code by text at this number. Standard message and data rates may apply. See Privacy Policy and Terms: https://rooikatlabs.com/roots/legal",
+};
+
+// Records a consent event before any OTP is sent. Returns false if the
+// request didn't carry valid consent (caller should 400).
+async function recordSmsConsent(req, { phoneNumber, purpose, userId = null }) {
+  const { smsConsent, consentVersion } = req.body;
+  const consentText = SMS_CONSENT_TEXTS[consentVersion];
+  if (smsConsent !== true || !consentText) return false;
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || null;
+  await db.query(
+    `INSERT INTO sms_consents (user_id, phone_number, purpose, consent_version, consent_text, ip_address, user_agent)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [userId, phoneNumber, purpose, consentVersion, consentText, ip, req.headers['user-agent'] || null]
+  );
+  console.log('[verify] consent recorded', { purpose, to: maskPhone(phoneNumber), version: consentVersion });
+  return true;
+}
+const CONSENT_REQUIRED_MSG = 'Please agree to receive a verification code by text before we send it.';
+
 // ── AWS S3 client ──────────────────────────────────────
 const s3 = new S3Client({
   region: process.env.AWS_REGION ?? 'us-east-1',
@@ -181,6 +206,9 @@ app.post('/api/auth/phone/send-code', async (req, res) => {
     return res.status(400).json({ error: 'A valid phone number in international format (e.g. +14155552671) is required.' });
   }
   try {
+    if (!(await recordSmsConsent(req, { phoneNumber, purpose: 'signup' }))) {
+      return res.status(400).json({ error: CONSENT_REQUIRED_MSG });
+    }
     const verification = await twilioClient.verify.v2
       .services(TWILIO_VERIFY_SERVICE_SID)
       .verifications.create({ to: phoneNumber, channel: 'sms' });
@@ -239,6 +267,17 @@ app.post('/api/auth/register', async (req, res) => {
       [displayName, email.toLowerCase(), hash, dateOfBirth, phoneNumber ?? null, trimmedBio || null]
     );
     const user = rows[0];
+
+    // Link this number's signup consent record(s) to the new account
+    try {
+      await db.query(
+        `UPDATE sms_consents SET user_id = $1
+         WHERE phone_number = $2 AND user_id IS NULL AND purpose = 'signup'`,
+        [user.id, phoneNumber]
+      );
+    } catch (e) {
+      console.error('[verify] could not link consent to user', { userId: user.id, message: e.message });
+    }
 
     // Auto-connect if user registered via an invite link
     if (inviteToken) {
@@ -449,6 +488,9 @@ app.post('/api/users/me/phone/send-code', requireAuth, async (req, res) => {
     );
     if (existing) {
       return res.status(409).json({ error: 'This phone number is already registered to another account.' });
+    }
+    if (!(await recordSmsConsent(req, { phoneNumber, purpose: 'change_phone', userId: req.userId }))) {
+      return res.status(400).json({ error: CONSENT_REQUIRED_MSG });
     }
     const verification = await twilioClient.verify.v2
       .services(TWILIO_VERIFY_SERVICE_SID)

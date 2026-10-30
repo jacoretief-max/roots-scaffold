@@ -11,6 +11,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useAuthStore } from '@/store/authStore';
 import { useWhatsAppOptIn, useSendPhoneChangeCode, useConfirmPhoneChange } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
+import SmsConsentNotice from '@/components/SmsConsentNotice';
 
 const BIOMETRICS_KEY = 'rootedin_biometrics_enabled';
 
@@ -298,6 +299,7 @@ export default function SecurityScreen() {
                   }
                 </TouchableOpacity>
               </View>
+              <SmsConsentNotice />
             </View>
           ) : (
             <View style={styles.waNumberRow}>
