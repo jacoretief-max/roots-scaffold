@@ -28,6 +28,7 @@ import {
 } from '@/api/hooks';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
+import { FIND150_ENABLED } from '@/constants/find150';
 
 // ── Add person modal (three-path) ─────────────────────
 //
@@ -562,7 +563,6 @@ const CalendarMatchCard = ({
               <Text style={calStyles.dismissBtnText}>Skip note</Text>
             </TouchableOpacity>
           </View>
-          <Text style={calStyles.hint}>Voice notes coming in Phase 4</Text>
         </View>
       ) : (
         <View style={calStyles.actions}>
@@ -1142,7 +1142,8 @@ export default function ConnectScreen() {
               </View>
             )}
 
-            {/* Find My 150 stub */}
+            {/* Find My 150 stub — hidden until shipped (see FIND150_ENABLED) */}
+            {FIND150_ENABLED && (
             <TouchableOpacity style={styles.find150Btn}>
               <Text style={styles.find150BtnTitle}>Find My 150</Text>
               <Text style={styles.find150BtnDesc}>
@@ -1152,6 +1153,7 @@ export default function ConnectScreen() {
                 <Text style={styles.find150BadgeText}>Coming in Phase 3</Text>
               </View>
             </TouchableOpacity>
+            )}
           </View>
         )}
 

@@ -1,4 +1,9 @@
 // Find My 150 — tunable pipeline constants.
+
+// Feature flag: hidden until the pipeline ships (App Review rejects
+// placeholder/"coming soon" UI). Flip to true to show the entry point.
+export const FIND150_ENABLED = false;
+
 // Kept in one place so the recency window and surfaced-cluster count can be
 // adjusted after real test-device runs, without hunting through the pipeline code.
 

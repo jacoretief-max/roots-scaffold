@@ -313,7 +313,6 @@ const CalendarMatchCard = ({
               <Text style={calStyles.dismissBtnText}>Skip note</Text>
             </TouchableOpacity>
           </View>
-          <Text style={calStyles.hint}>Voice notes coming in Phase 4</Text>
         </View>
       ) : (
         <View style={calStyles.actions}>
