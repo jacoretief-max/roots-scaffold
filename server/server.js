@@ -23,6 +23,7 @@ const { runNudgeEngine } = require('./nudgeEngine');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const twilio = require('twilio');
+const { createExport, deleteAccount } = require('./lib/accountData');
 
 // ── Twilio client (SMS OTP for phone verification) ─────
 const twilioClient = twilio(
@@ -373,6 +374,8 @@ app.post('/api/auth/refresh', async (req, res) => {
   if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    const { rows: [exists] } = await db.query('SELECT 1 FROM users WHERE id = $1', [payload.sub]);
+    if (!exists) return res.status(401).json({ error: 'Account no longer exists' });
     const tokens = {
       accessToken: signAccess(payload.sub),
       refreshToken: signRefresh(payload.sub),
@@ -471,6 +474,65 @@ app.patch('/api/users/me', requireAuth, async (req, res) => {
     }
     console.error(err);
     res.status(500).json({ error: 'Profile update failed' });
+  }
+});
+
+
+// ── Account data: export & deletion ────────────────────
+// See server/lib/accountData.js. Export contains exactly what the user can
+// see in the app; deletion is one transaction, then S3 cleanup.
+const s3Ctx = () => ({ s3, bucket: S3_BUCKET, s3BaseUrl: S3_BASE_URL });
+const exportsInProgress = new Set();
+
+// POST /api/users/me/export — build ZIP (HTML memory book + photos + data.json),
+// upload to S3, return a 1-hour download link.
+app.post('/api/users/me/export', requireAuth, async (req, res) => {
+  if (exportsInProgress.has(req.userId)) {
+    return res.status(429).json({ error: 'Your export is already being prepared. Please wait a moment.' });
+  }
+  exportsInProgress.add(req.userId);
+  req.setTimeout?.(10 * 60 * 1000);
+  try {
+    const result = await createExport(db, req.userId, s3Ctx());
+    res.json({ data: result });
+  } catch (err) {
+    console.error('[export] FAILED', { userId: req.userId, message: err.message, code: err.code });
+    res.status(500).json({ error: 'Could not prepare your export. Please try again.' });
+  } finally {
+    exportsInProgress.delete(req.userId);
+  }
+});
+
+// GET /api/users/me/photos-on-others — how many photos this user added to
+// memories created by other people (drives the "keep them?" question).
+app.get('/api/users/me/photos-on-others', requireAuth, async (req, res) => {
+  const { rows: [r] } = await db.query(
+    `SELECT COUNT(*)::int AS count
+     FROM memory_media mm JOIN events e ON e.id = mm.event_id
+     WHERE mm.user_id = $1 AND e.created_by_user_id != $1`, [req.userId]);
+  res.json({ data: { count: r.count } });
+});
+
+// DELETE /api/users/me — permanently delete the account. Requires password.
+app.delete('/api/users/me', requireAuth, async (req, res) => {
+  const { password } = req.body ?? {};
+  if (!password) return res.status(400).json({ error: 'Please enter your password to confirm.' });
+  try {
+    const { rows: [u] } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.userId]);
+    if (!u) return res.status(404).json({ error: 'Account not found' });
+    if (!(await bcrypt.compare(password, u.password_hash))) {
+      return res.status(403).json({ error: 'That password is incorrect.' });
+    }
+    const keepPhotosOnOthers = req.body?.keepPhotosOnOthers === true;
+    console.log('[delete-account] starting', { userId: req.userId, keepPhotosOnOthers });
+    const result = await deleteAccount(db, req.userId, s3Ctx(), { keepPhotosOnOthers });
+    res.json({ data: { deleted: true, ...result } });
+  } catch (err) {
+    console.error('[delete-account] FAILED — nothing deleted', {
+      userId: req.userId, message: err.message, code: err.code,
+      table: err.table, constraint: err.constraint, detail: err.detail,
+    });
+    res.status(500).json({ error: 'We could not delete your account right now. Nothing was removed — please try again or contact info@rooikatlabs.com.' });
   }
 });
 
@@ -1590,6 +1652,7 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
      WHERE mm.event_id = $1
        AND (
          mm.user_id = $2
+         OR mm.user_id IS NULL  -- kept by a former member: visible to anyone who can see the memory
          OR $2 = ANY($3::uuid[])
          OR EXISTS (
            SELECT 1 FROM connections c

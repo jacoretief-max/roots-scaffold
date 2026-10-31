@@ -138,7 +138,7 @@ CREATE INDEX IF NOT EXISTS push_tokens_user_idx ON push_tokens(user_id);
 CREATE TABLE IF NOT EXISTS memory_media (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id    UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  user_id     UUID NOT NULL REFERENCES users(id),
+  user_id     UUID REFERENCES users(id) ON DELETE SET NULL, -- NULL = kept after uploader deleted account
   url         TEXT NOT NULL,
   caption     TEXT,                    -- optional short caption, added later via pencil icon (not at upload time)
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

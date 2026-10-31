@@ -82,7 +82,7 @@ export interface MemoryEvent {
 // ── Memory Media (detail view — id + uploader for delete/ownership) ──
 export interface MemoryMediaItem {
   id: string;
-  userId: string;
+  userId: string | null; // null = kept by a member who has since deleted their account
   url: string;
   caption?: string;
 }
