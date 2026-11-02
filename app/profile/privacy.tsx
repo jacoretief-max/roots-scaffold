@@ -11,13 +11,6 @@ import { router } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { Colors, Typography, Spacing, BorderRadius } from '@/constants/theme';
 
-const Section = ({ title, children }: { title: string; children: string }) => (
-  <View style={styles.section}>
-    <Text style={styles.sectionTitle}>{title}</Text>
-    <Text style={styles.sectionBody}>{children}</Text>
-  </View>
-);
-
 export default function PrivacyScreen() {
   const { logout } = useAuthStore();
   const [exporting, setExporting] = useState(false);
@@ -122,7 +115,7 @@ export default function PrivacyScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Text style={styles.headerBack}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Privacy & Cookies</Text>
+        <Text style={styles.headerTitle}>Privacy & Data</Text>
         <View style={{ width: 60 }} />
       </View>
 
@@ -130,38 +123,12 @@ export default function PrivacyScreen() {
 
         <View style={styles.intro}>
           <Text style={styles.introText}>
-            Roots is built on a simple promise: your personal data belongs to you.
-            Here's exactly what we store, why, and who can see it.
+            Your data belongs to you. No ads, no public posts, and we never sell your data.
           </Text>
+          <TouchableOpacity onPress={() => Linking.openURL(LEGAL_URL)}>
+            <Text style={styles.legalLink}>Read our full {LEGAL_LINK_LABEL} →</Text>
+          </TouchableOpacity>
         </View>
-
-        <Section title="What we store">
-          Your display name, email address, mobile phone number, date of birth, city, and avatar colour. The memories and perspectives you write. Your circle connections and the relation types you assign. A record of your consent to receive verification codes by text.
-        </Section>
-
-        <Section title="Who can see your memories">
-          Only the people you explicitly tag in a memory, plus anyone within the Dunbar layer you set for that memory. No one outside your circle can see anything you post. There are no public posts on Roots.
-        </Section>
-
-        <Section title="Cookies">
-          Roots uses essential cookies only — the minimum required to keep you signed in. We do not use advertising cookies, tracking cookies, or any third-party analytics cookies. Your usage data is never sold or shared with advertisers.
-        </Section>
-
-        <Section title="Photos and media">
-          Photos you upload are stored securely in encrypted cloud storage. They are only accessible to people within the visibility layer you set for that memory. Photos are never used for advertising or shared with third parties.
-        </Section>
-
-        <Section title="Third-party integrations">
-          When you connect Roots to your contacts or calendar, we read only the minimum data needed. Verification codes are sent by our SMS provider, Twilio. We never read your messages.
-        </Section>
-
-        <Section title="Your rights">
-          You can export a copy of your memories, photos and circle at any time below. You can delete your account at any time — your data is permanently removed straight away.
-        </Section>
-
-        <TouchableOpacity onPress={() => Linking.openURL(LEGAL_URL)}>
-          <Text style={styles.legalLink}>Read the full {LEGAL_LINK_LABEL} →</Text>
-        </TouchableOpacity>
 
         {/* Export */}
         <View style={styles.exportZone}>
@@ -308,7 +275,7 @@ const styles = StyleSheet.create({
   },
   legalLink: {
     fontSize: 14, color: Colors.terracotta, fontFamily: Typography.fontFamily,
-    fontWeight: '600', marginBottom: Spacing.lg,
+    fontWeight: '600', marginTop: Spacing.sm,
   },
   exportZone: {
     borderWidth: 0.5, borderColor: Colors.tan, borderRadius: BorderRadius.md,

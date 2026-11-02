@@ -17,6 +17,8 @@ import {
   QueryKeys,
 } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
+import ReportSheet from '@/components/ReportSheet';
+import { ReportTarget } from '@/api/safety';
 import api from '@/api/client';
 import { useAuthStore } from '@/store/authStore';
 import { MemoryEntry, MemoryEvent, MemoryMediaItem, VisibilityLevel } from '@/types';
@@ -94,6 +96,7 @@ const Lightbox = ({
   visible,
   onClose,
   onSaveCaption,
+  onReportPhoto,
 }: {
   photos: string[];
   mediaByUrl: Record<string, MemoryMediaItem | undefined>;
@@ -103,6 +106,7 @@ const Lightbox = ({
   visible: boolean;
   onClose: () => void;
   onSaveCaption: (mediaId: string, caption: string) => void;
+  onReportPhoto: (mediaId: string) => void;
 }) => {
   const [current, setCurrent] = useState(startIndex);
   const [editingCaption, setEditingCaption] = useState(false);
@@ -186,6 +190,19 @@ const Lightbox = ({
           </KeyboardAvoidingView>
         ) : (
           <View style={styles.lightboxCaptionBar}>
+            {currentMedia?.moderationStatus === 'pending_review' && (
+              <Text style={styles.lightboxReviewText}>Under review — only you can see this for now</Text>
+            )}
+            {currentMedia && currentMedia.userId !== currentUserId && (
+              <TouchableOpacity
+                onPress={() => onReportPhoto(currentMedia.id)}
+                style={styles.lightboxPencilBtn}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityLabel="Report photo"
+              >
+                <Text style={styles.lightboxPencilText}>⚑</Text>
+              </TouchableOpacity>
+            )}
             {currentMedia?.caption ? (
               <Text style={styles.lightboxCaptionText} numberOfLines={2}>{currentMedia.caption}</Text>
             ) : <View />}
@@ -207,11 +224,13 @@ const PerspectivesView = ({
   currentUserId,
   isCreator,
   onDeleteEntry,
+  onReportEntry,
 }: {
   entries: MemoryEntry[];
   currentUserId: string;
   isCreator: boolean;
   onDeleteEntry: (entryId: string, authorName: string) => void;
+  onReportEntry: (entryId: string) => void;
 }) => {
   if (entries.length === 0) {
     return (
@@ -251,6 +270,16 @@ const PerspectivesView = ({
                 <View style={styles.newBadge}>
                   <Text style={styles.newBadgeText}>NEW</Text>
                 </View>
+              )}
+              {!isMe && (
+                <TouchableOpacity
+                  onPress={() => onReportEntry(entry.id)}
+                  style={styles.entryDeleteBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityLabel="Report perspective"
+                >
+                  <Text style={styles.entryReportBtnText}>⚑</Text>
+                </TouchableOpacity>
               )}
               {canDelete && (
                 <TouchableOpacity
@@ -590,6 +619,7 @@ export default function MemoryEventScreen() {
   const { user } = useAuthStore();
   const qc = useQueryClient();
   const [menuVisible, setMenuVisible] = useState(false);
+  const [reportTarget, setReportTarget] = useState<{ type: ReportTarget; id: string } | null>(null);
   const [editVisible, setEditVisible] = useState(false);
   const [editText, setEditText] = useState('');
   const [editEntryId, setEditEntryId] = useState('');
@@ -850,6 +880,7 @@ export default function MemoryEventScreen() {
           currentUserId={user?.id ?? ''}
           isCreator={isCreator}
           onDeleteEntry={handleDeleteEntry}
+          onReportEntry={(entryId) => setReportTarget({ type: 'entry', id: entryId })}
         />
       </ScrollView>
 
@@ -919,6 +950,14 @@ export default function MemoryEventScreen() {
               }}
             >
               <Text style={styles.menuItemDestructiveText}>Delete memory</Text>
+            </TouchableOpacity>
+          )}
+          {!isCreator && (
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => { setMenuVisible(false); setReportTarget({ type: 'memory', id: event.id }); }}
+            >
+              <Text style={styles.menuItemDestructiveText}>Report this memory</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -1039,6 +1078,18 @@ export default function MemoryEventScreen() {
         visible={lightboxVisible}
         onClose={() => setLightboxVisible(false)}
         onSaveCaption={handleSaveCaption}
+        onReportPhoto={(mediaId) => { setLightboxVisible(false); setReportTarget({ type: 'photo', id: mediaId }); }}
+      />
+
+      <ReportSheet
+        visible={!!reportTarget}
+        targetType={reportTarget?.type ?? 'photo'}
+        targetId={reportTarget?.id ?? null}
+        onClose={() => setReportTarget(null)}
+        onReported={() => {
+          qc.invalidateQueries({ queryKey: QueryKeys.memories });
+          if (reportTarget?.type === 'memory') router.back();
+        }}
       />
     </SafeAreaView>
   );
@@ -1361,6 +1412,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   lightboxPencilText: { fontSize: 15, color: Colors.white },
+  lightboxReviewText: { flex: 1, fontSize: 12, color: Colors.white, fontFamily: Typography.fontFamily, opacity: 0.85 },
+  entryReportBtnText: { fontSize: 14, color: Colors.textLight },
   lightboxCaptionEditWrap: {
     position: 'absolute',
     left: Spacing.lg,

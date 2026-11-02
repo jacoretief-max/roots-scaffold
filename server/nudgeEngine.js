@@ -221,4 +221,4 @@ const runNudgeEngine = async (db) => {
   }
 };
 
-module.exports = { runNudgeEngine };
+module.exports = { runNudgeEngine, sendPush };

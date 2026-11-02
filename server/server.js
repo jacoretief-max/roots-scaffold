@@ -20,10 +20,12 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
 const { runNudgeEngine } = require('./nudgeEngine');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
 const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const twilio = require('twilio');
 const { createExport, deleteAccount } = require('./lib/accountData');
+const safety = require('./lib/safety');
+const { sendPush } = require('./nudgeEngine');
 
 // ── Twilio client (SMS OTP for phone verification) ─────
 const twilioClient = twilio(
@@ -189,11 +191,31 @@ const requireAuth = (req, res, next) => {
   try {
     const payload = jwt.verify(header.slice(7), process.env.JWT_SECRET);
     req.userId = payload.sub;
-    next();
   } catch {
-    res.status(401).json({ error: 'Invalid or expired token' });
+    return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  safety.isSuspended(db, req.userId)
+    .then(suspended => suspended
+      ? res.status(403).json({ error: 'This account has been suspended. Contact info@rooikatlabs.com.', code: 'ACCOUNT_SUSPENDED' })
+      : next())
+    .catch(err => { console.error('[safety] suspension check failed', err.message); next(); });
 };
+
+// Admin-only routes (ADMIN_USER_IDS env, comma-separated user IDs)
+const requireAdmin = (req, res, next) =>
+  safety.isAdmin(req.userId) ? next() : res.status(404).json({ error: 'Not found' });
+
+// Removes user IDs that are blocked by / have blocked `userId`
+async function withoutBlocked(userId, ids) {
+  if (!Array.isArray(ids) || !ids.length) return ids;
+  const { rows } = await db.query(
+    `SELECT unnest($2::uuid[]) AS id
+     EXCEPT
+     SELECT CASE WHEN blocker_id = $1 THEN blocked_id ELSE blocker_id END
+     FROM user_blocks WHERE blocker_id = $1 OR blocked_id = $1`, [userId, ids]);
+  const keep = new Set(rows.map(r => r.id));
+  return ids.filter(id => keep.has(id));
+}
 
 // ── Health check ───────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
@@ -338,6 +360,9 @@ app.post('/api/auth/login', async (req, res) => {
 
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
+    if (user.suspended_at) {
+      return res.status(403).json({ error: 'This account has been suspended. Contact info@rooikatlabs.com.', code: 'ACCOUNT_SUSPENDED' });
+    }
 
     const tokens = {
       accessToken: signAccess(user.id),
@@ -374,8 +399,9 @@ app.post('/api/auth/refresh', async (req, res) => {
   if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const { rows: [exists] } = await db.query('SELECT 1 FROM users WHERE id = $1', [payload.sub]);
+    const { rows: [exists] } = await db.query('SELECT suspended_at FROM users WHERE id = $1', [payload.sub]);
     if (!exists) return res.status(401).json({ error: 'Account no longer exists' });
+    if (exists.suspended_at) return res.status(403).json({ error: 'This account has been suspended.', code: 'ACCOUNT_SUSPENDED' });
     const tokens = {
       accessToken: signAccess(payload.sub),
       refreshToken: signRefresh(payload.sub),
@@ -518,8 +544,12 @@ app.delete('/api/users/me', requireAuth, async (req, res) => {
   const { password } = req.body ?? {};
   if (!password) return res.status(400).json({ error: 'Please enter your password to confirm.' });
   try {
-    const { rows: [u] } = await db.query('SELECT password_hash FROM users WHERE id = $1', [req.userId]);
+    const { rows: [u] } = await db.query('SELECT password_hash, legal_hold FROM users WHERE id = $1', [req.userId]);
     if (!u) return res.status(404).json({ error: 'Account not found' });
+    if (u.legal_hold) {
+      console.warn('[delete-account] refused — legal hold', { userId: req.userId });
+      return res.status(403).json({ error: 'Your account can\'t be deleted right now. Please contact info@rooikatlabs.com.', code: 'LEGAL_HOLD' });
+    }
     if (!(await bcrypt.compare(password, u.password_hash))) {
       return res.status(403).json({ error: 'That password is incorrect.' });
     }
@@ -534,6 +564,131 @@ app.delete('/api/users/me', requireAuth, async (req, res) => {
     });
     res.status(500).json({ error: 'We could not delete your account right now. Nothing was removed — please try again or contact info@rooikatlabs.com.' });
   }
+});
+
+
+// ── Trust & safety: reports, blocks ────────────────────
+// POST /api/reports { targetType: photo|memory|entry|user, targetId, reason, details? }
+app.post('/api/reports', requireAuth, async (req, res) => {
+  const { targetType, targetId, reason, details } = req.body ?? {};
+  try {
+    const report = await safety.createReport(db, sendPush, { reporterId: req.userId, targetType, targetId, reason, details });
+    res.status(201).json({ data: report });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error('[safety] report FAILED', { userId: req.userId, message: err.message });
+    res.status(500).json({ error: 'Could not send your report. Please try again or email info@rooikatlabs.com.' });
+  }
+});
+
+// POST /api/users/:id/block — block a user (ends the connection both ways)
+app.post('/api/users/:id/block', requireAuth, async (req, res) => {
+  if (req.params.id === req.userId) return res.status(400).json({ error: 'You cannot block yourself' });
+  try {
+    const { rows: [u] } = await db.query('SELECT 1 FROM users WHERE id = $1', [req.params.id]);
+    if (!u) return res.status(404).json({ error: 'User not found' });
+    await safety.blockUser(db, req.userId, req.params.id);
+    console.log('[safety] user blocked', { blocker: req.userId, blocked: req.params.id });
+    res.json({ data: { blocked: true } });
+  } catch (err) {
+    console.error('[safety] block FAILED', { message: err.message, code: err.code });
+    res.status(500).json({ error: 'Could not block this person. Please try again.' });
+  }
+});
+
+// DELETE /api/users/:id/block — unblock (does not restore the connection)
+app.delete('/api/users/:id/block', requireAuth, async (req, res) => {
+  await db.query('DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2', [req.userId, req.params.id]);
+  res.json({ data: { blocked: false } });
+});
+
+// GET /api/users/me/blocks — people I've blocked
+app.get('/api/users/me/blocks', requireAuth, async (req, res) => {
+  const { rows } = await db.query(
+    `SELECT u.id, u.display_name AS "displayName", u.avatar_colour AS "avatarColour",
+            to_char(b.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS "blockedAt"
+     FROM user_blocks b JOIN users u ON u.id = b.blocked_id
+     WHERE b.blocker_id = $1 ORDER BY b.created_at DESC`, [req.userId]);
+  res.json({ data: rows });
+});
+
+// ── Admin review (ADMIN_USER_IDS only) ─────────────────
+// Building blocks for the review workflow (website / agent later).
+
+// GET /api/admin/reports?status=open
+app.get('/api/admin/reports', requireAuth, requireAdmin, async (req, res) => {
+  const status = ['open', 'actioned', 'dismissed'].includes(req.query.status) ? req.query.status : 'open';
+  const { rows } = await db.query(
+    `SELECT r.id, r.target_type AS "targetType", r.target_id AS "targetId", r.reason, r.details, r.status,
+            r.created_at AS "createdAt", r.resolved_at AS "resolvedAt", r.resolution_note AS "resolutionNote",
+            rep.display_name AS "reporter", tgt.id AS "reportedUserId", tgt.display_name AS "reportedUser",
+            tgt.suspended_at AS "reportedUserSuspendedAt", tgt.legal_hold AS "reportedUserLegalHold"
+     FROM content_reports r
+     LEFT JOIN users rep ON rep.id = r.reporter_id
+     LEFT JOIN users tgt ON tgt.id = r.reported_user_id
+     WHERE r.status = $1
+     ORDER BY (r.reason = 'child_safety') DESC, r.created_at ASC
+     LIMIT 200`, [status]);
+  res.json({ data: rows });
+});
+
+// GET /api/admin/media?status=pending_review — media awaiting review, with short-lived view links
+app.get('/api/admin/media', requireAuth, requireAdmin, async (req, res) => {
+  const status = ['pending_review', 'removed'].includes(req.query.status) ? req.query.status : 'pending_review';
+  const { rows } = await db.query(
+    `SELECT mm.id, mm.url, mm.moderation_labels AS "labels", mm.created_at AS "createdAt",
+            u.id AS "uploaderId", u.display_name AS "uploader", e.title AS "memoryTitle"
+     FROM memory_media mm
+     LEFT JOIN users u ON u.id = mm.user_id
+     JOIN events e ON e.id = mm.event_id
+     WHERE mm.moderation_status = $1
+     ORDER BY mm.created_at ASC LIMIT 200`, [status]);
+  const withLinks = await Promise.all(rows.map(async (r) => {
+    const key = r.url.startsWith(S3_BASE_URL + '/') ? decodeURIComponent(r.url.slice(S3_BASE_URL.length + 1)) : null;
+    const viewUrl = key ? await getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }), { expiresIn: 600 }) : null;
+    return { ...r, viewUrl };
+  }));
+  res.json({ data: withLinks });
+});
+
+// POST /api/admin/media/:id { action: 'approve' | 'remove' }
+app.post('/api/admin/media/:id', requireAuth, requireAdmin, async (req, res) => {
+  const map = { approve: 'approved', remove: 'removed' };
+  const next = map[req.body?.action];
+  if (!next) return res.status(400).json({ error: "action must be 'approve' or 'remove'" });
+  const { rowCount } = await db.query(
+    `UPDATE memory_media SET moderation_status = $1, moderated_at = now() WHERE id = $2`, [next, req.params.id]);
+  if (!rowCount) return res.status(404).json({ error: 'Not found' });
+  console.log('[safety] admin media decision', { admin: req.userId, mediaId: req.params.id, status: next });
+  res.json({ data: { id: req.params.id, moderationStatus: next } });
+});
+
+// POST /api/admin/reports/:id { status: 'actioned' | 'dismissed', note? }
+app.post('/api/admin/reports/:id', requireAuth, requireAdmin, async (req, res) => {
+  const { status, note } = req.body ?? {};
+  if (!['actioned', 'dismissed'].includes(status)) return res.status(400).json({ error: "status must be 'actioned' or 'dismissed'" });
+  const { rowCount } = await db.query(
+    `UPDATE content_reports SET status = $1, resolution_note = $2, resolved_at = now() WHERE id = $3`,
+    [status, typeof note === 'string' ? note.slice(0, 2000) : null, req.params.id]);
+  if (!rowCount) return res.status(404).json({ error: 'Not found' });
+  console.log('[safety] admin report decision', { admin: req.userId, reportId: req.params.id, status });
+  res.json({ data: { id: req.params.id, status } });
+});
+
+// POST /api/admin/users/:id { action: 'suspend' | 'unsuspend' | 'hold' | 'release' }
+app.post('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const sql = {
+    suspend:   `UPDATE users SET suspended_at = COALESCE(suspended_at, now()) WHERE id = $1`,
+    unsuspend: `UPDATE users SET suspended_at = NULL WHERE id = $1`,
+    hold:      `UPDATE users SET legal_hold = true WHERE id = $1`,
+    release:   `UPDATE users SET legal_hold = false WHERE id = $1`,
+  }[req.body?.action];
+  if (!sql) return res.status(400).json({ error: "action must be suspend, unsuspend, hold or release" });
+  const { rowCount } = await db.query(sql, [req.params.id]);
+  if (!rowCount) return res.status(404).json({ error: 'Not found' });
+  safety.invalidateSuspension(req.params.id);
+  console.log('[safety] admin user action', { admin: req.userId, userId: req.params.id, action: req.body.action });
+  res.json({ data: { id: req.params.id, action: req.body.action } });
 });
 
 // POST /api/users/me/phone/send-code — send an OTP to a NEW phone number
@@ -635,6 +790,11 @@ app.patch('/api/users/me/password', requireAuth, async (req, res) => {
 app.post('/api/users/me/photo', requireAuth, upload.single('photo'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const { buffer, mimetype } = req.file;
+  const mod = await safety.moderateImage({ bytes: buffer });
+  if (mod.status !== 'approved') {
+    console.warn('[moderation] avatar rejected', { userId: req.userId, labels: mod.labels, error: mod.error });
+    return res.status(422).json({ error: 'This photo can\'t be used as a profile picture. Please choose another.', code: 'PHOTO_REJECTED' });
+  }
   await db.query(
     'UPDATE users SET avatar_data = $1, avatar_mime = $2 WHERE id = $3',
     [buffer, mimetype, req.userId]
@@ -828,6 +988,8 @@ app.get('/api/users/search', requireAuth, async (req, res) => {
      LEFT JOIN connections c
        ON c.connected_user_id = u.id AND c.user_id = $1
      WHERE u.id != $1
+     AND u.suspended_at IS NULL
+     AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE (ub.blocker_id = $1 AND ub.blocked_id = u.id) OR (ub.blocker_id = u.id AND ub.blocked_id = $1))
      AND LOWER(u.display_name) LIKE LOWER($2)
      ORDER BY u.display_name
      LIMIT 20`,
@@ -847,6 +1009,9 @@ app.post('/api/connections', requireAuth, async (req, res) => {
   try {
     // ── Path 1: Adding an existing Roots user ──────────────
     if (connectedUserId) {
+      if (await safety.isBlockedEitherWay(db, req.userId, connectedUserId)) {
+        return res.status(403).json({ error: 'You can\'t add this person.' });
+      }
       const { rows: [existing] } = await db.query(
         'SELECT id, status FROM connections WHERE user_id = $1 AND connected_user_id = $2',
         [req.userId, connectedUserId]
@@ -1435,13 +1600,13 @@ app.get('/api/memories', requireAuth, async (req, res) => {
        (SELECT COUNT(*) FROM memory_entries me WHERE me.event_id = e.id) as "entryCount",
        (
          (SELECT COUNT(*) FROM memory_entries me
-          WHERE me.event_id = e.id AND me.author_id != $1
+          WHERE me.event_id = e.id AND me.author_id != $1 AND me.hidden_at IS NULL
             AND me.created_at > COALESCE(
               (SELECT last_viewed_at FROM memory_views WHERE user_id = $1 AND event_id = e.id),
               '1970-01-01'::timestamptz))
          +
          (SELECT COUNT(*) FROM memory_media mm
-          WHERE mm.event_id = e.id AND mm.user_id != $1
+          WHERE mm.event_id = e.id AND mm.user_id != $1 AND mm.moderation_status = 'approved'
             AND mm.created_at > COALESCE(
               (SELECT last_viewed_at FROM memory_views WHERE user_id = $1 AND event_id = e.id),
               '1970-01-01'::timestamptz))
@@ -1470,10 +1635,16 @@ app.get('/api/memories', requireAuth, async (req, res) => {
         ) sub
        ) as participants,
        (SELECT COALESCE(json_agg(mm.url ORDER BY mm.created_at ASC), '[]'::json)
-        FROM (SELECT url, created_at FROM memory_media WHERE event_id = e.id ORDER BY created_at ASC LIMIT 3) mm
+        FROM (SELECT url, created_at FROM memory_media
+              WHERE event_id = e.id AND moderation_status = 'approved'
+                AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.reporter_id = $1 AND cr.target_type = 'photo' AND cr.target_id = memory_media.id)
+              ORDER BY created_at ASC LIMIT 3) mm
        ) as media
      FROM events e
-     WHERE e.created_by_user_id = $1
+     WHERE e.hidden_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.reporter_id = $1 AND cr.target_type = 'memory' AND cr.target_id = e.id)
+       AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE (ub.blocker_id = $1 AND ub.blocked_id = e.created_by_user_id) OR (ub.blocker_id = e.created_by_user_id AND ub.blocked_id = $1))
+       AND (e.created_by_user_id = $1
         OR $1 = ANY(e.participant_ids)
         OR EXISTS (
           -- Per-author visibility: the event is visible if the viewer qualifies
@@ -1500,6 +1671,7 @@ app.get('/api/memories', requireAuth, async (req, res) => {
               (COALESCE(mav.visibility, e.visibility) = 'meaningful' AND c.layer IN ('intimate','close','active','meaningful'))
             )
         )
+       )
      ORDER BY e.created_at DESC`,
     [req.userId]
   );
@@ -1532,6 +1704,9 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
        to_char(e.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as "createdAt"
      FROM events e
      WHERE e.id = $1
+       AND e.hidden_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.reporter_id = $2 AND cr.target_type = 'memory' AND cr.target_id = e.id)
+       AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE (ub.blocker_id = $2 AND ub.blocked_id = e.created_by_user_id) OR (ub.blocker_id = e.created_by_user_id AND ub.blocked_id = $2))
        AND (
          e.created_by_user_id = $2
          OR $2 = ANY(e.participant_ids)
@@ -1598,6 +1773,9 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
      LEFT JOIN memory_author_visibility mav
        ON mav.event_id = me.event_id AND mav.user_id = me.author_id
      WHERE me.event_id = $1
+       AND me.hidden_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.reporter_id = $2 AND cr.target_type = 'entry' AND cr.target_id = me.id)
+       AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE (ub.blocker_id = $2 AND ub.blocked_id = me.author_id) OR (ub.blocker_id = me.author_id AND ub.blocked_id = $2))
        AND (
          me.author_id = $2
          OR $2 = ANY($3::uuid[])
@@ -1645,11 +1823,16 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
 
   // Fetch media for this event, filtered per-author the same way as entries.
   const { rows: mediaRows } = await db.query(
-    `SELECT mm.id, mm.user_id as "userId", mm.url, mm.caption
+    `SELECT mm.id, mm.user_id as "userId", mm.url, mm.caption,
+            mm.moderation_status as "moderationStatus"
      FROM memory_media mm
      LEFT JOIN memory_author_visibility mav
        ON mav.event_id = mm.event_id AND mav.user_id = mm.user_id
      WHERE mm.event_id = $1
+       -- approved for everyone; uploader also sees their own photo while it's under review
+       AND (mm.moderation_status = 'approved' OR (mm.user_id = $2 AND mm.moderation_status = 'pending_review'))
+       AND NOT EXISTS (SELECT 1 FROM content_reports cr WHERE cr.reporter_id = $2 AND cr.target_type = 'photo' AND cr.target_id = mm.id)
+       AND (mm.user_id IS NULL OR NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE (ub.blocker_id = $2 AND ub.blocked_id = mm.user_id) OR (ub.blocker_id = mm.user_id AND ub.blocked_id = $2)))
        AND (
          mm.user_id = $2
          OR mm.user_id IS NULL  -- kept by a former member: visible to anyone who can see the memory
@@ -1681,7 +1864,8 @@ app.get('/api/memories/:id', requireAuth, async (req, res) => {
 
 // PATCH /api/memories/:id — creator only: update event details
 app.patch('/api/memories/:id', requireAuth, async (req, res) => {
-  const { title, date, location, visibility, participantIds } = req.body;
+  const { title, date, location, visibility } = req.body;
+  const participantIds = req.body.participantIds ? await withoutBlocked(req.userId, req.body.participantIds) : undefined;
   const { rows: [event] } = await db.query(
     `UPDATE events SET
        title          = COALESCE($1, title),
@@ -1718,7 +1902,7 @@ app.post('/api/memories', requireAuth, async (req, res) => {
       participantIds,
       offlineParticipantConnectionIds,  // connection IDs for offline-only contacts
     } = req.body;
-    const finalParticipantIds = participantIds ?? [req.userId];
+    const finalParticipantIds = await withoutBlocked(req.userId, participantIds ?? [req.userId]);
     const finalVisibility = visibility ?? 'intimate';
 
     const { rows: [event] } = await db.query(
@@ -1872,6 +2056,8 @@ app.delete('/api/memories/:eventId/entries/:entryId', requireAuth, async (req, r
   if (!ev) return res.status(404).json({ error: 'Memory not found' });
 
   const isCreator = ev.created_by_user_id === req.userId;
+  const { rows: [me] } = await db.query('SELECT legal_hold FROM users WHERE id = $1', [req.userId]);
+  if (me?.legal_hold) return res.status(403).json({ error: 'This content can\'t be deleted right now. Contact info@rooikatlabs.com.' });
   const { rows: [entry] } = await db.query(
     `DELETE FROM memory_entries
      WHERE id = $1 AND event_id = $2 AND ($3 OR author_id = $4)
@@ -1924,15 +2110,35 @@ app.post('/api/media/confirm', requireAuth, async (req, res) => {
       return res.status(400).json({ error: `visibility must be one of ${MEMORY_VISIBILITY_VALUES.join(', ')}` });
     }
 
+    // Moderation: images are checked by Rekognition; videos are held for manual review.
+    const key = publicUrl.startsWith(S3_BASE_URL + '/') ? decodeURIComponent(publicUrl.slice(S3_BASE_URL.length + 1)) : null;
+    let moderation = { status: 'approved', labels: null };
+    if (type === 'avatar' || type === 'memory') {
+      if (!key) return res.status(400).json({ error: 'Invalid media URL' });
+      moderation = safety.isVideoKey(key)
+        ? { status: 'pending_review', labels: [{ name: 'video_manual_review' }] }
+        : await safety.moderateImage({ bucket: S3_BUCKET, key });
+    }
+
     if (type === 'avatar') {
+      if (moderation.status !== 'approved') {
+        console.warn('[moderation] avatar rejected', { userId: req.userId, labels: moderation.labels, error: moderation.error });
+        return res.status(422).json({ error: 'This photo can\'t be used as a profile picture. Please choose another.', code: 'PHOTO_REJECTED' });
+      }
       await db.query('UPDATE users SET avatar_url = $1 WHERE id = $2', [publicUrl, req.userId]);
     } else if (type === 'memory' && referenceId) {
       await db.query(
-        `INSERT INTO memory_media (event_id, user_id, url, created_at)
-         VALUES ($1, $2, $3, NOW())
+        `INSERT INTO memory_media (event_id, user_id, url, created_at, moderation_status, moderation_labels, moderated_at)
+         VALUES ($1, $2, $3, NOW(), $4, $5, NOW())
          ON CONFLICT DO NOTHING`,
-        [referenceId, req.userId, publicUrl]
+        [referenceId, req.userId, publicUrl, moderation.status, moderation.labels ? JSON.stringify(moderation.labels) : null]
       );
+      if (moderation.status !== 'approved') {
+        console.warn('[moderation] memory media held for review', { userId: req.userId, key, labels: moderation.labels, error: moderation.error });
+        safety.alertAdmins(db, sendPush, 'Photo held for review',
+          safety.isVideoKey(key) ? 'A video was uploaded and needs manual review.' : 'A photo was flagged by automatic moderation.',
+          { type: 'moderation_pending' });
+      }
       if (visibility) {
         await setMyMemoryVisibility(referenceId, req.userId, visibility);
       }
@@ -1943,7 +2149,7 @@ app.post('/api/media/confirm', requireAuth, async (req, res) => {
       );
     }
 
-    res.json({ data: { ok: true, publicUrl } });
+    res.json({ data: { ok: true, publicUrl, moderationStatus: moderation.status } });
   } catch (err) {
     console.error('Media confirm error:', err);
     res.status(500).json({ error: 'Failed to confirm media' });
@@ -1967,6 +2173,15 @@ app.delete('/api/media/:mediaId', requireAuth, async (req, res) => {
     if (!media) return res.status(404).json({ error: 'Not found' });
     if (media.userId !== req.userId && media.creatorId !== req.userId) {
       return res.status(403).json({ error: 'Not authorised to delete this photo' });
+    }
+    // Preserve evidence: removed-by-moderation photos and anything from an account on legal hold
+    const { rows: [hold] } = await db.query(
+      `SELECT (mm.moderation_status = 'removed') AS removed,
+              COALESCE((SELECT legal_hold FROM users WHERE id = mm.user_id), false) AS uploader_hold,
+              (SELECT legal_hold FROM users WHERE id = $2) AS my_hold
+       FROM memory_media mm WHERE mm.id = $1`, [req.params.mediaId, req.userId]);
+    if (hold?.removed || hold?.uploader_hold || hold?.my_hold) {
+      return res.status(403).json({ error: 'This photo can\'t be deleted right now. Contact info@rooikatlabs.com.' });
     }
     await db.query('DELETE FROM memory_media WHERE id = $1', [req.params.mediaId]);
     res.json({ data: { ok: true } });

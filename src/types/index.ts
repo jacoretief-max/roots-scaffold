@@ -83,6 +83,7 @@ export interface MemoryEvent {
 export interface MemoryMediaItem {
   id: string;
   userId: string | null; // null = kept by a member who has since deleted their account
+  moderationStatus?: 'approved' | 'pending_review'; // pending = only the uploader sees it
   url: string;
   caption?: string;
 }

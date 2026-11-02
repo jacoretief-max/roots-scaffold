@@ -78,7 +78,7 @@ async function gatherExportData(db, userId) {
             cu.display_name as "createdBy"
      FROM events e
      JOIN users cu ON cu.id = e.created_by_user_id
-     WHERE e.created_by_user_id = $1
+     WHERE e.hidden_at IS NULL AND (e.created_by_user_id = $1
         OR $1 = ANY(e.participant_ids)
         OR EXISTS (
           SELECT 1
@@ -93,7 +93,7 @@ async function gatherExportData(db, userId) {
             ON c.user_id = authors.author_id AND c.connected_user_id = $1 AND c.status = 'active'
           WHERE COALESCE(mav.visibility, e.visibility) != 'onlyUs'
             AND ${LAYER_MATCH('COALESCE(mav.visibility, e.visibility)', 'c.layer')}
-        )
+        ))
      ORDER BY e.date DESC, e.created_at DESC`,
     [userId]);
 
@@ -115,7 +115,7 @@ async function gatherExportData(db, userId) {
        FROM memory_entries me
        JOIN users u ON u.id = me.author_id
        LEFT JOIN memory_author_visibility mav ON mav.event_id = me.event_id AND mav.user_id = me.author_id
-       WHERE me.event_id = $1 AND ${visibleClause('me.author_id')}
+       WHERE me.event_id = $1 AND me.hidden_at IS NULL AND ${visibleClause('me.author_id')}
        ORDER BY me.created_at ASC`, params);
     const { rows: media } = await db.query(
       `SELECT mm.url, mm.caption, COALESCE(u.display_name, 'Former member') as "uploadedBy",
@@ -123,7 +123,9 @@ async function gatherExportData(db, userId) {
        FROM memory_media mm
        LEFT JOIN users u ON u.id = mm.user_id
        LEFT JOIN memory_author_visibility mav ON mav.event_id = mm.event_id AND mav.user_id = mm.user_id
-       WHERE mm.event_id = $1 AND (mm.user_id IS NULL OR ${visibleClause('mm.user_id')})
+       WHERE mm.event_id = $1
+         AND (mm.moderation_status = 'approved' OR (mm.user_id = $2 AND mm.moderation_status = 'pending_review'))
+         AND (mm.user_id IS NULL OR ${visibleClause('mm.user_id')})
        ORDER BY mm.created_at ASC`, params);
     const { rows: people } = await db.query(
       `SELECT display_name as name FROM users WHERE id = ANY($1::uuid[])

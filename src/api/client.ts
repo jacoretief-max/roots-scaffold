@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { router } from 'expo-router';
+import { Alert } from 'react-native';
 import { AuthTokens } from '@/types';
 // NOTE: authStore imports `api` from this file, so this is a circular import.
 // It's safe because useAuthStore is only dereferenced lazily inside the
@@ -42,6 +43,7 @@ api.interceptors.request.use(
 
 // ── Response interceptor — handle 401 + refresh ────────
 let isRefreshing = false;
+let suspendedNoticeShown = false;
 let failedQueue: Array<{
   resolve: (value: unknown) => void;
   reject: (reason?: unknown) => void;
@@ -63,6 +65,19 @@ api.interceptors.response.use(
   async (error) => {
     console.log(`[API] ERROR ${error?.response?.status} ${error?.config?.url}:`, error?.message);
     const originalRequest = error.config;
+
+    // Suspended by moderation: sign out once and explain
+    if (error.response?.status === 403 && error.response?.data?.code === 'ACCOUNT_SUSPENDED') {
+      if (!suspendedNoticeShown) {
+        suspendedNoticeShown = true;
+        Alert.alert('Account suspended', error.response.data.error ?? 'Contact info@rooikatlabs.com.');
+        useAuthStore.getState().logout().finally(() => {
+          router.replace('/auth');
+          setTimeout(() => { suspendedNoticeShown = false; }, 3000);
+        });
+      }
+      return Promise.reject(error);
+    }
 
     if (error.response?.status === 401 && !originalRequest._retry) {
       // Mark this request as retried up front — applies whether it's the

@@ -110,6 +110,10 @@ export default function ProfileScreen() {
             value={user?.dateOfBirth ? dayjs(user.dateOfBirth, 'YYYY-MM-DD').format('D MMM YYYY') : 'Not set'}
             onPress={() => router.push('/profile/verification')}
           />
+          <SettingsRow
+            label="Blocked people"
+            onPress={() => router.push('/profile/blocked')}
+          />
         </View>
 
         <SectionHeader title="Security" />
@@ -132,7 +136,7 @@ export default function ProfileScreen() {
         <View style={{ marginTop: Spacing.xl }}>
           <View style={styles.sectionCard}>
             <SettingsRow
-              label="Privacy & Cookies"
+              label="Privacy & Data"
               onPress={() => router.push('/profile/privacy')}
             />
           </View>

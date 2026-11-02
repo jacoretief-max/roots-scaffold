@@ -3,7 +3,15 @@
  * Flow: presign (get signed PUT URL) → PUT blob to S3 → confirm (save URL to DB)
  */
 
+import { Alert } from 'react-native';
 import api from './client';
+
+let reviewNoticeShown = 0;
+const notifyHeldForReview = () => {
+  if (Date.now() - reviewNoticeShown < 5000) return; // one alert per batch
+  reviewNoticeShown = Date.now();
+  Alert.alert('Photo under review', 'One or more photos will be visible to others once they have been reviewed. You can still see them.');
+};
 
 export interface PresignResult {
   uploadUrl: string;
@@ -55,8 +63,11 @@ export async function confirmMedia(
   // Only meaningful for type === 'memory' — sets/updates the uploader's own
   // visibility layer for that memory (see memory_author_visibility).
   visibility?: string
-): Promise<void> {
-  await api.post('/media/confirm', { publicUrl, type, referenceId, visibility });
+): Promise<'approved' | 'pending_review'> {
+  const { data } = await api.post('/media/confirm', { publicUrl, type, referenceId, visibility });
+  const status = data?.data?.moderationStatus ?? 'approved';
+  if (status === 'pending_review' && type === 'memory') notifyHeldForReview();
+  return status;
 }
 
 /**

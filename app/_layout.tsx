@@ -238,6 +238,7 @@ function RootNavigator() {
         <Stack.Screen name="profile/personalise" options={{ headerShown: false }} />
         <Stack.Screen name="profile/password" options={{ headerShown: false }} />
         <Stack.Screen name="profile/privacy" options={{ headerShown: false }} />
+        <Stack.Screen name="profile/blocked" options={{ headerShown: false }} />
         <Stack.Screen name="profile/verification" options={{ headerShown: false }} />
         <Stack.Screen name="profile/security" options={{ headerShown: false }} />
       </Stack>

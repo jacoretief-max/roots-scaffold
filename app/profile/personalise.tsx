@@ -81,9 +81,9 @@ export default function PersonaliseScreen() {
           onError: () => Alert.alert('Error', 'Photo uploaded but profile update failed. Try again.'),
         }
       );
-    } catch {
+    } catch (err: any) {
       setLocalPhotoUri(null);
-      Alert.alert('Upload failed', 'Could not upload photo. Check your connection and try again.');
+      Alert.alert('Upload failed', err?.response?.data?.error ?? 'Could not upload photo. Check your connection and try again.');
     } finally {
       setUploading(false);
     }

@@ -164,3 +164,46 @@ CREATE TABLE IF NOT EXISTS sms_consents (
 
 CREATE INDEX IF NOT EXISTS sms_consents_phone_idx ON sms_consents(phone_number);
 CREATE INDEX IF NOT EXISTS sms_consents_user_idx  ON sms_consents(user_id);
+
+-- ── Trust & safety (see migrate_phase8_safety.sql) ──
+
+ALTER TABLE memory_media ADD COLUMN IF NOT EXISTS moderation_status TEXT NOT NULL DEFAULT 'approved' CHECK (moderation_status IN ('approved', 'pending_review', 'removed'));
+
+ALTER TABLE memory_media ADD COLUMN IF NOT EXISTS moderation_labels JSONB;
+
+ALTER TABLE memory_media ADD COLUMN IF NOT EXISTS moderated_at TIMESTAMPTZ;
+
+ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ;
+
+ALTER TABLE events ADD COLUMN IF NOT EXISTS hidden_at TIMESTAMPTZ;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS suspended_at TIMESTAMPTZ;
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS legal_hold BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS content_reports (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id       UUID REFERENCES users(id) ON DELETE SET NULL,
+  target_type       TEXT NOT NULL CHECK (target_type IN ('photo', 'memory', 'entry', 'user')),
+  target_id         UUID NOT NULL,
+  reported_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
+  reason            TEXT NOT NULL CHECK (reason IN ('child_safety', 'sexual', 'harassment', 'violence', 'spam', 'other')),
+  details           TEXT,
+  status            TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'actioned', 'dismissed')),
+  resolution_note   TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at       TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS content_reports_status_idx ON content_reports(status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS content_reports_reporter_idx ON content_reports(reporter_id, target_type, target_id);
+
+CREATE TABLE IF NOT EXISTS user_blocks (
+  blocker_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (blocker_id, blocked_id)
+);
+
+CREATE INDEX IF NOT EXISTS user_blocks_blocked_idx ON user_blocks(blocked_id);

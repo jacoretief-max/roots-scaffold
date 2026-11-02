@@ -10,6 +10,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useConnection, useLogContact, useRemoveConnection, useUpdateConnection, useContactEvents, useCreateContactEvent, useGenerateInvite } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
+import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys } from '@/api/hooks';
+import { blockUser } from '@/api/safety';
+import ReportSheet from '@/components/ReportSheet';
 import { Colors, Typography, Spacing, BorderRadius, DunbarLayers, Shadows } from '@/constants/theme';
 import { DunbarLayer } from '@/types';
 import dayjs from 'dayjs';
@@ -575,6 +579,8 @@ export default function PersonScreen() {
   const { data: contactEvents = [], isLoading: eventsLoading } = useContactEvents(id);
   const { mutate: createContactEvent } = useCreateContactEvent(id);
   const [editVisible, setEditVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
+  const qcSafety = useQueryClient();
   const [showNoteInput, setShowNoteInput] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [pendingEventType, setPendingEventType] = useState<string>('manual');
@@ -1069,8 +1075,47 @@ export default function PersonScreen() {
           ))}
         </View>}
 
+        {/* Safety: report / block (Roots users only) */}
+        {!isOffline && connection.connectedUser?.id && (
+          <View style={styles.safetyRow}>
+            <TouchableOpacity onPress={() => setReportVisible(true)} style={styles.safetyBtn}>
+              <Text style={styles.safetyBtnText}>Report {displayName}</Text>
+            </TouchableOpacity>
+            <Text style={styles.safetyDot}>·</Text>
+            <TouchableOpacity
+              style={styles.safetyBtn}
+              onPress={() => Alert.alert(
+                `Block ${displayName}?`,
+                `${displayName} will be removed from your circle, won't be able to find you or send you requests, and you won't see each other's memories or photos. They won't be told.`,
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Block', style: 'destructive',
+                    onPress: () => blockUser(connection.connectedUser!.id)
+                      .then(() => {
+                        qcSafety.invalidateQueries({ queryKey: QueryKeys.connections });
+                        qcSafety.invalidateQueries({ queryKey: QueryKeys.memories });
+                        router.back();
+                      })
+                      .catch(() => Alert.alert('Error', 'Could not block. Please try again.')),
+                  },
+                ]
+              )}
+            >
+              <Text style={styles.safetyBtnText}>Block</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={{ height: 100 }} />
       </ScrollView>
+
+      <ReportSheet
+        visible={reportVisible}
+        targetType="user"
+        targetId={connection.connectedUser?.id ?? null}
+        onClose={() => setReportVisible(false)}
+      />
 
       {/* Edit modal */}
       <EditModal
@@ -1876,4 +1921,8 @@ const styles = StyleSheet.create({
   tzActionBtnRemindText: {
     color: Colors.terracotta,
   },
+  safetyRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: Spacing.xl, gap: Spacing.sm },
+  safetyBtn: { paddingVertical: Spacing.sm, paddingHorizontal: Spacing.xs },
+  safetyBtnText: { fontSize: 13, color: Colors.textLight, fontFamily: Typography.fontFamily, textDecorationLine: 'underline' },
+  safetyDot: { color: Colors.textLight },
 });
