@@ -31,7 +31,7 @@ const TabIcon = ({
   focused,
   notify = false,
 }: {
-  Icon: ({ color }: { color: string }) => JSX.Element;
+  Icon: ({ color }: { color: string }) => React.JSX.Element;
   focused: boolean;
   notify?: boolean;
 }) => (

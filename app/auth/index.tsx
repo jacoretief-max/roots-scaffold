@@ -30,7 +30,7 @@ const Input = ({
   keyboardType?: 'default' | 'email-address' | 'phone-pad';
   returnKeyType?: 'next' | 'done' | 'go';
   onSubmitEditing?: () => void;
-  inputRef?: React.RefObject<TextInput>;
+  inputRef?: React.RefObject<TextInput | null>;
   autoCapitalize?: 'none' | 'words' | 'sentences';
 }) => {
   const [hidden, setHidden] = useState(secureTextEntry ?? false);

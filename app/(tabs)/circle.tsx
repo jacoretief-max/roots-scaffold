@@ -932,8 +932,8 @@ export default function CircleScreen() {
     const calEvents = await Calendar.getEventsAsync(calendars.map(c => c.id), thirtyDaysAgo, now);
     const events = calEvents.filter(e => e.title).map(e => ({
       title: e.title,
-      date: e.startDate,
-      attendees: (e.attendees ?? []).map((a: any) => a.name ?? a.email ?? ''),
+      date: e.startDate instanceof Date ? e.startDate.toISOString() : e.startDate,
+      attendees: ((e as any).attendees ?? []).map((a: any) => a.name ?? a.email ?? ''),
     }));
     syncCalendar(events, {
       onSuccess: (result) => {
