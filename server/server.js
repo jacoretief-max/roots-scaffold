@@ -168,6 +168,35 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(cors({ origin: '*' })); // tighten in production
 
+// ── Admin review page: only on ADMIN_HOST (admin.rooikatlabs.com) ──
+// Not reachable via the Railway domain, so it's always behind Cloudflare Access.
+const ADMIN_HOST = (process.env.ADMIN_HOST || 'admin.rooikatlabs.com').toLowerCase();
+const ADMIN_PAGE = require('path').join(__dirname, 'admin', 'index.html');
+app.use((req, res, next) => {
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].split(':')[0].trim().toLowerCase();
+  if (host !== ADMIN_HOST || req.path.startsWith('/api/')) return next();
+  if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).end();
+  res.set({
+    'Cache-Control': 'no-store',
+    'X-Robots-Tag': 'noindex, nofollow',
+    'X-Frame-Options': 'DENY',
+    'X-Content-Type-Options': 'nosniff',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob: https://*.amazonaws.com",
+      "media-src 'self' blob: https://*.amazonaws.com",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'none'",
+      "form-action 'none'",
+    ].join('; '),
+  });
+  res.sendFile(ADMIN_PAGE);
+});
+
 // ── Database ───────────────────────────────────────────
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -201,10 +230,6 @@ const requireAuth = (req, res, next) => {
     .catch(err => { console.error('[safety] suspension check failed', err.message); next(); });
 };
 
-// Admin-only routes (ADMIN_USER_IDS env, comma-separated user IDs)
-const requireAdmin = (req, res, next) =>
-  safety.isAdmin(req.userId) ? next() : res.status(404).json({ error: 'Not found' });
-
 // Removes user IDs that are blocked by / have blocked `userId`
 async function withoutBlocked(userId, ids) {
   if (!Array.isArray(ids) || !ids.length) return ids;
@@ -216,6 +241,11 @@ async function withoutBlocked(userId, ids) {
   const keep = new Set(rows.map(r => r.id));
   return ids.filter(id => keep.has(id));
 }
+
+// ── Admin review API (/api/admin/*) — see routes/admin.js ──
+app.use('/api/admin', require('./routes/admin')({
+  db, requireAuth, safety, s3, bucket: S3_BUCKET, s3BaseUrl: S3_BASE_URL, getSignedUrl, GetObjectCommand,
+}));
 
 // ── Health check ───────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok' }));
@@ -610,85 +640,6 @@ app.get('/api/users/me/blocks', requireAuth, async (req, res) => {
      FROM user_blocks b JOIN users u ON u.id = b.blocked_id
      WHERE b.blocker_id = $1 ORDER BY b.created_at DESC`, [req.userId]);
   res.json({ data: rows });
-});
-
-// ── Admin review (ADMIN_USER_IDS only) ─────────────────
-// Building blocks for the review workflow (website / agent later).
-
-// GET /api/admin/reports?status=open
-app.get('/api/admin/reports', requireAuth, requireAdmin, async (req, res) => {
-  const status = ['open', 'actioned', 'dismissed'].includes(req.query.status) ? req.query.status : 'open';
-  const { rows } = await db.query(
-    `SELECT r.id, r.target_type AS "targetType", r.target_id AS "targetId", r.reason, r.details, r.status,
-            r.created_at AS "createdAt", r.resolved_at AS "resolvedAt", r.resolution_note AS "resolutionNote",
-            rep.display_name AS "reporter", tgt.id AS "reportedUserId", tgt.display_name AS "reportedUser",
-            tgt.suspended_at AS "reportedUserSuspendedAt", tgt.legal_hold AS "reportedUserLegalHold"
-     FROM content_reports r
-     LEFT JOIN users rep ON rep.id = r.reporter_id
-     LEFT JOIN users tgt ON tgt.id = r.reported_user_id
-     WHERE r.status = $1
-     ORDER BY (r.reason = 'child_safety') DESC, r.created_at ASC
-     LIMIT 200`, [status]);
-  res.json({ data: rows });
-});
-
-// GET /api/admin/media?status=pending_review — media awaiting review, with short-lived view links
-app.get('/api/admin/media', requireAuth, requireAdmin, async (req, res) => {
-  const status = ['pending_review', 'removed'].includes(req.query.status) ? req.query.status : 'pending_review';
-  const { rows } = await db.query(
-    `SELECT mm.id, mm.url, mm.moderation_labels AS "labels", mm.created_at AS "createdAt",
-            u.id AS "uploaderId", u.display_name AS "uploader", e.title AS "memoryTitle"
-     FROM memory_media mm
-     LEFT JOIN users u ON u.id = mm.user_id
-     JOIN events e ON e.id = mm.event_id
-     WHERE mm.moderation_status = $1
-     ORDER BY mm.created_at ASC LIMIT 200`, [status]);
-  const withLinks = await Promise.all(rows.map(async (r) => {
-    const key = r.url.startsWith(S3_BASE_URL + '/') ? decodeURIComponent(r.url.slice(S3_BASE_URL.length + 1)) : null;
-    const viewUrl = key ? await getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }), { expiresIn: 600 }) : null;
-    return { ...r, viewUrl };
-  }));
-  res.json({ data: withLinks });
-});
-
-// POST /api/admin/media/:id { action: 'approve' | 'remove' }
-app.post('/api/admin/media/:id', requireAuth, requireAdmin, async (req, res) => {
-  const map = { approve: 'approved', remove: 'removed' };
-  const next = map[req.body?.action];
-  if (!next) return res.status(400).json({ error: "action must be 'approve' or 'remove'" });
-  const { rowCount } = await db.query(
-    `UPDATE memory_media SET moderation_status = $1, moderated_at = now() WHERE id = $2`, [next, req.params.id]);
-  if (!rowCount) return res.status(404).json({ error: 'Not found' });
-  console.log('[safety] admin media decision', { admin: req.userId, mediaId: req.params.id, status: next });
-  res.json({ data: { id: req.params.id, moderationStatus: next } });
-});
-
-// POST /api/admin/reports/:id { status: 'actioned' | 'dismissed', note? }
-app.post('/api/admin/reports/:id', requireAuth, requireAdmin, async (req, res) => {
-  const { status, note } = req.body ?? {};
-  if (!['actioned', 'dismissed'].includes(status)) return res.status(400).json({ error: "status must be 'actioned' or 'dismissed'" });
-  const { rowCount } = await db.query(
-    `UPDATE content_reports SET status = $1, resolution_note = $2, resolved_at = now() WHERE id = $3`,
-    [status, typeof note === 'string' ? note.slice(0, 2000) : null, req.params.id]);
-  if (!rowCount) return res.status(404).json({ error: 'Not found' });
-  console.log('[safety] admin report decision', { admin: req.userId, reportId: req.params.id, status });
-  res.json({ data: { id: req.params.id, status } });
-});
-
-// POST /api/admin/users/:id { action: 'suspend' | 'unsuspend' | 'hold' | 'release' }
-app.post('/api/admin/users/:id', requireAuth, requireAdmin, async (req, res) => {
-  const sql = {
-    suspend:   `UPDATE users SET suspended_at = COALESCE(suspended_at, now()) WHERE id = $1`,
-    unsuspend: `UPDATE users SET suspended_at = NULL WHERE id = $1`,
-    hold:      `UPDATE users SET legal_hold = true WHERE id = $1`,
-    release:   `UPDATE users SET legal_hold = false WHERE id = $1`,
-  }[req.body?.action];
-  if (!sql) return res.status(400).json({ error: "action must be suspend, unsuspend, hold or release" });
-  const { rowCount } = await db.query(sql, [req.params.id]);
-  if (!rowCount) return res.status(404).json({ error: 'Not found' });
-  safety.invalidateSuspension(req.params.id);
-  console.log('[safety] admin user action', { admin: req.userId, userId: req.params.id, action: req.body.action });
-  res.json({ data: { id: req.params.id, action: req.body.action } });
 });
 
 // POST /api/users/me/phone/send-code — send an OTP to a NEW phone number

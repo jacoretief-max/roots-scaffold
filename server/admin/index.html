@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Rooted In Review</title>
+<style>
+:root{
+  --bg:#F6F1EA;--surface:#FFFFFF;--surface-2:#FBF8F4;--ink:#2B2420;--muted:#857A70;--line:#E6DCCF;
+  --accent:#C45A3A;--accent-ink:#FFFFFF;--accent-soft:#F6E3DC;
+  --ok:#3F7A4C;--ok-soft:#E3EFE5;--warn:#9A6B12;--warn-soft:#F7EBD2;--danger:#B3261E;--danger-soft:#F8DEDC;
+  --radius:12px;--shadow:0 1px 2px rgba(43,36,32,.06),0 4px 16px rgba(43,36,32,.05);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#171412;--surface:#221D1A;--surface-2:#1C1816;--ink:#F1E9DF;--muted:#A5988C;--line:#3A312B;
+  --accent:#E07A5A;--accent-ink:#1B1210;--accent-soft:#3A2620;
+  --ok:#7DBA88;--ok-soft:#1F2E22;--warn:#E0B060;--warn-soft:#352A16;--danger:#F28B82;--danger-soft:#3B1E1C;
+  --shadow:none;}}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+button,input,textarea,select{font:inherit;color:inherit}
+.hidden{display:none!important}
+/* ── Header ── */
+header{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line)}
+.bar{max-width:1240px;margin:0 auto;padding:0 20px;height:60px;display:flex;align-items:center;gap:20px}
+.brand{font-weight:700;letter-spacing:-.01em;white-space:nowrap}
+.brand span{color:var(--accent)}
+nav{display:flex;gap:4px;flex:1;overflow-x:auto}
+.tab{background:none;border:0;padding:8px 12px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:600;white-space:nowrap;display:flex;gap:8px;align-items:center}
+.tab:hover{background:var(--surface-2);color:var(--ink)}
+.tab[aria-selected="true"]{background:var(--accent-soft);color:var(--accent)}
+.count{min-width:22px;padding:1px 7px;border-radius:999px;background:var(--line);color:var(--ink);font-size:12px;text-align:center}
+.count.alert{background:var(--danger);color:#fff}
+.who{color:var(--muted);font-size:13px;white-space:nowrap}
+.linkbtn{background:none;border:0;color:var(--accent);cursor:pointer;font-weight:600;padding:4px}
+main{max-width:1240px;margin:0 auto;padding:24px 20px 80px}
+/* ── Toolbar ── */
+.toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:18px}
+.toolbar h1{font-size:20px;margin:0;flex:1;letter-spacing:-.01em}
+.seg{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:3px}
+.seg button{background:none;border:0;padding:6px 12px;border-radius:7px;cursor:pointer;color:var(--muted);font-weight:600;font-size:13px}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.btn{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:8px 14px;cursor:pointer;font-weight:600;font-size:14px}
+.btn:hover{border-color:var(--muted)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.primary{background:var(--ok);border-color:var(--ok);color:#fff}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.btn.ghost-danger{color:var(--danger);border-color:var(--danger-soft);background:var(--danger-soft)}
+.btn.sm{padding:5px 10px;font-size:13px}
+/* ── Cards ── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column}
+.card.cs{border-color:var(--danger)}
+.media{position:relative;background:#000;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center}
+.media img,.media video{width:100%;height:100%;object-fit:contain;display:block}
+.media.blurred img,.media.blurred video{filter:blur(28px) grayscale(.6)}
+.veil{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(0,0,0,.55);color:#fff;text-align:center;padding:16px}
+.veil p{margin:0;font-size:13px;max-width:280px}
+.kind{position:absolute;top:10px;left:10px;background:rgba(0,0,0,.65);color:#fff;font-size:12px;font-weight:600;padding:3px 8px;border-radius:6px}
+.body{padding:14px 16px;display:flex;flex-direction:column;gap:8px;flex:1}
+.title{font-weight:700}
+.meta{color:var(--muted);font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--surface-2);border:1px solid var(--line);color:var(--muted)}
+.chip.red{background:var(--danger-soft);color:var(--danger);border-color:transparent;font-weight:600}
+.chip.amber{background:var(--warn-soft);color:var(--warn);border-color:transparent;font-weight:600}
+.chip.green{background:var(--ok-soft);color:var(--ok);border-color:transparent;font-weight:600}
+.note{width:100%;border:1px solid var(--line);background:var(--surface-2);border-radius:8px;padding:8px 10px;resize:vertical;min-height:38px;font-size:14px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:6px}
+.quote{background:var(--surface-2);border-left:3px solid var(--line);padding:10px 12px;border-radius:6px;white-space:pre-wrap;font-size:14px}
+.empty{text-align:center;color:var(--muted);padding:70px 20px;border:1px dashed var(--line);border-radius:var(--radius);background:var(--surface)}
+.banner{display:flex;gap:12px;align-items:flex-start;background:var(--danger-soft);color:var(--danger);border-radius:var(--radius);padding:14px 16px;margin-bottom:16px;font-size:14px}
+.banner strong{display:block;margin-bottom:2px}
+.banner a{color:inherit;font-weight:700}
+.reports{display:flex;flex-direction:column;gap:14px}
+.report{display:grid;grid-template-columns:260px 1fr;gap:0}
+.report .media{aspect-ratio:auto;min-height:200px;height:100%}
+.report .textprev{display:flex;align-items:center;justify-content:center;padding:18px;background:var(--surface-2);color:var(--muted);font-size:13px;text-align:center}
+table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);background:var(--surface-2)}
+tr:last-child td{border-bottom:0}
+code{font-size:12px;color:var(--muted)}
+/* ── Login ── */
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login form{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:12px}
+.login h1{margin:0 0 4px;font-size:22px}
+.login p{margin:0 0 6px;color:var(--muted);font-size:14px}
+.login input{border:1px solid var(--line);background:var(--surface-2);border-radius:9px;padding:10px 12px}
+.err{color:var(--danger);font-size:14px;min-height:20px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;box-shadow:var(--shadow);z-index:20}
+@media (max-width:720px){
+  .report{grid-template-columns:1fr}
+  .grid{grid-template-columns:1fr}
+  .who{display:none}
+  .bar{flex-wrap:wrap;height:auto;padding-top:10px;padding-bottom:6px;gap:6px 10px}
+  .brand{flex:1}
+  nav{order:3;flex:1 0 100%;margin:0 -12px}
+  .toolbar h1{flex:1 0 100%}
+}
+</style>
+</head>
+<body>
+
+<!-- ── Login ── -->
+<section id="login" class="login hidden">
+  <form id="loginForm" autocomplete="on">
+    <h1>Rooted In Review</h1>
+    <p>Sign in with your Rooted In admin account.</p>
+    <input id="email" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <div class="err" id="loginErr" role="alert"></div>
+    <button class="btn primary" type="submit" id="loginBtn">Sign in</button>
+  </form>
+</section>
+
+<!-- ── App ── -->
+<div id="app" class="hidden">
+  <header>
+    <div class="bar">
+      <div class="brand">Rooted In <span>Review</span></div>
+      <nav role="tablist">
+        <button class="tab" role="tab" data-tab="media" aria-selected="true">Held media <span class="count" id="cMedia">0</span></button>
+        <button class="tab" role="tab" data-tab="reports" aria-selected="false">Reports <span class="count" id="cReports">0</span></button>
+        <button class="tab" role="tab" data-tab="audit" aria-selected="false">Audit log</button>
+      </nav>
+      <div class="who" id="who"></div>
+      <button class="linkbtn" id="logout">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Held media -->
+    <section id="tab-media">
+      <div class="toolbar">
+        <h1>Held media</h1>
+        <div class="seg" data-filter="media">
+          <button data-v="pending_review" aria-pressed="true">Waiting</button>
+          <button data-v="removed" aria-pressed="false">Removed</button>
+          <button data-v="approved" aria-pressed="false">Approved</button>
+        </div>
+        <button class="btn" data-refresh="media">Refresh</button>
+      </div>
+      <div id="mediaList"></div>
+    </section>
+
+    <!-- Reports -->
+    <section id="tab-reports" class="hidden">
+      <div class="toolbar">
+        <h1>Reports</h1>
+        <div class="seg" data-filter="reports">
+          <button data-v="open" aria-pressed="true">Open</button>
+          <button data-v="actioned" aria-pressed="false">Actioned</button>
+          <button data-v="dismissed" aria-pressed="false">Dismissed</button>
+        </div>
+        <button class="btn" data-refresh="reports">Refresh</button>
+      </div>
+      <div id="csBanner" class="banner hidden">
+        <div>
+          <strong>Child-safety report open</strong>
+          Do not download, screenshot or forward the content. Keep it removed (not deleted), keep the account on legal hold,
+          and report it to NCMEC's <a href="https://report.cybertip.org/" target="_blank" rel="noopener noreferrer">CyberTipline</a>.
+          Note the CyberTipline report number when you mark the report actioned.
+        </div>
+      </div>
+      <div id="reportList"></div>
+    </section>
+
+    <!-- Audit -->
+    <section id="tab-audit" class="hidden">
+      <div class="toolbar">
+        <h1>Audit log</h1>
+        <button class="btn" data-refresh="audit">Refresh</button>
+      </div>
+      <div id="auditList"></div>
+    </section>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden" role="status"></div>
+
+<script>
+(() => {
+  const API = '/api';
+  const KEY = 'rooted-review-tokens';
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const when = (d) => d ? new Date(d).toLocaleString(undefined, { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+  const REASON = { child_safety:'Child safety', sexual:'Nudity / sexual', harassment:'Harassment', violence:'Violence', spam:'Spam', other:'Other' };
+  const state = { tab:'media', filter:{ media:'pending_review', reports:'open' } };
+
+  // ── Tokens (sessionStorage: cleared when the tab closes) ──
+  const getTokens = () => { try { return JSON.parse(sessionStorage.getItem(KEY)); } catch { return null; } };
+  const setTokens = (t) => { try { t ? sessionStorage.setItem(KEY, JSON.stringify(t)) : sessionStorage.removeItem(KEY); } catch {} };
+
+  async function api(path, opts = {}, retried = false) {
+    const t = getTokens();
+    const res = await fetch(API + path, {
+      method: opts.method || 'GET',
+      headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: 'Bearer ' + t.accessToken } : {}) },
+      body: opts.body ? JSON.stringify(opts.body) : undefined,
+      credentials: 'same-origin',
+    });
+    if (res.status === 401 && !retried && t?.refreshToken) {
+      const r = await fetch(API + '/auth/refresh', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ refreshToken: t.refreshToken }) });
+      if (r.ok) { setTokens((await r.json()).data); return api(path, opts, true); }
+    }
+    if (res.status === 401) { setTokens(null); showLogin('Your session expired. Please sign in again.'); }
+    let body = null; try { body = await res.json(); } catch {}
+    if (!res.ok) throw Object.assign(new Error(body?.error || ('Request failed (' + res.status + ')')), { status: res.status });
+    return body?.data;
+  }
+
+  function toast(msg) {
+    const el = $('#toast'); el.textContent = msg; el.classList.remove('hidden');
+    clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.add('hidden'), 2600);
+  }
+
+  // ── Login ──
+  function showLogin(msg) { $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#loginErr').textContent = msg || ''; }
+  async function showApp() {
+    try {
+      const me = await api('/admin/me');
+      $('#who').textContent = me.displayName + (me.cfAccess ? '' : ' · Cloudflare check off');
+      $('#login').classList.add('hidden'); $('#app').classList.remove('hidden');
+      refreshCounts(); load(state.tab);
+    } catch (e) {
+      setTokens(null);
+      showLogin(e.status === 404 ? 'This account is not an admin.' : e.status === 403 ? 'Access blocked. Open this page through admin.rooikatlabs.com.' : '');
+    }
+  }
+  $('#loginForm').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    $('#loginBtn').disabled = true; $('#loginErr').textContent = '';
+    try {
+      const r = await fetch(API + '/auth/login', { method:'POST', headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ email: $('#email').value.trim(), password: $('#password').value }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Sign-in failed');
+      setTokens(j.data.tokens); $('#password').value = '';
+      await showApp();
+    } catch (e) { $('#loginErr').textContent = e.message; }
+    finally { $('#loginBtn').disabled = false; }
+  });
+  $('#logout').addEventListener('click', () => { setTokens(null); showLogin('Signed out.'); });
+
+  // ── Tabs & filters ──
+  document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
+    state.tab = b.dataset.tab;
+    document.querySelectorAll('.tab').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+    ['media','reports','audit'].forEach(t => $('#tab-' + t).classList.toggle('hidden', t !== state.tab));
+    load(state.tab);
+  }));
+  document.querySelectorAll('.seg').forEach(seg => seg.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    state.filter[seg.dataset.filter] = b.dataset.v; load(seg.dataset.filter);
+  }));
+  document.querySelectorAll('[data-refresh]').forEach(b => b.addEventListener('click', () => { refreshCounts(); load(b.dataset.refresh); }));
+
+  async function refreshCounts() {
+    try {
+      const s = await api('/admin/summary');
+      $('#cMedia').textContent = s.pendingMedia;
+      $('#cReports').textContent = s.openReports;
+      $('#cReports').classList.toggle('alert', s.openChildSafety > 0);
+      document.title = (s.pendingMedia + s.openReports ? '(' + (s.pendingMedia + s.openReports) + ') ' : '') + 'Rooted In Review';
+    } catch {}
+  }
+
+  function load(which) { ({ media: loadMedia, reports: loadReports, audit: loadAudit })[which](); }
+
+  // ── Shared preview (image/video, blurred if sensitive) ──
+  function mediaPreview(kind, url, sensitive) {
+    if (!url) return '<div class="media"><div class="veil"><p>File not available</p></div></div>';
+    const el = kind === 'video'
+      ? '<video src="' + esc(url) + '" controls preload="metadata" controlsList="nodownload" disablePictureInPicture playsinline></video>'
+      : '<img src="' + esc(url) + '" alt="" referrerpolicy="no-referrer" draggable="false">';
+    return '<div class="media' + (sensitive ? ' blurred' : '') + '" oncontextmenu="return false">'
+      + el + '<span class="kind">' + (kind === 'video' ? 'Video' : 'Photo') + '</span>'
+      + (sensitive ? '<div class="veil"><p>Reported as a child-safety concern. Only reveal if you need to confirm before reporting. Do not download or share.</p><button class="btn sm" data-reveal>Reveal</button></div>' : '')
+      + '</div>';
+  }
+  document.addEventListener('click', (ev) => {
+    const r = ev.target.closest('[data-reveal]'); if (!r) return;
+    const m = r.closest('.media'); m.classList.remove('blurred'); r.closest('.veil').remove();
+  });
+
+  // ── Held media ──
+  async function loadMedia() {
+    const box = $('#mediaList'); box.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const items = await api('/admin/media?status=' + state.filter.media);
+      if (!items.length) { box.innerHTML = '<div class="empty">' + (state.filter.media === 'pending_review' ? 'Nothing waiting for review. 🎉' : 'Nothing here.') + '</div>'; return; }
+      box.innerHTML = '<div class="grid">' + items.map(m => {
+        const labels = (m.labels || []).filter(l => l.name !== 'video_manual_review');
+        const waiting = m.status === 'pending_review';
+        return '<article class="card' + (m.sensitive ? ' cs' : '') + '" data-id="' + esc(m.id) + '">'
+          + mediaPreview(m.kind, m.viewUrl, m.sensitive)
+          + '<div class="body">'
+          + '<div class="title">' + esc(m.memoryTitle) + '</div>'
+          + '<div class="meta">by ' + esc(m.uploader || 'Former member') + (m.uploaderEmail ? ' · ' + esc(m.uploaderEmail) : '') + ' · ' + when(m.createdAt) + '</div>'
+          + '<div class="chips">'
+          + (m.kind === 'video' ? '<span class="chip amber">Video · manual review</span>' : '')
+          + labels.map(l => '<span class="chip">' + esc(l.name) + (l.confidence ? ' ' + Math.round(l.confidence) + '%' : '') + '</span>').join('')
+          + (!labels.length && m.kind !== 'video' && waiting ? '<span class="chip amber">Held — automatic check failed</span>' : '')
+          + (m.reportCount ? '<span class="chip red">' + m.reportCount + ' report' + (m.reportCount > 1 ? 's' : '') + '</span>' : '')
+          + (m.uploaderSuspendedAt ? '<span class="chip red">Uploader suspended</span>' : '')
+          + (m.uploaderLegalHold ? '<span class="chip red">Legal hold</span>' : '')
+          + (!waiting ? '<span class="chip ' + (m.status === 'approved' ? 'green' : 'red') + '">' + (m.status === 'approved' ? 'Approved' : 'Removed') + ' ' + when(m.moderatedAt) + '</span>' : '')
+          + '</div>'
+          + '<textarea class="note" placeholder="Note for the audit log (optional)" rows="1"></textarea>'
+          + '<div class="actions">'
+          + (m.status !== 'approved' ? '<button class="btn primary sm" data-media="approve">Approve</button>' : '')
+          + (m.status !== 'removed' ? '<button class="btn ghost-danger sm" data-media="remove">Remove</button>' : '')
+          + (m.status !== 'removed' && m.uploaderId ? '<button class="btn danger sm" data-media="remove-suspend">Remove + suspend uploader</button>' : '')
+          + '</div></div></article>';
+      }).join('') + '</div>';
+    } catch (e) { box.innerHTML = '<div class="empty">Could not load: ' + esc(e.message) + '</div>'; }
+  }
+  $('#mediaList').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-media]'); if (!b) return;
+    const card = b.closest('.card'); const id = card.dataset.id; const note = $('.note', card).value;
+    const act = b.dataset.media;
+    if (act === 'remove-suspend' && !confirm('Remove this item and suspend the uploader? They will be signed out of the app.')) return;
+    card.querySelectorAll('button').forEach(x => x.disabled = true);
+    try {
+      await api('/admin/media/' + id, { method:'POST', body: { action: act === 'approve' ? 'approve' : 'remove', note, suspendUploader: act === 'remove-suspend' } });
+      card.remove(); toast(act === 'approve' ? 'Approved — now visible in the app' : act === 'remove' ? 'Removed (kept as evidence, hidden from everyone)' : 'Removed and uploader suspended');
+      refreshCounts();
+      if (!$('#mediaList .card')) loadMedia();
+    } catch (e) { toast(e.message); card.querySelectorAll('button').forEach(x => x.disabled = false); }
+  });
+
+  // ── Reports ──
+  async function loadReports() {
+    const box = $('#reportList'); box.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const items = await api('/admin/reports?status=' + state.filter.reports);
+      $('#csBanner').classList.toggle('hidden', !(state.filter.reports === 'open' && items.some(r => r.reason === 'child_safety')));
+      if (!items.length) { box.innerHTML = '<div class="empty">' + (state.filter.reports === 'open' ? 'No open reports.' : 'Nothing here.') + '</div>'; return; }
+      box.innerHTML = '<div class="reports">' + items.map(r => {
+        const p = r.preview; const open = r.status === 'open';
+        let prev;
+        if (p && (p.kind === 'image' || p.kind === 'video')) prev = mediaPreview(p.kind, p.viewUrl, r.sensitive);
+        else if (p && p.kind === 'entry') prev = '<div class="textprev"><div><div class="meta">Perspective on “' + esc(p.memoryTitle) + '”' + (p.hidden ? ' · hidden' : '') + '</div></div></div>';
+        else if (p && p.kind === 'memory') prev = '<div class="textprev"><div><strong>' + esc(p.title) + '</strong><div class="meta">' + esc(p.date || '') + (p.location ? ' · ' + esc(p.location) : '') + (p.hidden ? ' · hidden' : '') + '</div></div></div>';
+        else if (p && p.kind === 'user') prev = '<div class="textprev"><div><strong>' + esc(p.displayName || 'Deleted account') + '</strong><div class="meta">Person reported</div></div></div>';
+        else prev = '<div class="textprev">Item no longer exists</div>';
+
+        const contentBtns = [];
+        if (open && p?.kind && (p.kind === 'image' || p.kind === 'video') && p.status !== 'removed') contentBtns.push('<button class="btn ghost-danger sm" data-act="remove-photo">Remove ' + (p.kind === 'video' ? 'video' : 'photo') + '</button>');
+        if (open && p?.kind === 'entry') contentBtns.push('<button class="btn ghost-danger sm" data-act="' + (p.hidden ? 'unhide-entry' : 'hide-entry') + '">' + (p.hidden ? 'Unhide' : 'Hide') + ' perspective</button>');
+        if (open && p?.kind === 'memory') contentBtns.push('<button class="btn ghost-danger sm" data-act="' + (p.hidden ? 'unhide-memory' : 'hide-memory') + '">' + (p.hidden ? 'Unhide' : 'Hide') + ' memory</button>');
+        if (r.reportedUserId) {
+          contentBtns.push(r.reportedUserSuspendedAt
+            ? '<button class="btn sm" data-act="unsuspend">Lift suspension</button>'
+            : '<button class="btn ghost-danger sm" data-act="suspend">Suspend ' + esc(r.reportedUser) + '</button>');
+          if (r.reportedUserLegalHold) contentBtns.push('<button class="btn sm" data-act="release">Release legal hold</button>');
+        }
+
+        return '<article class="card report' + (r.sensitive ? ' cs' : '') + '" data-id="' + esc(r.id) + '" data-target="' + esc(r.targetId) + '" data-user="' + esc(r.reportedUserId || '') + '">'
+          + prev
+          + '<div class="body">'
+          + '<div class="chips"><span class="chip ' + (r.reason === 'child_safety' ? 'red' : 'amber') + '">' + esc(REASON[r.reason] || r.reason) + '</span>'
+          + '<span class="chip">' + esc(r.targetType) + '</span>'
+          + (r.reportedUserSuspendedAt ? '<span class="chip red">Suspended</span>' : '')
+          + (r.reportedUserLegalHold ? '<span class="chip red">Legal hold</span>' : '')
+          + (!open ? '<span class="chip ' + (r.status === 'actioned' ? 'green' : '') + '">' + esc(r.status) + ' ' + when(r.resolvedAt) + '</span>' : '')
+          + '</div>'
+          + '<div class="meta">Reported by ' + esc(r.reporter || 'deleted account') + ' · ' + when(r.createdAt) + ' · about <strong>' + esc(r.reportedUser || 'deleted account') + '</strong>' + (r.reportedUserEmail ? ' (' + esc(r.reportedUserEmail) + ')' : '') + '</div>'
+          + (p?.kind === 'entry' ? '<div class="quote">' + esc(p.text) + '</div>' : '')
+          + (r.details ? '<div class="quote">“' + esc(r.details) + '”</div>' : '')
+          + (r.resolutionNote ? '<div class="meta">Note: ' + esc(r.resolutionNote) + '</div>' : '')
+          + (open ? '<textarea class="note" placeholder="' + (r.reason === 'child_safety' ? 'Note — include the CyberTipline report number' : 'Note for the audit log (optional)') + '" rows="1"></textarea>' : '')
+          + (contentBtns.length ? '<div class="actions">' + contentBtns.join('') + '</div>' : '')
+          + (open ? '<div class="actions"><button class="btn primary sm" data-act="actioned">Mark actioned</button><button class="btn sm" data-act="dismissed">Dismiss</button></div>' : '')
+          + '</div></article>';
+      }).join('') + '</div>';
+    } catch (e) { box.innerHTML = '<div class="empty">Could not load: ' + esc(e.message) + '</div>'; }
+  }
+  $('#reportList').addEventListener('click', async (ev) => {
+    const b = ev.target.closest('[data-act]'); if (!b) return;
+    const card = b.closest('.card'); const act = b.dataset.act;
+    const note = $('.note', card)?.value || '';
+    const id = card.dataset.id, target = card.dataset.target, user = card.dataset.user;
+    const calls = {
+      'remove-photo': () => api('/admin/media/' + target, { method:'POST', body:{ action:'remove', note } }),
+      'hide-entry':   () => api('/admin/entries/' + target, { method:'POST', body:{ action:'hide', note } }),
+      'unhide-entry': () => api('/admin/entries/' + target, { method:'POST', body:{ action:'unhide', note } }),
+      'hide-memory':  () => api('/admin/memories/' + target, { method:'POST', body:{ action:'hide', note } }),
+      'unhide-memory':() => api('/admin/memories/' + target, { method:'POST', body:{ action:'unhide', note } }),
+      suspend:        () => api('/admin/users/' + user, { method:'POST', body:{ action:'suspend', note } }),
+      unsuspend:      () => api('/admin/users/' + user, { method:'POST', body:{ action:'unsuspend', note } }),
+      release:        () => api('/admin/users/' + user, { method:'POST', body:{ action:'release', note } }),
+      actioned:       () => api('/admin/reports/' + id, { method:'POST', body:{ status:'actioned', note } }),
+      dismissed:      () => api('/admin/reports/' + id, { method:'POST', body:{ status:'dismissed', note } }),
+    };
+    const confirms = {
+      suspend: 'Suspend this account? They will be signed out and cannot use the app.',
+      release: 'Release the legal hold? Only do this when there is no legal duty to preserve the content (at least 1 year after a CyberTipline report).',
+      dismissed: 'Dismiss this report? The reporter will keep the item hidden for themselves.',
+    };
+    if (confirms[act] && !confirm(confirms[act])) return;
+    card.querySelectorAll('button').forEach(x => x.disabled = true);
+    try {
+      await calls[act]();
+      toast({ actioned:'Report marked actioned', dismissed:'Report dismissed', suspend:'Account suspended', unsuspend:'Suspension lifted', release:'Legal hold released' }[act] || 'Done');
+      refreshCounts(); loadReports();
+    } catch (e) { toast(e.message); card.querySelectorAll('button').forEach(x => x.disabled = false); }
+  });
+
+  // ── Audit ──
+  const ACTION = { 'media.approve':'Approved media','media.remove':'Removed media','user.suspend':'Suspended account','user.unsuspend':'Lifted suspension',
+    'user.hold':'Set legal hold','user.release':'Released legal hold','report.actioned':'Report actioned','report.dismissed':'Report dismissed',
+    'entry.hide':'Hid perspective','entry.unhide':'Unhid perspective','memory.hide':'Hid memory','memory.unhide':'Unhid memory' };
+  async function loadAudit() {
+    const box = $('#auditList'); box.innerHTML = '<div class="empty">Loading…</div>';
+    try {
+      const rows = await api('/admin/audit?limit=200');
+      if (!rows.length) { box.innerHTML = '<div class="empty">No decisions recorded yet.</div>'; return; }
+      box.innerHTML = '<table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Note</th><th>Item</th></tr></thead><tbody>'
+        + rows.map(a => '<tr><td>' + when(a.createdAt) + '</td><td>' + esc(a.admin || '—') + '</td><td>' + esc(ACTION[a.action] || a.action)
+          + '</td><td>' + esc(a.note || '') + '</td><td><code>' + esc(a.targetType) + ' ' + esc((a.targetId || '').slice(0, 8)) + '</code></td></tr>').join('')
+        + '</tbody></table>';
+    } catch (e) { box.innerHTML = '<div class="empty">Could not load: ' + esc(e.message) + '</div>'; }
+  }
+
+  // Refresh counts every minute while open; view links expire after 10 minutes
+  setInterval(() => { if (!$('#app').classList.contains('hidden')) refreshCounts(); }, 60000);
+  getTokens() ? showApp() : showLogin();
+})();
+</script>
+</body>
+</html>

@@ -207,3 +207,8 @@ CREATE TABLE IF NOT EXISTS user_blocks (
 );
 
 CREATE INDEX IF NOT EXISTS user_blocks_blocked_idx ON user_blocks(blocked_id);
+
+-- ── Admin audit log (see migrate_phase9_admin_audit.sql) ──
+CREATE TABLE IF NOT EXISTS admin_actions (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), admin_id UUID REFERENCES users(id) ON DELETE SET NULL, action TEXT NOT NULL, target_type TEXT NOT NULL, target_id UUID, note TEXT, details JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS admin_actions_created_idx ON admin_actions(created_at DESC);
+CREATE INDEX IF NOT EXISTS admin_actions_target_idx ON admin_actions(target_type, target_id);
