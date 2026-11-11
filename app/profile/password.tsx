@@ -60,7 +60,7 @@ export default function PasswordScreen() {
       { currentPassword: current, newPassword: next },
       {
         onSuccess: () => {
-          Alert.alert('Password changed', 'Your password has been updated.');
+          Alert.alert('Password changed', 'Your password has been updated. You have been signed out on your other devices.');
           router.back();
         },
         onError: (err: any) => {

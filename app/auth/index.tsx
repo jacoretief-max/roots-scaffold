@@ -121,6 +121,9 @@ const LoginForm = ({ onSwitch }: { onSwitch: () => void }) => {
       >
         <Text style={styles.btnText}>{loading ? 'Signing in…' : 'Sign in'}</Text>
       </TouchableOpacity>
+      <TouchableOpacity onPress={() => router.push('/auth/reset')} style={styles.switchLink}>
+        <Text style={styles.switchText}>Forgot password?</Text>
+      </TouchableOpacity>
       <TouchableOpacity onPress={onSwitch} style={styles.switchLink}>
         <Text style={styles.switchText}>New to Rooted In? Create account</Text>
       </TouchableOpacity>

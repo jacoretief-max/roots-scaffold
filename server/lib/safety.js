@@ -150,22 +150,26 @@ async function createReport(db, sendPush, { reporterId, targetType, targetId, re
   return { id: report.id };
 }
 
-// ── Suspension check (cached, used by requireAuth) ─────────────────────
-const suspensionCache = new Map(); // userId -> { suspended, at }
-const SUSPENSION_TTL_MS = 60 * 1000;
-function invalidateSuspension(userId) { suspensionCache.delete(userId); }
-async function isSuspended(db, userId) {
-  const hit = suspensionCache.get(userId);
-  if (hit && Date.now() - hit.at < SUSPENSION_TTL_MS) return hit.suspended;
-  const { rows: [u] } = await db.query('SELECT suspended_at FROM users WHERE id = $1', [userId]);
-  const suspended = !!u?.suspended_at;
-  suspensionCache.set(userId, { suspended, at: Date.now() });
-  return suspended;
+// ── Account state check (cached, used by requireAuth) ──────────────────
+// exists: account not deleted · suspended: locked by moderation ·
+// pwdChangedSec: tokens issued before this second are revoked (password change/reset)
+const authStateCache = new Map(); // userId -> { exists, suspended, pwdChangedSec, at }
+const AUTH_STATE_TTL_MS = 60 * 1000;
+function invalidateSuspension(userId) { authStateCache.delete(userId); }
+async function getAuthState(db, userId) {
+  const hit = authStateCache.get(userId);
+  if (hit && Date.now() - hit.at < AUTH_STATE_TTL_MS) return hit;
+  const { rows: [u] } = await db.query(
+    `SELECT suspended_at, FLOOR(EXTRACT(EPOCH FROM password_changed_at))::bigint AS pwd_sec FROM users WHERE id = $1`, [userId]);
+  const state = { exists: !!u, suspended: !!u?.suspended_at, pwdChangedSec: u?.pwd_sec ? Number(u.pwd_sec) : null, at: Date.now() };
+  authStateCache.set(userId, state);
+  return state;
 }
+async function isSuspended(db, userId) { return (await getAuthState(db, userId)).suspended; }
 
 module.exports = {
   moderateImage, isVideoKey, alertAdmins, isAdmin,
   isBlockedEitherWay, blockUser, createReport,
-  isSuspended, invalidateSuspension,
+  isSuspended, invalidateSuspension, getAuthState,
   REPORT_REASONS, REPORT_TARGETS,
 };

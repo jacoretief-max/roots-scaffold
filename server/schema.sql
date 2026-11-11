@@ -154,7 +154,7 @@ CREATE TABLE IF NOT EXISTS sms_consents (
   -- SET NULL on account deletion so the consent evidence is retained.
   user_id          UUID REFERENCES users(id) ON DELETE SET NULL,
   phone_number     TEXT NOT NULL,
-  purpose          TEXT NOT NULL CHECK (purpose IN ('signup', 'change_phone')),
+  purpose          TEXT NOT NULL CHECK (purpose IN ('signup', 'change_phone', 'password_reset')),
   consent_version  TEXT NOT NULL,          -- version of the disclosure shown in the app
   consent_text     TEXT NOT NULL,          -- exact disclosure text for that version
   ip_address       TEXT,
@@ -212,3 +212,6 @@ CREATE INDEX IF NOT EXISTS user_blocks_blocked_idx ON user_blocks(blocked_id);
 CREATE TABLE IF NOT EXISTS admin_actions (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), admin_id UUID REFERENCES users(id) ON DELETE SET NULL, action TEXT NOT NULL, target_type TEXT NOT NULL, target_id UUID, note TEXT, details JSONB, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
 CREATE INDEX IF NOT EXISTS admin_actions_created_idx ON admin_actions(created_at DESC);
 CREATE INDEX IF NOT EXISTS admin_actions_target_idx ON admin_actions(target_type, target_id);
+
+-- ── Password reset / session revocation (see migrate_phase10_password_reset.sql) ──
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMPTZ;

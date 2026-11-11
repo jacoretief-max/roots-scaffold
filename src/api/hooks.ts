@@ -458,6 +458,8 @@ export const useChangePassword = () =>
       newPassword: string;
     }) => {
       const { data } = await api.patch('/users/me/password', { currentPassword, newPassword });
+      // Other devices are signed out; this device continues with the new tokens
+      if (data?.data?.tokens) await useAuthStore.getState().setTokens(data.data.tokens);
       return data.data;
     },
   });

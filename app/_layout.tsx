@@ -230,6 +230,7 @@ function RootNavigator() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="auth/index" />
+        <Stack.Screen name="auth/reset" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="onboarding/enroll" />
         <Stack.Screen name="memory/[id]" options={{ presentation: 'card' }} />

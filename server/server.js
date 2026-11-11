@@ -217,18 +217,35 @@ const requireAuth = (req, res, next) => {
   if (!header?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorised' });
   }
+  let payload;
   try {
-    const payload = jwt.verify(header.slice(7), process.env.JWT_SECRET);
+    payload = jwt.verify(header.slice(7), process.env.JWT_SECRET);
     req.userId = payload.sub;
   } catch {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
-  safety.isSuspended(db, req.userId)
-    .then(suspended => suspended
-      ? res.status(403).json({ error: 'This account has been suspended. Contact info@rooikatlabs.com.', code: 'ACCOUNT_SUSPENDED' })
-      : next())
-    .catch(err => { console.error('[safety] suspension check failed', err.message); next(); });
+  safety.getAuthState(db, req.userId)
+    .then(state => {
+      if (!state.exists) return res.status(401).json({ error: 'Account no longer exists', code: 'ACCOUNT_GONE' });
+      if (state.pwdChangedSec && payload.iat < state.pwdChangedSec) {
+        return res.status(401).json({ error: 'Your password was changed. Please sign in again.', code: 'SESSION_REVOKED' });
+      }
+      if (state.suspended) {
+        return res.status(403).json({ error: 'This account has been suspended. Contact info@rooikatlabs.com.', code: 'ACCOUNT_SUSPENDED' });
+      }
+      next();
+    })
+    .catch(err => { console.error('[safety] auth state check failed', err.message); next(); });
 };
+
+// Marks "password changed now": every token issued before this second is revoked.
+// Uses the server clock (same clock that stamps JWT iat) to avoid skew.
+async function markPasswordChanged(userId, hash) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  await db.query('UPDATE users SET password_hash = $1, password_changed_at = to_timestamp($2) WHERE id = $3', [hash, nowSec, userId]);
+  safety.invalidateSuspension(userId);
+}
+const MIN_PASSWORD_LENGTH = 8;
 
 // Removes user IDs that are blocked by / have blocked `userId`
 async function withoutBlocked(userId, ids) {
@@ -374,6 +391,88 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+
+// ── Password reset by SMS code ─────────────────────────
+// Never reveals whether an email has an account. Rate-limited per email and IP.
+const resetAttempts = new Map(); // key -> [timestamps]
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  const list = (resetAttempts.get(key) || []).filter(t => now - t < windowMs);
+  if (list.length >= max) { resetAttempts.set(key, list); return true; }
+  list.push(now); resetAttempts.set(key, list);
+  return false;
+}
+const clientIp = (req) => (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';
+const RESET_SENT_MSG = 'If an account exists for this email, we have texted a code to its phone number.';
+
+// POST /api/auth/password/send-code { email, smsConsent, consentVersion }
+app.post('/api/auth/password/send-code', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) return res.status(400).json({ error: 'Please enter your email address.' });
+  if (req.body?.smsConsent !== true) return res.status(400).json({ error: CONSENT_REQUIRED_MSG });
+  if (rateLimited('ip:' + clientIp(req), 20, 60 * 60 * 1000) || rateLimited('email:' + email, 5, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Too many attempts. Please wait an hour and try again, or email info@rooikatlabs.com.' });
+  }
+  try {
+    const { rows: [u] } = await db.query('SELECT id, phone_number FROM users WHERE email = $1', [email]);
+    if (!u || !u.phone_number) {
+      console.log('[reset] send-code: no account or no phone', { hasAccount: !!u });
+      return res.json({ data: { message: RESET_SENT_MSG } }); // same answer either way
+    }
+    if (!(await recordSmsConsent(req, { phoneNumber: u.phone_number, purpose: 'password_reset', userId: u.id }))) {
+      return res.status(400).json({ error: CONSENT_REQUIRED_MSG });
+    }
+    const v = await twilioClient.verify.v2.services(TWILIO_VERIFY_SERVICE_SID)
+      .verifications.create({ to: u.phone_number, channel: 'sms' });
+    console.log('[verify] send-code ok', { route: req.path, to: maskPhone(u.phone_number), sid: v.sid, status: v.status });
+    res.json({ data: { message: RESET_SENT_MSG } });
+  } catch (err) {
+    console.error('[verify] send-code FAILED', { route: req.path, ...twilioErr(err) });
+    res.json({ data: { message: RESET_SENT_MSG } }); // don't leak failures tied to a real account
+  }
+});
+
+// POST /api/auth/password/reset { email, code, newPassword } → signs in
+app.post('/api/auth/password/reset', async (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const { code, newPassword } = req.body ?? {};
+  const INVALID = 'That code is invalid or has expired. Please request a new one.';
+  if (!email || !code) return res.status(400).json({ error: 'Please enter the code we texted you.' });
+  if (!newPassword || String(newPassword).length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: `Your new password must be at least ${MIN_PASSWORD_LENGTH} characters.` });
+  }
+  if (rateLimited('verify-ip:' + clientIp(req), 30, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Too many attempts. Please wait an hour and try again.' });
+  }
+  try {
+    const { rows: [u] } = await db.query('SELECT id, phone_number, suspended_at FROM users WHERE email = $1', [email]);
+    if (!u || !u.phone_number) return res.status(400).json({ error: INVALID });
+    let check;
+    try {
+      check = await twilioClient.verify.v2.services(TWILIO_VERIFY_SERVICE_SID)
+        .verificationChecks.create({ to: u.phone_number, code: String(code).trim() });
+    } catch (err) {
+      console.error('[verify] check FAILED', { route: req.path, to: maskPhone(u.phone_number), ...twilioErr(err) });
+      return res.status(400).json({ error: INVALID });
+    }
+    if (check.status !== 'approved') {
+      console.warn('[verify] check NOT approved', { route: req.path, to: maskPhone(u.phone_number), status: check.status });
+      return res.status(400).json({ error: INVALID });
+    }
+    const hash = await bcrypt.hash(String(newPassword), 12);
+    await markPasswordChanged(u.id, hash); // signs out every other device
+    console.log('[reset] password reset ok', { userId: u.id });
+    if (u.suspended_at) {
+      return res.status(403).json({ error: 'Your password was changed, but this account is suspended. Contact info@rooikatlabs.com.', code: 'ACCOUNT_SUSPENDED' });
+    }
+    const tokens = { accessToken: signAccess(u.id), refreshToken: signRefresh(u.id), expiresAt: Date.now() + 15 * 60 * 1000 };
+    res.json({ data: { tokens } });
+  } catch (err) {
+    console.error('[reset] FAILED', { message: err.message });
+    res.status(500).json({ error: 'Something went wrong. Please try again.' });
+  }
+});
+
 // POST /api/auth/login
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
@@ -429,8 +528,12 @@ app.post('/api/auth/refresh', async (req, res) => {
   if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
   try {
     const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const { rows: [exists] } = await db.query('SELECT suspended_at FROM users WHERE id = $1', [payload.sub]);
+    const { rows: [exists] } = await db.query(
+      'SELECT suspended_at, FLOOR(EXTRACT(EPOCH FROM password_changed_at))::bigint AS pwd_sec FROM users WHERE id = $1', [payload.sub]);
     if (!exists) return res.status(401).json({ error: 'Account no longer exists' });
+    if (exists.pwd_sec && payload.iat < Number(exists.pwd_sec)) {
+      return res.status(401).json({ error: 'Your password was changed. Please sign in again.', code: 'SESSION_REVOKED' });
+    }
     if (exists.suspended_at) return res.status(403).json({ error: 'This account has been suspended.', code: 'ACCOUNT_SUSPENDED' });
     const tokens = {
       accessToken: signAccess(payload.sub),
@@ -735,10 +838,15 @@ app.patch('/api/users/me/password', requireAuth, async (req, res) => {
     'SELECT * FROM users WHERE id = $1', [req.userId]
   );
   const valid = await bcrypt.compare(currentPassword, user.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Current password incorrect' });
+  if (!valid) return res.status(403).json({ error: 'Current password incorrect' });
+  if (String(newPassword).length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({ error: `Your new password must be at least ${MIN_PASSWORD_LENGTH} characters.` });
+  }
   const hash = await bcrypt.hash(newPassword, 12);
-  await db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, req.userId]);
-  res.json({ data: { ok: true } });
+  await markPasswordChanged(req.userId, hash);
+  // Other devices are signed out; this device gets fresh tokens
+  const tokens = { accessToken: signAccess(req.userId), refreshToken: signRefresh(req.userId), expiresAt: Date.now() + 15 * 60 * 1000 };
+  res.json({ data: { ok: true, tokens } });
 });
 
 // POST /api/users/me/photo — multipart avatar upload
