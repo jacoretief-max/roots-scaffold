@@ -576,6 +576,10 @@ app.delete('/api/users/me', requireAuth, async (req, res) => {
   try {
     const { rows: [u] } = await db.query('SELECT password_hash, legal_hold FROM users WHERE id = $1', [req.userId]);
     if (!u) return res.status(404).json({ error: 'Account not found' });
+    if (safety.isAdmin(req.userId)) {
+      console.warn('[delete-account] refused — admin account', { userId: req.userId });
+      return res.status(403).json({ error: 'This is an admin account and can\'t be deleted from the app. Remove it from ADMIN_USER_IDS first.', code: 'ADMIN_ACCOUNT' });
+    }
     if (u.legal_hold) {
       console.warn('[delete-account] refused — legal hold', { userId: req.userId });
       return res.status(403).json({ error: 'Your account can\'t be deleted right now. Please contact info@rooikatlabs.com.', code: 'LEGAL_HOLD' });
