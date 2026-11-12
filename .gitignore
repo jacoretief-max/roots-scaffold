@@ -47,3 +47,7 @@ _tmp_*.js
 # generated native folders
 /ios
 /android
+
+# Local test/reviewer photos (never publish: may contain faces/GPS)
+Test photos/
+server/scripts/reviewer-photos/
