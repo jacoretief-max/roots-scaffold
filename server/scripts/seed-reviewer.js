@@ -13,7 +13,8 @@
  * Photos: put JPEGs in server/scripts/reviewer-photos/ (git-ignored). Strip GPS and
  * faces you don't want Apple to see before adding them. Files are matched by name below.
  *
- * Friends are fake accounts (@rootsdebug.local, no phone numbers, random passwords).
+ * Friends are fake accounts (@rootsdebug.local, fictional +1 303 555-01xx numbers that
+ * never reach a real person, random passwords).
  * Nothing here touches any other account.
  */
 const path = require('path');
@@ -53,12 +54,12 @@ const REVIEWER = { key: 'me', name: 'Alex Morgan', email: REVIEWER_EMAIL, dob: '
 const daysFromNow = (d) => { const t = new Date(); t.setDate(t.getDate() + d); return t; };
 const upcomingBirthday = (inDays, year) => { const t = daysFromNow(inDays); return `${year}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 const FRIENDS = [
-  { key: 'maya',   name: 'Maya Morgan',  layer: 'intimate',   relation: 'Partner',          since: '2014',      freq: 1,  lastDays: 0,  city: 'Denver',     lat: 39.7392,  lng: -104.9903, colour: '#7A8B6F', dob: '1988-09-03' },
-  { key: 'daniel', name: 'Daniel Morgan',layer: 'intimate',   relation: 'Brother',          since: 'Always',    freq: 7,  lastDays: 4,  city: 'Cape Town',  lat: -33.9249, lng: 18.4241,   colour: '#5B7FA6', dob: upcomingBirthday(5, 1983) },
-  { key: 'priya',  name: 'Priya Shah',   layer: 'close',      relation: 'Best friend',      since: 'Uni days',  freq: 14, lastDays: 9,  city: 'London',     lat: 51.5072,  lng: -0.1276,   colour: '#B5838D', dob: '1987-02-20' },
-  { key: 'tom',    name: 'Tom Becker',   layer: 'close',      relation: 'Hiking buddy',     since: '2019',      freq: 14, lastDays: 31, city: 'Boulder',    lat: 40.015,   lng: -105.2705, colour: '#C9A227', dob: '1985-07-14' },
-  { key: 'lena',   name: 'Lena Fischer', layer: 'active',     relation: 'Old colleague',    since: '2016',      freq: 30, lastDays: 22, city: 'Berlin',     lat: 52.52,    lng: 13.405,    colour: '#6D597A', dob: '1990-11-30' },
-  { key: 'chris',  name: 'Chris Ngata',  layer: 'meaningful', relation: 'Running club',     since: '2022',      freq: 60, lastDays: 75, city: 'Auckland',   lat: -36.8485, lng: 174.7633,  colour: '#2A9D8F', dob: '1992-05-08' },
+  { key: 'maya', phone: '+13035550111',   name: 'Maya Morgan',  layer: 'intimate',   relation: 'Partner',          since: '2014',      freq: 1,  lastDays: 0,  city: 'Denver',     lat: 39.7392,  lng: -104.9903, colour: '#7A8B6F', dob: '1988-09-03' },
+  { key: 'daniel', phone: '+13035550112', name: 'Daniel Morgan',layer: 'intimate',   relation: 'Brother',          since: 'Always',    freq: 7,  lastDays: 4,  city: 'Cape Town',  lat: -33.9249, lng: 18.4241,   colour: '#5B7FA6', dob: upcomingBirthday(5, 1983) },
+  { key: 'priya', phone: '+13035550113',  name: 'Priya Shah',   layer: 'close',      relation: 'Best friend',      since: 'Uni days',  freq: 14, lastDays: 9,  city: 'London',     lat: 51.5072,  lng: -0.1276,   colour: '#B5838D', dob: '1987-02-20' },
+  { key: 'tom', phone: '+13035550114',    name: 'Tom Becker',   layer: 'close',      relation: 'Hiking buddy',     since: '2019',      freq: 14, lastDays: 31, city: 'Boulder',    lat: 40.015,   lng: -105.2705, colour: '#C9A227', dob: '1985-07-14' },
+  { key: 'lena', phone: '+13035550115',   name: 'Lena Fischer', layer: 'active',     relation: 'Old colleague',    since: '2016',      freq: 30, lastDays: 22, city: 'Berlin',     lat: 52.52,    lng: 13.405,    colour: '#6D597A', dob: '1990-11-30' },
+  { key: 'chris', phone: '+13035550116',  name: 'Chris Ngata',  layer: 'meaningful', relation: 'Running club',     since: '2022',      freq: 60, lastDays: 75, city: 'Auckland',   lat: -36.8485, lng: 174.7633,  colour: '#2A9D8F', dob: '1992-05-08' },
 ];
 const OFFLINE = [{ key: 'rose', name: 'Grandma Rose', layer: 'intimate', relation: 'Grandmother', phone: '+13035550142', dob: '1941-03-02' }];
 
@@ -148,9 +149,9 @@ async function main() {
   for (const f of FRIENDS) {
     const hash = await bcrypt.hash(crypto.randomBytes(24).toString('base64'), 10);
     ids[f.key] = (await db.query(
-      `INSERT INTO users (display_name, email, password_hash, date_of_birth, city, lat, lng, avatar_colour, show_dob_to_connections)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true) RETURNING id`,
-      [f.name, fakeEmail(f.key), hash, f.dob, f.city, f.lat, f.lng, f.colour])).rows[0].id;
+      `INSERT INTO users (display_name, email, password_hash, date_of_birth, city, lat, lng, avatar_colour, show_dob_to_connections, phone_number)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9) RETURNING id`,
+      [f.name, fakeEmail(f.key), hash, f.dob, f.city, f.lat, f.lng, f.colour, f.phone])).rows[0].id;
     const last = daysFromNow(-f.lastDays);
     const score = Math.max(25, Math.min(98, 100 - Math.round((f.lastDays / f.freq) * 35)));
     conn[f.key] = (await db.query(
