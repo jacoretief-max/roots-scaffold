@@ -7,6 +7,7 @@ import {
 import * as Notifications from 'expo-notifications';
 import { Audio } from 'expo-av';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useConnection, useLogContact, useRemoveConnection, useUpdateConnection, useContactEvents, useCreateContactEvent, useGenerateInvite } from '@/api/hooks';
 import { uploadMedia } from '@/api/upload';
@@ -213,22 +214,31 @@ const TimezoneCard = ({
           style={[styles.tzActionBtn, !hasPhone && styles.tzActionBtnDim]}
           onPress={handleCall}
           activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel={`Call ${displayName}`}
         >
-          <Text style={styles.tzActionBtnText}>📞  Call</Text>
+          <Ionicons name="call" size={22} color={Colors.textDark} />
+          <Text style={styles.tzActionBtnText} numberOfLines={1}>Call</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tzActionBtn, !hasPhone && styles.tzActionBtnDim]}
           onPress={handleWhatsApp}
           activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel={`Message ${displayName} on WhatsApp`}
         >
-          <Text style={styles.tzActionBtnText}>💬  WhatsApp</Text>
+          <Ionicons name="logo-whatsapp" size={22} color="#25D366" />
+          <Text style={styles.tzActionBtnText} numberOfLines={1}>WhatsApp</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tzActionBtn, styles.tzActionBtnRemind]}
           onPress={handleReminder}
           activeOpacity={0.75}
+          accessibilityRole="button"
+          accessibilityLabel={`Remind me to contact ${displayName}`}
         >
-          <Text style={[styles.tzActionBtnText, styles.tzActionBtnRemindText]}>⏰  Remind me</Text>
+          <Ionicons name="alarm-outline" size={22} color={Colors.terracotta} />
+          <Text style={[styles.tzActionBtnText, styles.tzActionBtnRemindText]} numberOfLines={1}>Remind me</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -1902,8 +1912,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     borderWidth: 0.5,
     borderColor: Colors.tan,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: 4,
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    minHeight: 64,
   },
   tzActionBtnDim: {
     opacity: 0.45,
@@ -1913,7 +1927,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.terracotta + '44',
   },
   tzActionBtnText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontFamily: Typography.fontFamily,
     color: Colors.textDark,
     fontWeight: '600',
